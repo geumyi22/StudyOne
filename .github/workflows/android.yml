@@ -95,19 +95,11 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            set -e
-            APK="apk/app-debug.apk"
-            adb install -r "$APK"
+            adb install -r apk/app-debug.apk
             adb logcat -c
             adb shell am start -W -n com.studyone.app/.MainActivity
             sleep 4
-            PID="$(adb shell pidof com.studyone.app | tr -d '\r')"
-            echo "StudyOne PID=$PID"
-            test -n "$PID"
+            adb shell pidof com.studyone.app | grep -E '[0-9]+'
             adb shell dumpsys activity activities | grep -q "com.studyone.app/.MainActivity"
-            if adb logcat -d -b crash | grep -q "com.studyone.app"; then
-              echo "StudyOne crash detected"
-              adb logcat -d -b crash
-              exit 1
-            fi
+            ! adb logcat -d -b crash | grep -q "com.studyone.app"
             echo "StudyOne emulator smoke test passed"
