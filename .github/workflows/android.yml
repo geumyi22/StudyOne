@@ -45,11 +45,20 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon
 
+      - name: Android lint
+        run: gradle :app:lintDebug --stacktrace --no-daemon
+
       - name: Verify APK
+        shell: bash
         run: |
-          test -f app/build/outputs/apk/debug/app-debug.apk
-          sha256sum app/build/outputs/apk/debug/app-debug.apk
-          unzip -t app/build/outputs/apk/debug/app-debug.apk >/dev/null
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          BT="$ANDROID_HOME/build-tools/37.0.0"
+          test -f "$APK"
+          sha256sum "$APK"
+          unzip -t "$APK" >/dev/null
+          "$BT/zipalign" -c -P 16 -v 4 "$APK"
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
+          "$BT/aapt2" dump badging "$APK" | grep -E "package:|sdkVersion:|targetSdkVersion:|application-label:"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
