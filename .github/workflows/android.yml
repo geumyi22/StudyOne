@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -22,14 +22,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          packages: platform-tools
+
       - name: Install Android 17 SDK
         shell: bash
         run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$SDKMANAGER"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -path "*/bin/sdkmanager" | sort -V | tail -n 1)"
+          echo "Using sdkmanager: $SDKMANAGER"
           "$SDKMANAGER" --version
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" --channel=3 "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" --list_installed
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
