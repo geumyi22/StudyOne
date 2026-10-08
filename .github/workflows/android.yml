@@ -25,13 +25,13 @@ jobs:
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: 12266719
+          cmdline-tools-version: 15859902
           packages: platform-tools
 
       - name: Install Android 17 SDK
         shell: bash
         run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -mindepth 2 -maxdepth 3 -type f -path "*/bin/sdkmanager" -printf "%T@ %p\n" | sort -nr | head -n1 | cut -d" " -f2-)"
           echo "Using sdkmanager: $SDKMANAGER"
           "$SDKMANAGER" --version
           yes | "$SDKMANAGER" --licenses >/dev/null || true
