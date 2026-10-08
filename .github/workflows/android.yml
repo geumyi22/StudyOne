@@ -66,3 +66,48 @@ jobs:
           name: StudyOne-v2-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  smoke:
+    name: emulator-smoke
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download built APK
+        uses: actions/download-artifact@v5
+        with:
+          name: StudyOne-v2-debug-apk
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+
+      - name: Install and launch on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            set -e
+            APK="apk/app-debug.apk"
+            adb install -r "$APK"
+            adb logcat -c
+            adb shell am start -W -n com.studyone.app/.MainActivity
+            sleep 4
+            PID="$(adb shell pidof com.studyone.app | tr -d '\r')"
+            echo "StudyOne PID=$PID"
+            test -n "$PID"
+            adb shell dumpsys activity activities | grep -q "com.studyone.app/.MainActivity"
+            if adb logcat -d -b crash | grep -q "com.studyone.app"; then
+              echo "StudyOne crash detected"
+              adb logcat -d -b crash
+              exit 1
+            fi
+            echo "StudyOne emulator smoke test passed"
