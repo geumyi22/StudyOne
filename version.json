@@ -1,0 +1,14 @@
+{
+  "versionCode": 20000,
+  "versionName": "2.0.0-dev.1",
+  "channel": "dev",
+  "minimumVersionCode": 20000,
+  "mandatory": false,
+  "notes": [
+    "Native Android v2 foundation",
+    "Strict NEIS school/class validation",
+    "Timetable and lunch cache",
+    "Assignments, performance assessments and exams planner",
+    "Book + check StudyOne icon"
+  ]
+}
