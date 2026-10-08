@@ -31,12 +31,11 @@ jobs:
       - name: Install Android 17 SDK
         shell: bash
         run: |
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -mindepth 2 -maxdepth 3 -type f -path "*/bin/sdkmanager" -printf "%T@ %p\n" | sort -nr | head -n1 | cut -d" " -f2-)"
-          echo "Using sdkmanager: $SDKMANAGER"
-          "$SDKMANAGER" --version
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" --channel=3 "platforms;android-37" "build-tools;36.0.0"
-          "$SDKMANAGER" --list_installed
+          ANDROIDCLI="$ANDROID_HOME/cmdline-tools/15859902/bin/android"
+          test -x "$ANDROIDCLI"
+          "$ANDROIDCLI" --version
+          "$ANDROIDCLI" --sdk="$ANDROID_HOME" sdk install --canary             platforms/android-37             build-tools/37.0.0             platform-tools
+          "$ANDROIDCLI" --sdk="$ANDROID_HOME" sdk list --all --canary | grep -E "platforms/android-37|build-tools/37" || true
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
