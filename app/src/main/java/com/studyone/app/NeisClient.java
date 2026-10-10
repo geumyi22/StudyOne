@@ -42,8 +42,8 @@ public final class NeisClient {
                 connection.setConnectTimeout(10000);
                 connection.setReadTimeout(12000);
                 connection.setRequestMethod("GET");
-                connection.setRequestProperty("Accept", "application/json");
-                connection.setRequestProperty("User-Agent", "StudyOne/2.0.1 Android");
+                connection.setRequestProperty("Accept", "*/*");
+                connection.setRequestProperty("User-Agent", "StudyOne/2.0.2 Android");
 
                 int status = connection.getResponseCode();
                 java.io.InputStream input = status >= 200 && status < 300

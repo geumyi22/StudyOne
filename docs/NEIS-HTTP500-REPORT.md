@@ -23,3 +23,19 @@
 - 정상 발급된 NEIS API 키인지 확인 (키 내용 공유 금지)
 - 정확한 학교를 선택하고 학년·반이 일치하는지 확인
 - 실제 조회는 학교/기간/급식코드 검증 필요
+
+## 확인된 근본 원인 (2026-10-10)
+GitHub Actions Linux에서 동일 NEIS schoolInfo 요청을 재현하며 HTTP 요청 헤더를 하나씩 분리:
+- 기본 헤더: HTTP 200
+- User-Agent: StudyOne/2.0.1 Android 단독: HTTP 200
+- User-Agent: Mozilla/5.0 단독: HTTP 200
+- Accept: */* 단독: HTTP 200
+- Accept: application/json 단독: HTTP 500
+- Accept: application/json + User-Agent: StudyOne: HTTP 500
+- Accept: application/json + Browser User-Agent: HTTP 500
+
+NEIS는 Type=json 쿼리로 JSON 출력을 지정할 수 있지만 특정 Accept 헤더에서 HTTP 500을 반환한다.
+따라서 StudyOne 네트워크 클라이언트의 Accept를 */*로 수정했다.
+원인 재현 CI: https://github.com/geumyi22/StudyOne/actions/runs/38058817333
+
+현상은 대상 사용자 모바일 앱에서 다시 확인해야 한다. API 키 유효성/실제 시간표·급식 정확도 검증과는 별도다.
