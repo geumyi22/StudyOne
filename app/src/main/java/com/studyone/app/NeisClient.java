@@ -34,26 +34,91 @@ public final class NeisClient {
             q.append("&").append(enc(e.getKey())).append("=").append(enc(v));
         }
 
-        HttpURLConnection c = (HttpURLConnection) new URL(q.toString()).openConnection();
-        c.setConnectTimeout(10000);
-        c.setReadTimeout(12000);
-        c.setRequestMethod("GET");
-        c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "StudyOne/2.0 Android");
+        // Do not print the URL: it may contain the user's private NEIS API key.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(q.toString()).openConnection();
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(12000);
+                connection.setRequestMethod("GET");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "StudyOne/2.0.1 Android");
 
-        int status = c.getResponseCode();
-        BufferedReader r = new BufferedReader(new InputStreamReader(
-                status >= 200 && status < 300 ? c.getInputStream() : c.getErrorStream(),
-                StandardCharsets.UTF_8));
-        StringBuilder body = new StringBuilder();
-        String line;
-        while ((line = r.readLine()) != null) body.append(line);
-        r.close();
-        c.disconnect();
+                int status = connection.getResponseCode();
+                java.io.InputStream input = status >= 200 && status < 300
+                        ? connection.getInputStream() : connection.getErrorStream();
+                String body = "";
+                if (input != null) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                        StringBuilder out = new StringBuilder();
+                        String line;
+                        while ((line = reader.readLine()) != null && out.length() < 65536) {
+                            out.append(line);
+                        }
+                        body = out.toString();
+                    }
+                }
+                if (status >= 200 && status < 300) {
+                    if (body.trim().isEmpty()) {
+                        throw new ApiException("EMPTY", "NEIS 서버가 빈 응답을 보냈습니다.");
+                    }
+                    return body;
+                }
 
-        if (status < 200 || status >= 300)
-            throw new ApiException("HTTP-" + status, "NEIS 서버 HTTP 오류 " + status);
-        return body.toString();
+                if (status >= 500 && status <= 504 && attempt == 0) {
+                    try { Thread.sleep(650); }
+                    catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new ApiException("CANCELLED", "조회가 중단되었습니다.");
+                    }
+                    continue;
+                }
+                String detail = neisErrorSummary(body);
+                if (status == 429) {
+                    throw new ApiException("HTTP-429", "조회 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+                }
+                if (status >= 500) {
+                    throw new ApiException("HTTP-" + status,
+                            "NEIS 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+                                    + detail + "\\n학교 검색은 인증키 없이 제한된 샘플 조회도 가능합니다.");
+                }
+                throw new ApiException("HTTP-" + status,
+                        "NEIS 연결이 거부되었습니다. 인증키 및 API 사용 권한을 확인해 주세요." + detail);
+            } catch (java.net.SocketTimeoutException ex) {
+                if (attempt == 1) throw new ApiException("TIMEOUT", "NEIS 응답 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.");
+            } catch (java.io.IOException ex) {
+                if (attempt == 1) throw new ApiException("NETWORK",
+                        "인터넷 또는 NEIS 서버 연결에 실패했습니다. 네트워크 연결을 확인해 주세요.");
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+        throw new ApiException("RETRY", "NEIS 재시도 후에도 요청이 실패했습니다.");
+    }
+
+    private String neisErrorSummary(String body) {
+        if (body == null || body.trim().isEmpty()) return "";
+        try {
+            JSONObject root = new JSONObject(body);
+            JSONObject result = root.optJSONObject("RESULT");
+            if (result != null) {
+                String code = result.optString("CODE", "");
+                String msg = result.optString("MESSAGE", "");
+                if (!code.isEmpty()) return "\\nNEIS 코드: " + code + (msg.isEmpty() ? "" : "\\n" + msg);
+            }
+        } catch (Exception ignored) {
+            // HTML error pages are not shown: they can include gateway diagnostics.
+        }
+        return "";
+    }
+
+    public static boolean canTrySampleSearch(Exception e) {
+        if (!(e instanceof ApiException)) return false;
+        String code = ((ApiException)e).code;
+        return code.startsWith("HTTP-5") || code.equals("ERROR-500")
+                || code.equals("ERROR-600") || code.equals("ERROR-601");
     }
 
     private String enc(String s) throws Exception {

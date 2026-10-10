@@ -256,7 +256,7 @@ public class MainActivity extends Activity {
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne 2.0.0-dev.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
+        c.addView(cardText("StudyOne 2.0.1-dev.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
         return s;
     }
 
@@ -292,8 +292,47 @@ public class MainActivity extends Activity {
 
     private void searchSchool(String name){
         toast("학교를 검색하고 있습니다…");
-        io.execute(()->{try{List<Models.School> r=neis.searchSchools(storage.apiKey(),name);runOnUiThread(()->schoolResults(r));}
-        catch(Exception e){runOnUiThread(()->error("학교 검색 실패",e));}});
+        io.execute(()->{
+            try {
+                List<Models.School> results=neis.searchSchools(storage.apiKey(),name);
+                runOnUiThread(()->schoolResults(results));
+            } catch (Exception firstError) {
+                if (!storage.apiKey().trim().isEmpty() && NeisClient.canTrySampleSearch(firstError)) {
+                    try {
+                        // Official NEIS sample mode is limited to 5 matches.
+                        List<Models.School> sample=neis.searchSchools("",name);
+                        runOnUiThread(()->new AlertDialog.Builder(this)
+                                .setTitle("학교 검색 대체 조회")
+                                .setMessage("인증키를 사용한 학교 검색이 실패했습니다.\\n"
+                                        +"NEIS 공식 샘플 모드에서 최대 5건을 조회했습니다.\\n"
+                                        +"전체 검색 결과가 아닐 수 있으니 학교명과 주소를 꼭 확인해 주세요.\\n\\n"
+                                        +"실제 시간표·급식 조회에는 정상 인증키가 필요합니다.")
+                                .setPositiveButton("검색 결과 보기",(d,w)->schoolResults(sample))
+                                .setNegativeButton("취소",null)
+                                .show());
+                        return;
+                    } catch (Exception sampleError) {
+                        runOnUiThread(()->new AlertDialog.Builder(this)
+                                .setTitle("학교 검색 실패")
+                                .setMessage("인증키 검색과 제한된 샘플 검색이 모두 실패했습니다.\\n\\n"
+                                        +"인증키 요청: "+safeError(firstError)+"\\n"
+                                        +"샘플 요청: "+safeError(sampleError)+"\\n\\n"
+                                        +"NEIS 서버 문제일 수 있으므로 잠시 후 재시도해 주세요.")
+                                .setPositiveButton("확인",null)
+                                .show());
+                        return;
+                    }
+                }
+                runOnUiThread(()->error("학교 검색 실패",firstError));
+            }
+        });
+    }
+
+    private String safeError(Exception e) {
+        if (e instanceof NeisClient.ApiException) {
+            return ((NeisClient.ApiException)e).code;
+        }
+        return "NETWORK";
     }
 
     private void schoolResults(List<Models.School> r){
