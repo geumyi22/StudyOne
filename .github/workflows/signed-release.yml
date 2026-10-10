@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 jobs:
-  signed-release:
+  build-signed:
     if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -106,6 +106,31 @@ jobs:
           echo "Release signature fingerprint verified (SHA-256)"
           sha256sum "$APK"
 
+      - name: Upload verified signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-v3-signed-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/studyone-release.jks"
+
+  emulator-smoke:
+    needs: build-signed
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - name: Checkout tested app sources
+        uses: actions/checkout@v5
+
+      - name: Download signed APK
+        uses: actions/download-artifact@v5
+        with:
+          name: StudyOne-v3-signed-apk
+          path: signed
+
       - name: Download v2.8 signed APK for upgrade test
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -136,7 +161,32 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: UPGRADE_BASE_APK=previous/StudyOne-v2.8.0-beta.1.apk bash scripts/emulator-smoke.sh app/build/outputs/apk/release/app-release.apk
+          script: UPGRADE_BASE_APK=previous/StudyOne-v2.8.0-beta.1.apk bash scripts/emulator-smoke.sh signed/app-release.apk
+
+  publish:
+    needs: emulator-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout release docs
+        uses: actions/checkout@v5
+
+      - name: Download validated signed APK
+        uses: actions/download-artifact@v5
+        with:
+          name: StudyOne-v3-signed-apk
+          path: signed
+
+      - name: Check current release source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$CURRENT" = "$TESTED_SHA" || { echo "Source has advanced; refuse stale release"; exit 1; }
+          grep -q '"versionName": "3.0.0-beta.1"' version.json
 
       - name: Prepare release and updater metadata
         env:
@@ -151,7 +201,7 @@ jobs:
             exit 1
           fi
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/StudyOne-v3.0.0-beta.1.apk"
+          cp signed/app-release.apk "dist/StudyOne-v3.0.0-beta.1.apk"
           (cd dist && sha256sum StudyOne-v3.0.0-beta.1.apk > StudyOne-v3.0.0-beta.1.sha256)
           python3 - <<'PY'
           import json,hashlib
@@ -181,7 +231,3 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "StudyOne V3 Beta 1 - AI Study Assistant" \
             --notes-file docs/RELEASE-3.0.0-BETA.md --prerelease
-
-      - name: Remove temporary signing key
-        if: always()
-        run: rm -f "$RUNNER_TEMP/studyone-release.jks"
