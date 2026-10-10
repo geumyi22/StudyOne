@@ -1,15 +1,14 @@
 {
-  "versionCode": 20800,
-  "versionName": "2.8.0-beta.1",
+  "versionCode": 30000,
+  "versionName": "3.0.0-beta.1",
   "channel": "beta",
-  "minimumVersionCode": 20000,
+  "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "In-app version check against trusted public GitHub releases",
-    "Download and SHA-256 verification before installing",
-    "Same package and signing certificate verification",
-    "Android system confirmation required; no silent install",
-    "Fixed signing via repository Actions secrets (production release only)",
-    "Prior 2.7 beta build may require one-time migration"
+    "Opt-in OpenAI Responses API study assistant using user-provided API key",
+    "Step-by-step tutoring, study plan and review quizzes",
+    "Every request shows data to be sent for confirmation; task sharing off by default",
+    "Android Keystore AES-GCM encrypted API key not included in backups",
+    "Existing features, package ID and long-term release signing maintained"
   ]
 }

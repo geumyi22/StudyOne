@@ -12,8 +12,8 @@ android {
         applicationId = "com.studyone.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 20800
-        versionName = "2.8.0-beta.1"
+        versionCode = 30000
+        versionName = "3.0.0-beta.1"
     }
 
     if (!studyOneKeyFile.isNullOrBlank()) {

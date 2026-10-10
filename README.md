@@ -54,3 +54,8 @@ main에 push되면 GitHub Actions의 **Android APK** 워크플로가 debug APK�
 - **고정 배포 서명키는 공개 저장소에 커밋하면 안 됨.** 별도로 비공개 전달된 signing bundle을 GitHub Secrets에 등록해야 signed-release 워크플로를 실행 가능
 - 임시 debug 서명으로 설치된 앱은 기존 키가 고정 배포 키와 다를 수 있어 첫 전환 시 백업 후 재설치 필요; 그 이후엔 같은 키로 덮어쓰기 가능
 - 실제 암호화된 계정/자동 동기화, 자동 설치(무인), Play Store 업데이트는 제공하지 않음
+
+## V3 (v3.0.0-beta.1) — AI 학습 도우미
+실제 OpenAI Responses API를 통한 질문·개념 설명, 복습 퀴즈, 맞춤 공부 계획을 제공합니다. **사용자 개인 OpenAI API 키가 있어야 유료 AI 호출 가능**합니다. 키는 Android Keystore AES-GCM으로 암호화해 보관하고 JSON 백업과 APK/저장소에는 포함하지 않습니다. 과제 전송은 기본 해제이며 매 호출 때 전송 내용을 보여주고 명시적 동의를 받습니다. AI 미사용자도 기존 오프라인 계획 기능을 사용할 수 있습니다.
+
+CI 테스트는 사용자 API 키 없이 **AI JSON 파싱 fixture, 무효 응답 거부, 에뮬레이터 화면 및 기존 서명 APK에서의 앱 덮어쓰기**만 자동 검증합니다. 실제 AI 유료 호출·답변 품질은 별도 검증이 필요합니다.
