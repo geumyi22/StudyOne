@@ -80,6 +80,10 @@ public class MainActivity extends Activity {
         Reminders.schedule(this);
         showTab(0);
         AppUpdates.check(this, false);
+        if(getIntent()!=null && getIntent().getBooleanExtra("studyone_ai_self_test",false)){
+            if(!AiClient.selfTest())throw new IllegalStateException("AI fixture parser test failed");
+            android.util.Log.i("StudyOneAI","AI_OFFLINE_FIXTURE_TEST_PASSED");
+        }
     }
 
     @Override protected void onResume() {
@@ -383,7 +387,7 @@ public class MainActivity extends Activity {
         c.addView(retryUpdate);
 
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne 2.8.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
+        c.addView(cardText("StudyOne 3.0.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
         return s;
     }
 
@@ -557,31 +561,28 @@ public class MainActivity extends Activity {
         ScrollView scroll=page();
         LinearLayout c=column();
         scroll.addView(c);
-        c.addView(section("오늘 공부 계획"));
-        c.addView(cardText("규칙 기반 추천 기능입니다. 외부 AI 서버로 개인 데이터를 전송하지 않습니다.",13));
+        c.addView(section("오늘 공부 계획 · 오프라인"));
+        c.addView(cardText("서버 연결 없이 일정·마감일을 활용해 공부 순서를 정합니다.",13));
         android.content.SharedPreferences prefs=getSharedPreferences("studyone_planner",MODE_PRIVATE);
         EditText budget=input("오늘 공부 가능 시간(분)",String.valueOf(prefs.getInt("daily_minutes",120)));
         budget.setInputType(InputType.TYPE_CLASS_NUMBER);
         c.addView(budget);
         LinearLayout output=card();
-        Button generate=primary("오늘 계획 만들기");
+        Button generate=primary("오프라인 계획 만들기");
         generate.setOnClickListener(view->{
             int minutes;
-            try{
-                minutes=Integer.parseInt(budget.getText().toString().trim());
-            }catch(Exception e){toast("공부 가능 시간을 숫자로 입력해 주세요.");return;}
+            try{minutes=Integer.parseInt(budget.getText().toString().trim());}
+            catch(Exception e){toast("공부 가능 시간을 숫자로 입력해 주세요.");return;}
             if(minutes<20||minutes>600){toast("20분~600분 범위로 입력해 주세요.");return;}
             prefs.edit().putInt("daily_minutes",minutes).apply();
             output.removeAllViews();
             List<Models.StudyTask> list=storage.tasks();
             list.removeIf(task->task.completed||"준비물".equals(task.type));
             list.sort(Comparator.comparingDouble(this::score).reversed());
-            int remaining=minutes;
-            int index=0;
+            int remaining=minutes,index=0;
             for(Models.StudyTask task:list) {
-                if(remaining<20||index>=12)break;
-                int duration="시험".equals(task.type)?45:
-                        ("수행평가".equals(task.type)?40:30);
+                if(remaining<20||index>=12) break;
+                int duration="시험".equals(task.type)?45:("수행평가".equals(task.type)?40:30);
                 duration=Math.min(duration,remaining);
                 output.addView(tv((++index)+". "+task.subject+" · "+task.title,15,TEXT,true));
                 output.addView(tv("집중 "+duration+"분 · "+dDay(task.dueDate),12,MUTED,false));
@@ -590,12 +591,112 @@ public class MainActivity extends Activity {
                 if(remaining>=15){remaining-=10;output.addView(tv("휴식 10분",12,BLUE,false));output.addView(spacer(8));}
             }
             if(index==0)output.addView(tv("추천할 일정이 없습니다. 플래너에 숙제나 시험을 등록해 주세요.",14,MUTED,false));
-            if(remaining>0 && index>0)output.addView(tv("남은 여유 시간 "+remaining+"분",13,MUTED,false));
+            if(remaining>0&&index>0)output.addView(tv("남은 여유 시간 "+remaining+"분",13,MUTED,false));
         });
         c.addView(generate);
         c.addView(output);
-        c.addView(section("향후 AI 연동"));
-        c.addView(cardText("외부 생성형 AI는 아직 연결되지 않았습니다. 서버 및 사용자 동의 없이 학습 정보를 제3자에게 전달하지 않습니다.",13));
+
+        c.addView(section("StudyOne AI 학습 도우미"));
+        c.addView(cardText("선택 사항 · OpenAI API 연결 (gpt-4.1-mini)\n"
+                +"API 키가 있는 경우에만 실행합니다. 실제 호출에는 API 별도 요금이 발생할 수 있습니다."
+                +" 앱이 키나 질문을 GitHub로 보내지 않습니다."
+                +" OpenAI API로 전송할 질문·과제 내용은 매 요청마다 미리 확인합니다.",13));
+        TextView keyStatus=tv(AiSecrets.configured(this)?"API 키: 암호화 저장됨":"API 키: 미설정",13,MUTED,false);
+        c.addView(keyStatus);
+        EditText apiKey=input("개인 OpenAI API 키 입력 (sk-...)", "");
+        apiKey.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        c.addView(apiKey);
+        Button saveKey=secondary("API 키 저장 / 교체");
+        saveKey.setOnClickListener(view->{
+            try {
+                AiSecrets.save(this,apiKey.getText().toString());
+                apiKey.setText("");
+                keyStatus.setText("API 키: 암호화 저장됨");
+                toast("Android Keystore로 API 키를 암호화해 저장했습니다.");
+            }catch(Exception e){
+                toast("API 키 형식과 기기 보안 저장소를 확인하세요.");
+            }
+        });
+        c.addView(saveKey);
+        Button erase=secondary("API 키 삭제");
+        erase.setOnClickListener(view->
+            new AlertDialog.Builder(this).setTitle("저장된 API 키 삭제")
+                .setMessage("기기에 저장된 OpenAI API 키를 삭제할까요?")
+                .setPositiveButton("삭제",(dialog,which)->{
+                    AiSecrets.clear(this);
+                    keyStatus.setText("API 키: 미설정");
+                    apiKey.setText("");
+                    toast("API 키를 삭제했습니다.");
+                }).setNegativeButton("취소",null).show());
+        c.addView(erase);
+
+        Spinner modes=new Spinner(this);
+        String[] labels={"질문 설명","맞춤 공부 계획","복습 퀴즈"};
+        modes.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,labels));
+        c.addView(modes);
+        EditText question=input("AI에게 물어볼 내용 (계획 선택 시 생략 가능)","");
+        question.setSingleLine(false);
+        question.setMinLines(2);
+        question.setMaxLines(5);
+        c.addView(question);
+        CheckBox includeTasks=new CheckBox(this);
+        includeTasks.setText("내 미완료 일정도 AI에 전달 (기본 해제)");
+        includeTasks.setChecked(false);
+        c.addView(includeTasks);
+
+        LinearLayout response=card();
+        response.addView(tv("AI 응답은 여기에 표시됩니다. 전송하기 전 질문과 공유할 일정을 확인하세요.",13,MUTED,false));
+        Button ask=primary("AI에게 질문 보내기");
+        ask.setOnClickListener(view->{
+            if(!AiSecrets.configured(this)){toast("먼저 개인 OpenAI API 키를 설정하세요.");return;}
+            int minutes;
+            try{minutes=Integer.parseInt(budget.getText().toString().trim());}
+            catch(Exception e){minutes=120;}
+            final String prompt;
+            try {
+                prompt=AiClient.makeInput(labels[modes.getSelectedItemPosition()],
+                        question.getText().toString(),minutes,storage.tasks(),includeTasks.isChecked());
+            } catch(Exception e) {
+                toast("질문과 전송 내용을 확인하세요.");
+                return;
+            }
+            new AlertDialog.Builder(this)
+                .setTitle("OpenAI API 전송 전 확인")
+                .setMessage("아래 내용이 외부 OpenAI API로 전송됩니다. API 키는 이 화면에 표시하거나 백업하지 않습니다."
+                        +"\n\n"+prompt
+                        +"\n\nAI 답변은 부정확할 수 있고 API 요금이 발생할 수 있습니다.")
+                .setNegativeButton("취소",null)
+                .setPositiveButton("동의하고 전송",(d,w)->{
+                    ask.setEnabled(false);
+                    response.removeAllViews();
+                    response.addView(tv("AI 답변을 기다리는 중…",14,MUTED,false));
+                    final String mode=labels[modes.getSelectedItemPosition()];
+                    io.execute(()->{
+                        String result;
+                        try {
+                            String key=AiSecrets.read(this);
+                            result=AiClient.ask(key,mode,prompt);
+                        }catch(AiClient.AiError e) {
+                            result="AI 요청 실패: "+e.display;
+                        }catch(Exception e) {
+                            result="AI 연결 실패: 네트워크, 키 저장 상태 또는 응답 오류를 확인해 주세요.";
+                        }
+                        final String shown=result;
+                        runOnUiThread(()->{
+                            if(isFinishing()||isDestroyed())return;
+                            response.removeAllViews();
+                            TextView text=tv(shown,14,TEXT,false);
+                            text.setTextIsSelectable(true);
+                            response.addView(text);
+                            ask.setEnabled(true);
+                        });
+                    });
+                }).show();
+        });
+        c.addView(ask);
+        c.addView(response);
+        c.addView(cardText("개인 API 키가 없어도 위의 오프라인 학습 계획은 이용할 수 있습니다. "
+                +"AI 응답은 참고용이며, 질문·과제의 민감한 개인정보를 보내지 마세요.",12));
         return scroll;
     }
 
