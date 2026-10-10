@@ -152,7 +152,7 @@ jobs:
           fi
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk "dist/StudyOne-v3.0.0-beta.1.apk"
-          (cd dist && sha256sum StudyOne-v2.8.0-beta.1.apk > StudyOne-v2.8.0-beta.1.sha256)
+          (cd dist && sha256sum StudyOne-v3.0.0-beta.1.apk > StudyOne-v3.0.0-beta.1.sha256)
           python3 - <<'PY'
           import json,hashlib
           from pathlib import Path
