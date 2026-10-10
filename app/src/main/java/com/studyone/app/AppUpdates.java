@@ -144,7 +144,7 @@ public final class AppUpdates {
 
     private static int installedVersion(Context ctx) throws Exception {
         PackageInfo info = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
-        return (int) info.getLongVersionCode();
+        return (int) versionCode(info);
     }
 
     private static String getText(String url, int cap) throws Exception {
@@ -238,18 +238,18 @@ public final class AppUpdates {
     private static void verifyApk(Context ctx, File apk, int expectedCode) throws Exception {
         PackageManager manager = ctx.getPackageManager();
         PackageInfo installed = manager.getPackageInfo(
-                ctx.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+                ctx.getPackageName(), signingFlags());
         PackageInfo candidate = manager.getPackageArchiveInfo(
                 apk.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
-        if (candidate == null || candidate.signingInfo == null || installed.signingInfo == null)
+        if (candidate == null)
             throw new SecurityException("No verified signing data");
         if (!ctx.getPackageName().equals(candidate.packageName))
             throw new SecurityException("Wrong app package");
-        if (candidate.getLongVersionCode() != expectedCode
-                || candidate.getLongVersionCode() <= installed.getLongVersionCode())
+        if (versionCode(candidate) != expectedCode
+                || versionCode(candidate) <= versionCode(installed))
             throw new SecurityException("Wrong version");
-        Signature[] current = installed.signingInfo.getApkContentsSigners();
-        Signature[] newer = candidate.signingInfo.getApkContentsSigners();
+        Signature[] current = signatures(installed);
+        Signature[] newer = signatures(candidate);
         if (current == null || newer == null || current.length == 0 ||
                 current.length != newer.length) throw new SecurityException("Signer mismatch");
         for (Signature a : current) {
@@ -257,6 +257,25 @@ public final class AppUpdates {
             for (Signature b : newer) if (a.equals(b)) match = true;
             if (!match) throw new SecurityException("Signer mismatch");
         }
+    }
+
+
+    private static int signingFlags() {
+        if (Build.VERSION.SDK_INT >= 28) return PackageManager.GET_SIGNING_CERTIFICATES;
+        return PackageManager.GET_SIGNATURES;
+    }
+
+    private static long versionCode(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= 28) return info.getLongVersionCode();
+        return info.versionCode;
+    }
+
+    private static Signature[] signatures(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= 28) {
+            if (info.signingInfo == null) return null;
+            return info.signingInfo.getApkContentsSigners();
+        }
+        return info.signatures;
     }
 
     private static String toHex(byte[] bytes) {
@@ -306,7 +325,7 @@ public final class AppUpdates {
             PackageInfo candidate = activity.getPackageManager().getPackageArchiveInfo(
                     target.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
             if (candidate == null) throw new SecurityException();
-            verifyApk(activity, target, (int)candidate.getLongVersionCode());
+            verifyApk(activity, target, (int)versionCode(candidate));
             install(activity);
         } catch (Exception e) {
             check(activity, true);
