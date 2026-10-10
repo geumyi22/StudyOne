@@ -217,7 +217,7 @@ public class MainActivity extends Activity {
         List<Models.StudyTask> tasks=storage.tasks();
         if(tasks.isEmpty()){
             c.addView(spacer(12));
-            c.addView(cardText("등록된 일정이 없습니다.\\n시험, 숙제, 수행평가와 준비물을 추가해 보세요.",14));
+            c.addView(cardText("등록된 일정이 없습니다.\n시험, 숙제, 수행평가와 준비물을 추가해 보세요.",14));
             return s;
         }
 
@@ -289,7 +289,7 @@ public class MainActivity extends Activity {
 
     private String errorHint(String key) {
         String value=storage.lastError(key);
-        return value.isEmpty() ? "" : "\\n최근 동기화 오류: "+value+"\\n재시도 버튼을 눌러 주세요.";
+        return value.isEmpty() ? "" : "\n최근 동기화 오류: "+value+"\n재시도 버튼을 눌러 주세요.";
     }
 
     private String errorSummary(Exception e) {
