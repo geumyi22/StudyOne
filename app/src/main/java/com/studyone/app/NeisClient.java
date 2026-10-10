@@ -82,7 +82,7 @@ public final class NeisClient {
                 if (status >= 500) {
                     throw new ApiException("HTTP-" + status,
                             "NEIS 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
-                                    + detail + "\\n학교 검색은 인증키 없이 제한된 샘플 조회도 가능합니다.");
+                                    + detail + "\n학교 검색은 인증키 없이 제한된 샘플 조회도 가능합니다.");
                 }
                 throw new ApiException("HTTP-" + status,
                         "NEIS 연결이 거부되었습니다. 인증키 및 API 사용 권한을 확인해 주세요." + detail);
@@ -106,7 +106,7 @@ public final class NeisClient {
             if (result != null) {
                 String code = result.optString("CODE", "");
                 String msg = result.optString("MESSAGE", "");
-                if (!code.isEmpty()) return "\\nNEIS 코드: " + code + (msg.isEmpty() ? "" : "\\n" + msg);
+                if (!code.isEmpty()) return "\nNEIS 코드: " + code + (msg.isEmpty() ? "" : "\n" + msg);
             }
         } catch (Exception ignored) {
             // HTML error pages are not shown: they can include gateway diagnostics.

@@ -303,9 +303,9 @@ public class MainActivity extends Activity {
                         List<Models.School> sample=neis.searchSchools("",name);
                         runOnUiThread(()->new AlertDialog.Builder(this)
                                 .setTitle("학교 검색 대체 조회")
-                                .setMessage("인증키를 사용한 학교 검색이 실패했습니다.\\n"
-                                        +"NEIS 공식 샘플 모드에서 최대 5건을 조회했습니다.\\n"
-                                        +"전체 검색 결과가 아닐 수 있으니 학교명과 주소를 꼭 확인해 주세요.\\n\\n"
+                                .setMessage("인증키를 사용한 학교 검색이 실패했습니다.\n"
+                                        +"NEIS 공식 샘플 모드에서 최대 5건을 조회했습니다.\n"
+                                        +"전체 검색 결과가 아닐 수 있으니 학교명과 주소를 꼭 확인해 주세요.\n\n"
                                         +"실제 시간표·급식 조회에는 정상 인증키가 필요합니다.")
                                 .setPositiveButton("검색 결과 보기",(d,w)->schoolResults(sample))
                                 .setNegativeButton("취소",null)
@@ -314,9 +314,9 @@ public class MainActivity extends Activity {
                     } catch (Exception sampleError) {
                         runOnUiThread(()->new AlertDialog.Builder(this)
                                 .setTitle("학교 검색 실패")
-                                .setMessage("인증키 검색과 제한된 샘플 검색이 모두 실패했습니다.\\n\\n"
-                                        +"인증키 요청: "+safeError(firstError)+"\\n"
-                                        +"샘플 요청: "+safeError(sampleError)+"\\n\\n"
+                                .setMessage("인증키 검색과 제한된 샘플 검색이 모두 실패했습니다.\n\n"
+                                        +"인증키 요청: "+safeError(firstError)+"\n"
+                                        +"샘플 요청: "+safeError(sampleError)+"\n\n"
                                         +"NEIS 서버 문제일 수 있으므로 잠시 후 재시도해 주세요.")
                                 .setPositiveButton("확인",null)
                                 .show());
