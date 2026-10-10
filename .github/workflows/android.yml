@@ -73,6 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Checkout for emulator script
+        uses: actions/checkout@v5
+
       - name: Download built APK
         uses: actions/download-artifact@v5
         with:
@@ -94,12 +97,4 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: |
-            adb install -r apk/app-debug.apk
-            adb logcat -c
-            adb shell am start -W -n com.studyone.app/.MainActivity
-            sleep 4
-            adb shell pidof com.studyone.app | grep -E '[0-9]+'
-            adb shell dumpsys activity activities | grep -q "com.studyone.app/.MainActivity"
-            ! adb logcat -d -b crash | grep -q "com.studyone.app"
-            echo "StudyOne emulator smoke test passed"
+          script: bash scripts/emulator-smoke.sh

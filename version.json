@@ -1,14 +1,14 @@
 {
-  "versionCode": 20100,
-  "versionName": "2.1.0-beta.1",
-  "channel": "dev",
+  "versionCode": 20700,
+  "versionName": "2.7.0-beta.1",
+  "channel": "beta",
   "minimumVersionCode": 20000,
   "mandatory": false,
   "notes": [
-    "Native Android v2 foundation",
-    "Strict NEIS school/class validation",
-    "Timetable and lunch cache",
-    "Assignments, performance assessments and exams planner",
-    "Book + check StudyOne icon"
+    "Tasks, exams, calendar, supplies, D-day",
+    "Manual JSON backup/restore without NEIS API keys",
+    "Local study coaching and scheduled reminders",
+    "Home widget and tablet UI",
+    "NEIS network fix remains"
   ]
 }
