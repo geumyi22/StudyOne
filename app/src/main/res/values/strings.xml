@@ -1,2 +1,2 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources><string name="app_name">StudyOne</string></resources>
+<resources><string name="app_name">StudyOne</string><string name="widget_description">학습 일정과 D-day를 확인하는 위젯</string></resources>

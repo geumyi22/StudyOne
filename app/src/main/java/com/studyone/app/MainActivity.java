@@ -51,6 +51,8 @@ public class MainActivity extends Activity {
     private FrameLayout content;
     private TextView title;
     private int currentTab;
+    private static final int BACKUP_EXPORT = 4801;
+    private static final int BACKUP_IMPORT = 4802;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -58,14 +60,30 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
 
-        LinearLayout root = column();
+        boolean tablet=getResources().getConfiguration().smallestScreenWidthDp>=600;
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(tablet ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
-        root.addView(toolbar());
-        content = new FrameLayout(this);
-        root.addView(content, new LinearLayout.LayoutParams(-1,0,1f));
-        root.addView(bottomNav());
+
+        LinearLayout central=column();
+        central.addView(toolbar());
+        content=new FrameLayout(this);
+        central.addView(content,new LinearLayout.LayoutParams(-1,0,1f));
+        if(tablet) {
+            root.addView(tabletNavigation());
+            root.addView(central,new LinearLayout.LayoutParams(0,-1,1f));
+        } else {
+            central.addView(bottomNav());
+            root.addView(central,new LinearLayout.LayoutParams(-1,-1));
+        }
         setContentView(root);
+        Reminders.schedule(this);
         showTab(0);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        StudyWidget.refresh(this);
     }
 
     @Override protected void onDestroy() {
@@ -96,7 +114,7 @@ public class MainActivity extends Activity {
         nav.setGravity(Gravity.CENTER);
         nav.setPadding(dp(4),dp(6),dp(4),dp(8));
         nav.setBackgroundColor(Color.WHITE);
-        String[] n={"홈","시간표","급식","플래너","설정"};
+        String[] n={"홈","시간표","급식","플래너","추천","설정"};
         for(int i=0;i<n.length;i++){
             final int x=i;
             Button b=new Button(this);
@@ -108,6 +126,25 @@ public class MainActivity extends Activity {
         return nav;
     }
 
+    private View tabletNavigation() {
+        LinearLayout rail=column();
+        rail.setBackgroundColor(Color.WHITE);
+        rail.setPadding(dp(8),dp(50),dp(8),dp(12));
+        String[] tabs={"홈","시간표","급식","플래너","추천","설정"};
+        for(int i=0;i<tabs.length;i++){
+            final int index=i;
+            Button b=new Button(this);
+            b.setAllCaps(false);
+            b.setText(tabs[i]);
+            b.setTextSize(14);
+            b.setTextColor(BLUE_DARK);
+            b.setBackgroundColor(Color.TRANSPARENT);
+            b.setOnClickListener(v->showTab(index));
+            rail.addView(b,new LinearLayout.LayoutParams(dp(122),dp(58)));
+        }
+        return rail;
+    }
+
     private void showTab(int tab) {
         currentTab=tab;
         content.removeAllViews();
@@ -115,7 +152,9 @@ public class MainActivity extends Activity {
         else if(tab==1){title.setText("주간 시간표");content.addView(timetable());}
         else if(tab==2){title.setText("이번 주 급식");content.addView(meals());}
         else if(tab==3){title.setText("학습 플래너");content.addView(planner());}
+        else if(tab==4){title.setText("공부 추천");content.addView(studyCoach());}
         else{title.setText("설정");content.addView(settings());}
+        StudyWidget.refresh(this);
     }
 
     private ScrollView page() {
@@ -135,7 +174,7 @@ public class MainActivity extends Activity {
             c.addView(spacer(10));
             c.addView(infoCard("학교 설정이 필요해요",
                     "NEIS 인증키와 학교·학년·반을 등록하면 실제 시간표와 급식을 불러옵니다.",
-                    "설정하기",v->showTab(4)));
+                    "설정하기",v->showTab(5)));
             return s;
         }
 
@@ -162,7 +201,7 @@ public class MainActivity extends Activity {
     private View timetable() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
         if(storage.school()==null){
-            c.addView(infoCard("학교 설정이 필요해요","학교를 설정하면 주간 시간표를 표시합니다.","설정으로",v->showTab(4)));
+            c.addView(infoCard("학교 설정이 필요해요","학교를 설정하면 주간 시간표를 표시합니다.","설정으로",v->showTab(5)));
             return s;
         }
         Button refresh=primary("주간 시간표 동기화");
@@ -192,7 +231,7 @@ public class MainActivity extends Activity {
     private View meals() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
         if(storage.school()==null){
-            c.addView(infoCard("학교 설정이 필요해요","학교를 설정하면 실제 NEIS 중식을 표시합니다.","설정으로",v->showTab(4)));
+            c.addView(infoCard("학교 설정이 필요해요","학교를 설정하면 실제 NEIS 중식을 표시합니다.","설정으로",v->showTab(5)));
             return s;
         }
         Button refresh=primary("급식 동기화"); refresh.setOnClickListener(v->loadMeals(true)); c.addView(refresh); c.addView(spacer(10));
@@ -224,6 +263,10 @@ public class MainActivity extends Activity {
         int done=0;
         for(Models.StudyTask t:tasks) if(t.completed) done++;
         c.addView(cardText("전체 "+tasks.size()+"건 · 완료 "+done+"건 · 미완료 "+(tasks.size()-done)+"건",15));
+
+        Button calendar=secondary("월간 달력에서 일정 보기");
+        calendar.setOnClickListener(view->calendarDialog());
+        c.addView(calendar);
 
         c.addView(section("추천 순서"));
         List<Models.StudyTask> ranked=new ArrayList<>(tasks);
@@ -278,8 +321,59 @@ public class MainActivity extends Activity {
         Button test=secondary("NEIS 연결 테스트");test.setOnClickListener(v->testConnection());c.addView(test);
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
+
+        c.addView(section("학습 알림"));
+        c.addView(cardText("알림은 사용자가 직접 켠 경우에만 작동합니다. 배터리 정책에 따라 설정 시각보다 늦게 도착할 수 있습니다.",12));
+        for(int slot=0;slot<2;slot++){
+            final int id=slot;
+            CheckBox enabled=new CheckBox(this);
+            enabled.setText(slot==0?"아침 일정 알림":"저녁 미완료 일정 알림");
+            enabled.setChecked(Reminders.enabled(this,slot));
+            enabled.setOnCheckedChangeListener((button,checked)->{
+                if(checked && android.os.Build.VERSION.SDK_INT>=33
+                        && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                           !=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},4120);
+                    toast("알림 허용 여부를 확인해 주세요.");
+                }
+                Reminders.setEnabled(this,id,checked);
+            });
+            c.addView(enabled);
+            Button time=secondary("시간 설정: "+
+                    String.format(Locale.KOREAN,"%02d:%02d",Reminders.hour(this,slot),Reminders.minute(this,slot)));
+            time.setOnClickListener(view->
+                new android.app.TimePickerDialog(this,(picker,hour,minute)->{
+                    Reminders.setTime(this,id,hour,minute);
+                    showTab(5);
+                },Reminders.hour(this,id),Reminders.minute(this,id),true).show());
+            c.addView(time);
+        }
+
+        c.addView(section("백업 / 복원"));
+        c.addView(cardText("과제·학교·학년·반 정보만 JSON 파일로 내보냅니다. NEIS 인증키는 절대 포함하지 않습니다. Google Drive나 Dropbox는 기기의 파일 선택기에서 저장 위치로 고를 수 있습니다.",12));
+        Button export=secondary("내 데이터 백업 저장");
+        export.setOnClickListener(view->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-backup.json");
+            startActivityForResult(intent,BACKUP_EXPORT);
+        });
+        c.addView(export);
+        Button restore=secondary("백업 JSON 가져오기");
+        restore.setOnClickListener(view->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent,BACKUP_IMPORT);
+        });
+        c.addView(restore);
+
+        c.addView(section("홈 화면 위젯"));
+        c.addView(cardText("홈 화면을 길게 눌러 위젯 → StudyOne을 선택하세요. 미완료 일정과 가장 가까운 마감일이 표시됩니다.",13));
+
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne 2.1.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
+        c.addView(cardText("StudyOne 2.7.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
         return s;
     }
 
@@ -424,7 +518,117 @@ public class MainActivity extends Activity {
         if(r.isEmpty()){new AlertDialog.Builder(this).setTitle("검색 결과 없음").setMessage("학교명 또는 인증키를 확인하세요.").setPositiveButton("확인",null).show();return;}
         String[] labels=new String[r.size()];
         for(int i=0;i<r.size();i++){Models.School x=r.get(i);labels[i]=x.name+" · "+x.kind+"\n"+x.address;}
-        new AlertDialog.Builder(this).setTitle("학교 선택").setItems(labels,(d,w)->{storage.saveSchool(r.get(w));toast(r.get(w).name+" 선택 완료");showTab(4);}).setNegativeButton("취소",null).show();
+        new AlertDialog.Builder(this).setTitle("학교 선택").setItems(labels,(d,w)->{storage.saveSchool(r.get(w));toast(r.get(w).name+" 선택 완료");showTab(5);}).setNegativeButton("취소",null).show();
+    }
+
+    private void calendarDialog() {
+        android.widget.CalendarView calendar=new android.widget.CalendarView(this);
+        calendar.setOnDateChangeListener((view,year,month,day)->{
+            LocalDate chosen=LocalDate.of(year,month+1,day);
+            List<String> matches=new ArrayList<>();
+            for(Models.StudyTask t:storage.tasks()) {
+                if(chosen.equals(t.dueDate)) {
+                    matches.add((t.completed?"✓ ":"• ")+t.type+" · "+label(t));
+                }
+            }
+            String detail=matches.isEmpty()?"등록된 일정이 없습니다.":String.join("\n",matches);
+            new AlertDialog.Builder(this)
+                    .setTitle(chosen.toString())
+                    .setMessage(detail)
+                    .setPositiveButton("확인",null).show();
+        });
+        new AlertDialog.Builder(this)
+                .setTitle("월간 일정 달력")
+                .setView(calendar)
+                .setPositiveButton("닫기",null).show();
+    }
+
+    private View studyCoach() {
+        ScrollView scroll=page();
+        LinearLayout c=column();
+        scroll.addView(c);
+        c.addView(section("오늘 공부 계획"));
+        c.addView(cardText("규칙 기반 추천 기능입니다. 외부 AI 서버로 개인 데이터를 전송하지 않습니다.",13));
+        android.content.SharedPreferences prefs=getSharedPreferences("studyone_planner",MODE_PRIVATE);
+        EditText budget=input("오늘 공부 가능 시간(분)",String.valueOf(prefs.getInt("daily_minutes",120)));
+        budget.setInputType(InputType.TYPE_CLASS_NUMBER);
+        c.addView(budget);
+        LinearLayout output=card();
+        Button generate=primary("오늘 계획 만들기");
+        generate.setOnClickListener(view->{
+            int minutes;
+            try{
+                minutes=Integer.parseInt(budget.getText().toString().trim());
+            }catch(Exception e){toast("공부 가능 시간을 숫자로 입력해 주세요.");return;}
+            if(minutes<20||minutes>600){toast("20분~600분 범위로 입력해 주세요.");return;}
+            prefs.edit().putInt("daily_minutes",minutes).apply();
+            output.removeAllViews();
+            List<Models.StudyTask> list=storage.tasks();
+            list.removeIf(task->task.completed||"준비물".equals(task.type));
+            list.sort(Comparator.comparingDouble(this::score).reversed());
+            int remaining=minutes;
+            int index=0;
+            for(Models.StudyTask task:list) {
+                if(remaining<20||index>=12)break;
+                int duration="시험".equals(task.type)?45:
+                        ("수행평가".equals(task.type)?40:30);
+                duration=Math.min(duration,remaining);
+                output.addView(tv((++index)+". "+task.subject+" · "+task.title,15,TEXT,true));
+                output.addView(tv("집중 "+duration+"분 · "+dDay(task.dueDate),12,MUTED,false));
+                output.addView(spacer(10));
+                remaining-=duration;
+                if(remaining>=15){remaining-=10;output.addView(tv("휴식 10분",12,BLUE,false));output.addView(spacer(8));}
+            }
+            if(index==0)output.addView(tv("추천할 일정이 없습니다. 플래너에 숙제나 시험을 등록해 주세요.",14,MUTED,false));
+            if(remaining>0 && index>0)output.addView(tv("남은 여유 시간 "+remaining+"분",13,MUTED,false));
+        });
+        c.addView(generate);
+        c.addView(output);
+        c.addView(section("향후 AI 연동"));
+        c.addView(cardText("외부 생성형 AI는 아직 연결되지 않았습니다. 서버 및 사용자 동의 없이 학습 정보를 제3자에게 전달하지 않습니다.",13));
+        return scroll;
+    }
+
+    @Override protected void onActivityResult(int request,int result,android.content.Intent data) {
+        super.onActivityResult(request,result,data);
+        if(result!=RESULT_OK || data==null || data.getData()==null)return;
+        final android.net.Uri uri=data.getData();
+        if(request==BACKUP_EXPORT) {
+            try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
+                if(os==null)throw new IllegalStateException("파일을 열 수 없습니다.");
+                os.write(BackupIo.exportData(storage).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                os.flush();
+                toast("StudyOne 백업을 저장했습니다.");
+            }catch(Exception e){showBackupError(e);}
+        }else if(request==BACKUP_IMPORT) {
+            try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IllegalStateException("파일을 열 수 없습니다.");
+                java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
+                byte[] buffer=new byte[8192];
+                int n;
+                while((n=in.read(buffer))!=-1) {
+                    if(out.size()+n>2_000_000)throw new IllegalArgumentException("2MB 이상의 백업은 가져올 수 없습니다.");
+                    out.write(buffer,0,n);
+                }
+                BackupIo.ParsedBackup parsed=BackupIo.parse(out.toString("UTF-8"));
+                new AlertDialog.Builder(this)
+                        .setTitle("백업 가져오기")
+                        .setMessage("일정 "+parsed.tasks.size()+"건을 가져옵니다. 현재 저장된 일정은 교체됩니다. NEIS 인증키는 변경되지 않습니다. 계속할까요?")
+                        .setPositiveButton("가져오기",(dialog,which)->{
+                            BackupIo.restore(storage,parsed);
+                            showTab(3);
+                            toast("백업 복원을 완료했습니다.");
+                        })
+                        .setNegativeButton("취소",null).show();
+            }catch(Exception e){showBackupError(e);}
+        }
+    }
+
+    private void showBackupError(Exception e) {
+        new AlertDialog.Builder(this)
+                .setTitle("백업 처리 실패")
+                .setMessage(e.getMessage()==null?"파일 형식을 확인하세요.":e.getMessage())
+                .setPositiveButton("확인",null).show();
     }
 
     private void taskDialog(Models.StudyTask existing) {
