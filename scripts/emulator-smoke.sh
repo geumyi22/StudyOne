@@ -14,6 +14,7 @@ fi
 adb logcat -c
 adb shell am start -W -n com.studyone.app/.MainActivity
 sleep 4
+adb shell am force-stop com.studyone.app
 adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_ai_self_test true
 sleep 2
 adb logcat -d -s StudyOneAI:I | grep -q 'AI_OFFLINE_FIXTURE_TEST_PASSED'
