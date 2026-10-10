@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
 }
 
+val studyOneKeyFile = System.getenv("STUDYONE_KEYSTORE_FILE")
+
 android {
     namespace = "com.studyone.app"
     compileSdk = 37
@@ -10,13 +12,31 @@ android {
         applicationId = "com.studyone.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 20700
-        versionName = "2.7.0-beta.1"
+        versionCode = 20800
+        versionName = "2.8.0-beta.1"
+    }
+
+    if (!studyOneKeyFile.isNullOrBlank()) {
+        signingConfigs {
+            create("studyoneProduction") {
+                storeFile = file(studyOneKeyFile)
+                storePassword = System.getenv("STUDYONE_STORE_PASSWORD")
+                keyAlias = System.getenv("STUDYONE_KEY_ALIAS")
+                keyPassword = System.getenv("STUDYONE_KEY_PASSWORD")
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = false
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (!studyOneKeyFile.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("studyoneProduction")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

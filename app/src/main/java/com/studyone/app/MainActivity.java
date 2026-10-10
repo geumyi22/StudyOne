@@ -79,6 +79,7 @@ public class MainActivity extends Activity {
         setContentView(root);
         Reminders.schedule(this);
         showTab(0);
+        AppUpdates.check(this, false);
     }
 
     @Override protected void onResume() {
@@ -372,8 +373,17 @@ public class MainActivity extends Activity {
         c.addView(section("홈 화면 위젯"));
         c.addView(cardText("홈 화면을 길게 눌러 위젯 → StudyOne을 선택하세요. 미완료 일정과 가장 가까운 마감일이 표시됩니다.",13));
 
+        c.addView(section("업데이트"));
+        c.addView(cardText("최신 버전은 공식 GitHub 릴리즈에서 확인합니다. 새 APK는 해시·서명 검증 후 Android 설치 화면을 엽니다. 자동 설치나 강제 업데이트는 하지 않습니다.",12));
+        Button checkUpdates=primary("새 버전 확인");
+        checkUpdates.setOnClickListener(view->AppUpdates.check(this,true));
+        c.addView(checkUpdates);
+        Button retryUpdate=secondary("검증된 업데이트 설치 다시 시도");
+        retryUpdate.setOnClickListener(view->AppUpdates.retryVerifiedInstall(this));
+        c.addView(retryUpdate);
+
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne 2.7.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
+        c.addView(cardText("StudyOne 2.8.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
         return s;
     }
 

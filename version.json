@@ -1,14 +1,15 @@
 {
-  "versionCode": 20700,
-  "versionName": "2.7.0-beta.1",
+  "versionCode": 20800,
+  "versionName": "2.8.0-beta.1",
   "channel": "beta",
   "minimumVersionCode": 20000,
   "mandatory": false,
   "notes": [
-    "Tasks, exams, calendar, supplies, D-day",
-    "Manual JSON backup/restore without NEIS API keys",
-    "Local study coaching and scheduled reminders",
-    "Home widget and tablet UI",
-    "NEIS network fix remains"
+    "In-app version check against trusted public GitHub releases",
+    "Download and SHA-256 verification before installing",
+    "Same package and signing certificate verification",
+    "Android system confirmation required; no silent install",
+    "Fixed signing via repository Actions secrets (production release only)",
+    "Prior 2.7 beta build may require one-time migration"
   ]
 }
