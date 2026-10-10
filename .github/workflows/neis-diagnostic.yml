@@ -11,26 +11,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - name: Compare NEIS schoolInfo HTTP responses
+      - name: Isolate NEIS request headers
         shell: bash
         run: |
           set -euo pipefail
           URL='https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=100&SCHUL_NM=%EC%84%9C%EC%9E%AC%EC%A4%91'
-          for MODE in default app-header browser-header; do
+          for MODE in default accept-json-only custom-user-agent-only browser-agent-only accept-any-only app-combined browser-combined; do
             echo "=== ${MODE} ==="
+            EXTRA=()
             case "${MODE}" in
-              app-header)
-                EXTRA=(-A 'StudyOne/2.0.1 Android' -H 'Accept: application/json')
-                ;;
-              browser-header)
-                EXTRA=(-A 'Mozilla/5.0 (Linux; Android 17) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36' -H 'Accept: application/json')
-                ;;
-              *)
-                EXTRA=()
-                ;;
+              accept-json-only) EXTRA=(-H 'Accept: application/json') ;;
+              custom-user-agent-only) EXTRA=(-A 'StudyOne/2.0.1 Android') ;;
+              browser-agent-only) EXTRA=(-A 'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36') ;;
+              accept-any-only) EXTRA=(-H 'Accept: */*') ;;
+              app-combined) EXTRA=(-A 'StudyOne/2.0.1 Android' -H 'Accept: application/json') ;;
+              browser-combined) EXTRA=(-A 'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36' -H 'Accept: application/json') ;;
             esac
             STATUS=$(curl -sS -m 15 --retry 0 -o /tmp/neis-body -w '%{http_code}' "${EXTRA[@]}" "${URL}" || true)
             echo "HTTP_STATUS=${STATUS}"
-            head -c 320 /tmp/neis-body || true
+            head -c 140 /tmp/neis-body || true
             echo
           done
