@@ -53,6 +53,32 @@ public final class Storage {
         clearSchoolCaches();
     }
 
+    public synchronized boolean shouldAutoFetch(String key, String identity, long maxAgeMinutes) {
+        String raw = getCache(key, identity);
+        if (!raw.isEmpty() && cacheAgeMinutes(key) < maxAgeMinutes) return false;
+        String prefix = "attempt_" + key;
+        String lastIdentity = p.getString(prefix + "_identity", "");
+        long lastAt = p.getLong(prefix + "_timestamp", 0L);
+        long now = System.currentTimeMillis();
+        if (identity.equals(lastIdentity) && lastAt > 0 && now - lastAt >= 0 && now - lastAt < 10 * 60_000L) {
+            return false; // Back off for ten minutes after errors or empty results.
+        }
+        p.edit().putString(prefix + "_identity", identity)
+                .putLong(prefix + "_timestamp", now).apply();
+        return true;
+    }
+
+    public String lastError(String key) { return p.getString("error_" + key, ""); }
+    public void saveLastError(String key, String message) {
+        p.edit().putString("error_" + key, message == null ? "" : message).apply();
+    }
+
+    public void updateTask(Models.StudyTask edited) {
+        List<Models.StudyTask> updated = new ArrayList<>();
+        for (Models.StudyTask t : tasks()) updated.add(t.id == edited.id ? edited : t);
+        saveTasks(updated);
+    }
+
     public void putCache(String key, String identity, String json) {
         p.edit().putString("cache_" + key, json)
                 .putString("cache_" + key + "_identity", identity)
@@ -75,6 +101,9 @@ public final class Storage {
         p.edit()
                 .remove("cache_timetable").remove("cache_timetable_identity").remove("cache_timetable_ts")
                 .remove("cache_meals").remove("cache_meals_identity").remove("cache_meals_ts")
+                .remove("attempt_timetable_identity").remove("attempt_timetable_timestamp")
+                .remove("attempt_meals_identity").remove("attempt_meals_timestamp")
+                .remove("error_timetable").remove("error_meals")
                 .apply();
     }
 

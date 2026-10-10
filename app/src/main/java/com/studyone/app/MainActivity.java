@@ -1,6 +1,7 @@
 package com.studyone.app;
 
 import android.app.Activity;
+import android.app.DatePickerDialog;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -146,12 +147,15 @@ public class MainActivity extends Activity {
         c.addView(section("오늘 시간표")); c.addView(timetableSummary(today));
         c.addView(section("오늘 급식")); c.addView(mealSummary(today));
         c.addView(section("오늘 우선순위")); c.addView(prioritySummary());
+        c.addView(section("내일 준비물")); c.addView(suppliesSummary(today.plusDays(1)));
         c.addView(section("데이터 상태"));
         String tt=storage.getCache("timetable",timetableIdentity());
         String mm=storage.getCache("meals",mealIdentity());
         c.addView(cardText("시간표: "+(tt.isEmpty()?"미동기화":storage.cacheAgeMinutes("timetable")+"분 전")+
-                "\n급식: "+(mm.isEmpty()?"미동기화":storage.cacheAgeMinutes("meals")+"분 전"),14));
-        if(tt.isEmpty()||mm.isEmpty()) refreshAll(false);
+                "\n급식: "+(mm.isEmpty()?"미동기화":storage.cacheAgeMinutes("meals")+"분 전")+
+                (storage.lastError("timetable").isEmpty() ? "" : "\n시간표 오류: "+storage.lastError("timetable"))+
+                (storage.lastError("meals").isEmpty() ? "" : "\n급식 오류: "+storage.lastError("meals")),14));
+        refreshAll(false);
         return s;
     }
 
@@ -164,7 +168,7 @@ public class MainActivity extends Activity {
         Button refresh=primary("주간 시간표 동기화");
         refresh.setOnClickListener(v->loadTimetable(true)); c.addView(refresh); c.addView(spacer(10));
         String raw=storage.getCache("timetable",timetableIdentity());
-        if(raw.isEmpty()){c.addView(cardText("아직 동기화된 시간표가 없습니다.",14));loadTimetable(false);return s;}
+        if(raw.isEmpty()){c.addView(cardText("아직 동기화된 시간표가 없습니다."+errorHint("timetable"),14));loadTimetable(false);return s;}
 
         List<Models.TimetableEntry> list=decodeTimetable(raw);
         LocalDate monday=LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -193,8 +197,10 @@ public class MainActivity extends Activity {
         }
         Button refresh=primary("급식 동기화"); refresh.setOnClickListener(v->loadMeals(true)); c.addView(refresh); c.addView(spacer(10));
         String raw=storage.getCache("meals",mealIdentity());
-        if(raw.isEmpty()){c.addView(cardText("아직 동기화된 급식이 없습니다.",14));loadMeals(false);return s;}
-        for(Models.Meal m:decodeMeals(raw)){
+        if(raw.isEmpty()){c.addView(cardText("아직 동기화된 급식이 없습니다."+errorHint("meals"),14));loadMeals(false);return s;}
+        List<Models.Meal> mealList=decodeMeals(raw);
+        if(mealList.isEmpty()) c.addView(cardText("이번 주 등록된 중식 데이터가 없습니다.",14));
+        for(Models.Meal m:mealList){
             c.addView(section(m.date.format(DateTimeFormatter.ofPattern("M/d E",Locale.KOREAN))));
             LinearLayout box=card(); box.addView(tv(m.menu,15,TEXT,false));
             if(!m.kcal.trim().isEmpty()){TextView k=tv(m.kcal,12,MUTED,false);k.setPadding(0,dp(8),0,0);box.addView(k);}
@@ -205,20 +211,37 @@ public class MainActivity extends Activity {
 
     private View planner() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
-        Button add=primary("+ 과제 / 수행평가 / 시험 추가"); add.setOnClickListener(v->addTaskDialog()); c.addView(add);
+        Button add=primary("+ 과제 / 수행평가 / 시험 / 준비물 추가");
+        add.setOnClickListener(v->taskDialog(null)); c.addView(add);
+
         List<Models.StudyTask> tasks=storage.tasks();
-        if(tasks.isEmpty()){c.addView(spacer(12));c.addView(cardText("등록된 일정이 없습니다.\n일정을 추가하면 우선순위를 계산합니다.",14));return s;}
+        if(tasks.isEmpty()){
+            c.addView(spacer(12));
+            c.addView(cardText("등록된 일정이 없습니다.\\n시험, 숙제, 수행평가와 준비물을 추가해 보세요.",14));
+            return s;
+        }
+
+        int done=0;
+        for(Models.StudyTask t:tasks) if(t.completed) done++;
+        c.addView(cardText("전체 "+tasks.size()+"건 · 완료 "+done+"건 · 미완료 "+(tasks.size()-done)+"건",15));
 
         c.addView(section("추천 순서"));
-        List<Models.StudyTask> ranked=new ArrayList<>(tasks); ranked.removeIf(t->t.completed);
+        List<Models.StudyTask> ranked=new ArrayList<>(tasks);
+        ranked.removeIf(t->t.completed);
         ranked.sort(Comparator.comparingDouble(this::score).reversed());
-        LinearLayout rec=card(); int count=0;
-        for(Models.StudyTask t:ranked){if(count>=3)break;count++;rec.addView(tv(count+". "+label(t),15,TEXT,true));rec.addView(spacer(7));}
-        if(count==0)rec.addView(tv("오늘 할 일을 모두 완료했습니다.",14,MUTED,false));
+        LinearLayout rec=card();
+        int count=0;
+        for(Models.StudyTask t:ranked){
+            if(count>=3) break;
+            count++;
+            rec.addView(tv(count+". "+label(t)+"   "+dDay(t.dueDate),15,TEXT,true));
+            rec.addView(spacer(7));
+        }
+        if(count==0) rec.addView(tv("모든 일정을 완료했습니다.",14,MUTED,false));
         c.addView(rec);
 
         c.addView(section("전체 일정"));
-        for(Models.StudyTask t:tasks)c.addView(taskCard(t));
+        for(Models.StudyTask t:tasks) c.addView(taskCard(t));
         return s;
     }
 
@@ -256,29 +279,91 @@ public class MainActivity extends Activity {
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne 2.0.2-dev.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
+        c.addView(cardText("StudyOne 2.1.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
         return s;
     }
 
-    private void refreshAll(boolean announce){if(storage.school()==null){if(announce)toast("학교를 먼저 설정하세요.");return;}loadTimetable(announce);loadMeals(false);}
-
-    private void loadTimetable(boolean announce){
-        Models.School school=storage.school();if(school==null)return;
-        LocalDate monday=LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),friday=monday.plusDays(4);
-        io.execute(()->{try{
-            List<Models.TimetableEntry> list=neis.fetchTimetable(storage.apiKey(),school,storage.grade(),storage.className(),monday,friday);
-            storage.putCache("timetable",timetableIdentity(),encodeTimetable(list));
-            runOnUiThread(()->{if(announce)toast("시간표 동기화 완료: "+list.size()+"개 수업");if(currentTab==0||currentTab==1)showTab(currentTab);});
-        }catch(Exception e){runOnUiThread(()->{if(announce||storage.getCache("timetable",timetableIdentity()).isEmpty())error("시간표 동기화 실패",e);});}});
+    private LocalDate weekStart() {
+        return LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
     }
 
-    private void loadMeals(boolean announce){
-        Models.School school=storage.school();if(school==null)return;LocalDate from=LocalDate.now(),to=from.plusDays(6);
-        io.execute(()->{try{
-            List<Models.Meal> list=neis.fetchMeals(storage.apiKey(),school,from,to);
-            storage.putCache("meals",mealIdentity(),encodeMeals(list));
-            runOnUiThread(()->{if(announce)toast("급식 동기화 완료");if(currentTab==0||currentTab==2)showTab(currentTab);});
-        }catch(Exception e){runOnUiThread(()->{if(announce||storage.getCache("meals",mealIdentity()).isEmpty())error("급식 동기화 실패",e);});}});
+    private String errorHint(String key) {
+        String value=storage.lastError(key);
+        return value.isEmpty() ? "" : "\\n최근 동기화 오류: "+value+"\\n재시도 버튼을 눌러 주세요.";
+    }
+
+    private String errorSummary(Exception e) {
+        if(e instanceof NeisClient.ApiException) {
+            return ((NeisClient.ApiException)e).code;
+        }
+        return "NETWORK";
+    }
+
+    private void refreshAll(boolean manual) {
+        if(storage.school()==null) {
+            if(manual) toast("학교를 먼저 설정하세요.");
+            return;
+        }
+        loadTimetable(manual);
+        loadMeals(manual);
+    }
+
+    private void loadTimetable(boolean manual) {
+        Models.School school=storage.school();
+        if(school==null)return;
+        LocalDate monday=weekStart(),friday=monday.plusDays(4);
+        String identity=timetableIdentity();
+        if(!manual && !storage.shouldAutoFetch("timetable",identity,180)) return;
+        int grade=storage.grade();
+        String cl=storage.className();
+        String key=storage.apiKey();
+        io.execute(()->{
+            try{
+                List<Models.TimetableEntry> list=neis.fetchTimetable(key,school,grade,cl,monday,friday);
+                if(!identity.equals(timetableIdentity()))return; // A settings change invalidated this response.
+                storage.putCache("timetable",identity,encodeTimetable(list));
+                storage.saveLastError("timetable","");
+                runOnUiThread(()->{
+                    if(manual)toast("시간표 동기화 완료: "+list.size()+"개 수업");
+                    if(currentTab==0||currentTab==1)showTab(currentTab);
+                });
+            }catch(Exception e){
+                if(!identity.equals(timetableIdentity()))return;
+                storage.saveLastError("timetable",errorSummary(e));
+                runOnUiThread(()->{
+                    if(manual)error("시간표 동기화 실패",e);
+                    else if(currentTab==0||currentTab==1)showTab(currentTab);
+                });
+            }
+        });
+    }
+
+    private void loadMeals(boolean manual) {
+        Models.School school=storage.school();
+        if(school==null)return;
+        LocalDate from=weekStart(),to=from.plusDays(6);
+        String identity=mealIdentity();
+        if(!manual && !storage.shouldAutoFetch("meals",identity,180)) return;
+        String key=storage.apiKey();
+        io.execute(()->{
+            try{
+                List<Models.Meal> list=neis.fetchMeals(key,school,from,to);
+                if(!identity.equals(mealIdentity()))return;
+                storage.putCache("meals",identity,encodeMeals(list));
+                storage.saveLastError("meals","");
+                runOnUiThread(()->{
+                    if(manual)toast("급식 동기화 완료: "+list.size()+"건");
+                    if(currentTab==0||currentTab==2)showTab(currentTab);
+                });
+            }catch(Exception e){
+                if(!identity.equals(mealIdentity()))return;
+                storage.saveLastError("meals",errorSummary(e));
+                runOnUiThread(()->{
+                    if(manual)error("급식 동기화 실패",e);
+                    else if(currentTab==0||currentTab==2)showTab(currentTab);
+                });
+            }
+        });
     }
 
     private void testConnection(){
@@ -342,28 +427,99 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("학교 선택").setItems(labels,(d,w)->{storage.saveSchool(r.get(w));toast(r.get(w).name+" 선택 완료");showTab(4);}).setNegativeButton("취소",null).show();
     }
 
-    private void addTaskDialog(){
-        LinearLayout box=column();box.setPadding(dp(18),dp(4),dp(18),0);
-        Spinner type=new Spinner(this);String[] types={"과제","수행평가","시험"};
+    private void taskDialog(Models.StudyTask existing) {
+        LinearLayout box=column();
+        box.setPadding(dp(18),dp(4),dp(18),0);
+        Spinner type=new Spinner(this);
+        String[] types={"과제","수행평가","시험","준비물"};
         type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,types));
-        EditText subject=input("과목",""),task=input("내용",""),due=input("마감일 YYYY-MM-DD",LocalDate.now().plusDays(1).toString()),importance=input("중요도 1~3","2");
+        if(existing!=null){
+            for(int i=0;i<types.length;i++)if(types[i].equals(existing.type))type.setSelection(i);
+        }
+        EditText subject=input("과목",existing==null?"":existing.subject);
+        EditText task=input("내용",existing==null?"":existing.title);
+        LocalDate picked=existing==null?LocalDate.now().plusDays(1):existing.dueDate;
+        EditText due=input("마감일 선택",picked.toString());
+        due.setFocusable(false);
+        due.setOnClickListener(view->{
+            LocalDate current;
+            try{current=LocalDate.parse(due.getText().toString());}
+            catch(Exception e){current=LocalDate.now();}
+            new DatePickerDialog(this,(picker,y,month,day)->
+                    due.setText(LocalDate.of(y,month+1,day).toString()),
+                    current.getYear(),current.getMonthValue()-1,current.getDayOfMonth()).show();
+        });
+        EditText importance=input("중요도 1~3",existing==null?"2":String.valueOf(existing.importance));
         importance.setInputType(InputType.TYPE_CLASS_NUMBER);
         box.addView(type);box.addView(subject);box.addView(task);box.addView(due);box.addView(importance);
-        new AlertDialog.Builder(this).setTitle("학습 일정 추가").setView(box).setPositiveButton("추가",(d,w)->{try{
-            String t=task.getText().toString().trim();if(t.isEmpty())throw new IllegalArgumentException();
-            LocalDate date=LocalDate.parse(due.getText().toString().trim());
-            int imp=Math.max(1,Math.min(3,Integer.parseInt(importance.getText().toString().trim())));
-            storage.addTask(new Models.StudyTask(System.currentTimeMillis(),types[type.getSelectedItemPosition()],subject.getText().toString().trim(),t,date,imp,false));showTab(3);
-        }catch(Exception e){toast("입력값을 확인하세요. 날짜는 YYYY-MM-DD입니다.");}}).setNegativeButton("취소",null).show();
+        new AlertDialog.Builder(this).setTitle(existing==null?"학습 일정 추가":"학습 일정 수정")
+                .setView(box).setPositiveButton(existing==null?"추가":"저장",(d,w)->{
+                    try{
+                        String t=task.getText().toString().trim();
+                        if(t.isEmpty())throw new IllegalArgumentException();
+                        LocalDate date=LocalDate.parse(due.getText().toString().trim());
+                        int imp=Integer.parseInt(importance.getText().toString().trim());
+                        if(imp<1||imp>3)throw new IllegalArgumentException();
+                        long id=existing==null?System.currentTimeMillis():existing.id;
+                        Models.StudyTask updated=new Models.StudyTask(id,
+                                types[type.getSelectedItemPosition()],
+                                subject.getText().toString().trim(),t,date,imp,
+                                existing!=null&&existing.completed);
+                        if(existing==null)storage.addTask(updated);
+                        else storage.updateTask(updated);
+                        showTab(3);
+                    }catch(Exception e){toast("내용, 날짜, 중요도(1~3)를 확인하세요.");}
+                }).setNegativeButton("취소",null).show();
     }
 
-    private View taskCard(Models.StudyTask t){
-        LinearLayout box=card(),row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
-        CheckBox check=new CheckBox(this);check.setChecked(t.completed);check.setOnCheckedChangeListener((b,v)->{storage.setTaskCompleted(t.id,v);showTab(3);});
-        LinearLayout texts=column();texts.addView(tv(label(t),15,t.completed?MUTED:TEXT,true));texts.addView(tv(t.type+" · "+t.dueDate+" · 중요도 "+t.importance,12,MUTED,false));
-        row.addView(check);row.addView(texts,new LinearLayout.LayoutParams(0,-2,1f));
-        Button del=new Button(this);del.setText("삭제");del.setTextSize(11);del.setAllCaps(false);del.setOnClickListener(v->{storage.deleteTask(t.id);showTab(3);});
-        row.addView(del,new LinearLayout.LayoutParams(dp(64),dp(45)));box.addView(row);return box;
+    private View taskCard(Models.StudyTask t) {
+        LinearLayout box=card(),row=new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        CheckBox check=new CheckBox(this);
+        check.setChecked(t.completed);
+        check.setOnCheckedChangeListener((b,checked)->{
+            storage.setTaskCompleted(t.id,checked);
+            showTab(3);
+        });
+        LinearLayout texts=column();
+        texts.addView(tv(label(t),15,t.completed?MUTED:TEXT,true));
+        texts.addView(tv(t.type+" · "+t.dueDate+" · "+dDay(t.dueDate)
+                +" · 중요도 "+t.importance,12,MUTED,false));
+        row.addView(check);
+        row.addView(texts,new LinearLayout.LayoutParams(0,-2,1f));
+        box.addView(row);
+        LinearLayout controls=new LinearLayout(this);
+        Button edit=secondary("수정");
+        controls.addView(edit,new LinearLayout.LayoutParams(0,dp(46),1f));
+        edit.setOnClickListener(v->taskDialog(t));
+        Button delete=secondary("삭제");
+        controls.addView(delete,new LinearLayout.LayoutParams(0,dp(46),1f));
+        delete.setOnClickListener(v->
+                new AlertDialog.Builder(this).setTitle("일정 삭제")
+                        .setMessage(label(t)+"을(를) 삭제할까요?")
+                        .setPositiveButton("삭제",(d,w)->{storage.deleteTask(t.id);showTab(3);})
+                        .setNegativeButton("취소",null).show());
+        box.addView(controls);
+        return box;
+    }
+
+    private String dDay(LocalDate date) {
+        long days=java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(),date);
+        if(days==0)return "D-day";
+        if(days<0)return "D+"+(-days);
+        return "D-"+days;
+    }
+
+    private View suppliesSummary(LocalDate date) {
+        LinearLayout box=card();
+        int count=0;
+        for(Models.StudyTask t:storage.tasks()){
+            if(!t.completed && "준비물".equals(t.type) && date.equals(t.dueDate)){
+                count++;box.addView(tv("☐ "+label(t),14,TEXT,false));box.addView(spacer(5));
+            }
+        }
+        if(count==0)box.addView(tv("등록된 준비물이 없습니다.",14,MUTED,false));
+        return box;
     }
 
     private double score(Models.StudyTask t){
@@ -394,8 +550,8 @@ public class MainActivity extends Activity {
         for(int i=0;i<Math.min(3,list.size());i++){box.addView(tv((i+1)+". "+label(list.get(i)),14,TEXT,i==0));box.addView(spacer(6));}return box;
     }
 
-    private String timetableIdentity(){Models.School s=storage.school();return s==null?"":s.identity()+":"+storage.grade()+":"+storage.className();}
-    private String mealIdentity(){Models.School s=storage.school();return s==null?"":s.identity();}
+    private String timetableIdentity(){Models.School s=storage.school();return s==null?"":s.identity()+":"+storage.grade()+":"+storage.className()+":"+weekStart();}
+    private String mealIdentity(){Models.School s=storage.school();return s==null?"":s.identity()+":"+weekStart();}
 
     private String encodeTimetable(List<Models.TimetableEntry> list){
         JSONArray a=new JSONArray();try{for(Models.TimetableEntry e:list){JSONObject o=new JSONObject();o.put("date",e.date.toString());o.put("period",e.period);o.put("subject",e.subject);a.put(o);}}catch(Exception ignored){}return a.toString();

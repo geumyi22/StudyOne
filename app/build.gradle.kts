@@ -10,8 +10,8 @@ android {
         applicationId = "com.studyone.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 20002
-        versionName = "2.0.2-dev.1"
+        versionCode = 20100
+        versionName = "2.1.0-beta.1"
     }
 
     buildTypes {
