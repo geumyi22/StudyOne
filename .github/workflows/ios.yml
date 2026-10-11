@@ -1,0 +1,52 @@
+name: StudyOne iOS unsigned IPA
+
+on:
+  push:
+    branches:
+      - main
+      - feat/studyone-ios
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studyone-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show macOS and Xcode versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodegen --version
+
+      - name: Build unsigned iOS IPA
+        run: bash ios/scripts/build_unsigned_ipa.sh
+
+      - name: Upload IPA and SHA-256
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-v3.0.0-beta.1-iOS-unsigned
+          path: |
+            ios/dist/*.ipa
+            ios/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
