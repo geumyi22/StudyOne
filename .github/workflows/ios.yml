@@ -4,9 +4,9 @@ on:
   push:
     branches:
       - main
-      - feat/studyone-ios
     paths:
       - 'ios/**'
+      - 'version.json'
       - '.github/workflows/ios.yml'
   pull_request:
     paths:
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: studyone-ios-${{ github.ref }}
@@ -44,9 +44,46 @@ jobs:
       - name: Upload IPA and SHA-256
         uses: actions/upload-artifact@v4
         with:
-          name: StudyOne-v3.0.0-beta.1-iOS-unsigned
+          name: StudyOne-iOS-unsigned
           path: |
             ios/dist/*.ipa
             ios/dist/*.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Verify IPA matches source version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("version.json"))["versionName"])')"
+          ( cd ios/dist && /usr/bin/shasum -a 256 -c "StudyOne-v${VERSION}-unsigned.ipa.sha256" )
+          test -s "ios/dist/StudyOne-v${VERSION}-unsigned.ipa"
+          unzip -t "ios/dist/StudyOne-v${VERSION}-unsigned.ipa" >/dev/null
+
+      - name: Attach verified unsigned IPA to matching Android prerelease
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("version.json"))["versionName"])')"
+          TAG="v${VERSION}"
+          for attempt in $(seq 1 60); do
+            HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+            if [[ "$HEAD" != "$GITHUB_SHA" ]]; then
+              echo "Main advanced: refuse to publish an obsolete IPA"
+              exit 1
+            fi
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')"
+              test "$TAG_SHA" = "$GITHUB_SHA" || { echo "Version tag does not match tested commit"; exit 1; }
+              gh release upload "$TAG" "ios/dist/StudyOne-v${VERSION}-unsigned.ipa" "ios/dist/StudyOne-v${VERSION}-unsigned.ipa.sha256" --repo "$GITHUB_REPOSITORY"
+              echo "Uploaded verified unsigned IPA to $TAG"
+              exit 0
+            fi
+            echo "Waiting for verified signed Android prerelease: $TAG (attempt $attempt)"
+            sleep 15
+          done
+          echo "Signed Android prerelease not available; IPA is retained as workflow artifact"
+          exit 1

@@ -1,14 +1,14 @@
 {
-  "versionCode": 30000,
-  "versionName": "3.0.0-beta.1",
+  "versionCode": 30001,
+  "versionName": "3.0.0-beta.2",
   "channel": "beta",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Opt-in OpenAI Responses API study assistant using user-provided API key",
-    "Step-by-step tutoring, study plan and review quizzes",
-    "Every request shows data to be sent for confirmation; task sharing off by default",
-    "Android Keystore AES-GCM encrypted API key not included in backups",
-    "Existing features, package ID and long-term release signing maintained"
+    "Android and iOS beta 2 release alignment",
+    "Signed Android APK with preserved package and certificate",
+    "SwiftUI iOS unsigned IPA for separate sideload signing",
+    "NEIS timetable/meals, local tasks and optional OpenAI tutor",
+    "No automatic Android/iOS sync; no physical-device iOS E2E claim"
   ]
 }
