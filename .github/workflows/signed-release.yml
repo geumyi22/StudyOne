@@ -238,5 +238,5 @@ jobs:
             dist/StudyOne-v3.0.0-beta.2.sha256 \
             dist/studyone-update.json \
             --repo "$GITHUB_REPOSITORY" --target "$TESTED_SHA" \
-            --title "StudyOne V3 Beta 1 - AI Study Assistant" \
+            --title "StudyOne V3 Beta 2 - Android and iOS Preview" \
             --notes-file docs/RELEASE-3.0.0-BETA.2.md --prerelease

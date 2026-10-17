@@ -16,3 +16,5 @@ bash ios/scripts/build_unsigned_ipa.sh
 `version.json`에서 버전명을 읽어 `ios/dist/StudyOne-v3.0.0-beta.2-unsigned.ipa`와 SHA-256 파일을 생성합니다. Xcode에서 코드 서명 없이 컴파일되므로, iPhone에는 AltStore/SideStore 등으로 **별도 서명**해서 설치해야 합니다.
 
 공개 릴리즈의 Android APK는 고정 릴리즈 인증서로 서명되지만, 이 IPA는 끝까지 **unsigned**입니다.
+
+GitHub Actions는 테스트된 main 커밋의 Android 서명 프리릴리즈가 생성된 후, **같은 SHA의 태그에만** 검증된 unsigned IPA 및 checksum을 첨부합니다. 서명 APK 배포가 실패하면 iOS 빌드 결과물은 Actions artifact로 남고 GitHub Release에는 첨부하지 않습니다.
