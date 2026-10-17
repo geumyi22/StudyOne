@@ -1,61 +1,45 @@
 # StudyOne
 
-StudyOne은 시간표, 급식, 과제, 수행평가, 시험과 공부 우선순위를 한 앱에서 관리하는 Android 학생 생활 앱입니다.
+학생의 **시간표 · 급식 · 과제 · 수행평가 · 시험 · 공부 계획**을 한곳에서 관리하는 개인 학습 앱입니다. Android 네이티브(Java)와 iOS 네이티브(SwiftUI)로 개발합니다.
 
-## v2 현재 구현
-- Android 네이티브 앱 — WebView 미사용
-- Android 17 / API 37 대상
-- NEIS 학교 검색 및 정확한 학교 선택
-- 학교코드 + 학년 + 반을 다시 검증한 뒤 시간표 표시
-- 실제 NEIS 중식 데이터 및 학교코드 검증
-- API 실패 시 가짜 시간표/급식 표시 금지
-- 마지막 정상 데이터 캐시 유지
-- 과제 / 수행평가 / 시험 로컬 관리
-- 마감일 + 중요도 + 일정 종류 기반 추천
-- 책 + 체크 모티프 StudyOne 아이콘
+> **현재 배포 채널: Beta — v3.0.0-beta.2 (build 30001)**. 정식 Stable 출시가 아니며 iOS 실기기 E2E 검증은 별도입니다.
 
-## 빌드
-- Android Gradle Plugin 9.1.1
-- Gradle 9.3.1
-- JDK 17
-- compileSdk / targetSdk 37
-- minSdk 26
+## 플랫폼 및 실제 지원 기능
 
-main에 push되면 GitHub Actions의 **Android APK** 워크플로가 debug APK를 실제 빌드하고 ZIP 무결성까지 검사합니다.
+| 기능 | Android | iOS |
+| --- | --- | --- |
+| NEIS 학교 검색, 시간표, 중식 | 지원 | 지원 |
+| 과제 · 수행평가 · 시험 관리 | 지원 | 지원 |
+| 오프라인 학습 우선순위 추천 | 지원 | 지원 |
+| OpenAI Responses API 학습 도움 (개인 키 필요) | 지원 | 지원 |
+| JSON 백업/복원 (schema 1) | 지원 | 지원 |
+| 로컬 알림 · 홈 위젯 | 지원 | 미구현 |
+| 앱 내부 APK 업데이트 | 지원 | 해당 없음 |
+| 클라우드 계정 · 실시간 교차기기 동기화 | 미구현 | 미구현 |
 
-## NEIS
-앱 설정에서 개인 NEIS Open API 인증키를 입력합니다. 인증키는 Android 기기 로컬 SharedPreferences에만 저장되며 저장소에 커밋하지 않습니다.
+AI 도우미는 질문 설명, 복습 퀴즈, 계획 작성을 제공합니다. 과제 정보 전송은 기본 해제이며 요청 직전 미리보기·사용자 승인을 거칩니다. 실제 API 호출에는 사용자가 제공한 OpenAI 키가 필요하며 별도 요금이 발생할 수 있습니다.
 
-## 버전
-2.0.0-dev.1
+Android의 OpenAI 키는 Android Keystore AES-GCM, iOS 키는 Keychain에 저장합니다. **키를 소스 코드·GitHub Actions 로그·APK·IPA·JSON 백업에 포함하지 않습니다.** 현 구현은 개인 키를 사용해 기기에서 OpenAI/NEIS에 HTTPS로 직접 접속하며 중앙 서버 프록시 방식은 아닙니다.
 
-## 2.1.0-beta.1
-- 과제/수행평가/시험과 준비물 추가, 수정, 삭제 확인 및 D-day 표시
-- Android 날짜 선택기를 통해 날짜 선택
-- 내일 준비물 홈 화면 표시
-- 이번 주 단위 캐시 키로 오래된 시간표·급식이 다음 주에 남지 않도록 보완
-- 데이터가 비어 있거나 NEIS 요청이 실패했을 때 10분 자동 재시도 대기 (수동 새로고침은 즉시 실행)
-- 수업과 급식 요청 중 학교/반 설정이 바뀌면 이전 응답 폐기
-- 이번 주 중식 조회를 월요일~일요일 범위로 일치
-- 기존 StudyTask JSON 구조 유지, 앱 데이터 삭제 없이 소스에서 읽도록 설계
-- 실제 휴대전화 동기화 내용은 별도로 대조 필요
+## 다운로드 및 업데이트
 
-## v2.7.0-beta.1 통합 베타
-- 실제 구현: Android 네이티브, NEIS 시간표·급식, 과제/수행평가/시험/준비물 관리, 달력, D-day, 로컬 규칙 기반 공부 추천, 시간 지정 로컬 알림, 위젯, 태블릿 탐색, 수동 JSON 백업/복원
-- 미연결: 생성형 AI 백엔드, 계정 및 실시간 클라우드 동기화, 스토어 업데이트, NEIS 학사일정 캘린더, Kotlin/Compose+Room/WorkManager 전면 재설계
-- 인증키는 백업에 포함되지 않으며 앱의 Android 자동 백업은 비활성화했습니다.
-- GitHub Actions 베타 프리릴리즈는 디버그 서명으로 제작되므로 기존 앱과 서명이 다를 수 있습니다.
+- [GitHub Releases](https://github.com/geumyi22/StudyOne/releases): 해당 버전의 Android `StudyOne-v*.apk`, iOS `StudyOne-v*-unsigned.ipa`, SHA-256 검증 파일
+- Android: 고정 릴리즈 서명 버전은 동일 인증서·패키지명·더 높은 versionCode로 덮어쓰기 업데이트됩니다. debug 서명 버전에서는 바로 업데이트되지 않을 수 있습니다.
+- iOS: **미서명 IPA**는 곧바로 설치할 수 없습니다. 별도 서명이 필요하며 아이폰 실기기 설치/외부 서비스 검증은 미완료입니다.
+- Android ↔ iOS 데이터는 자동 동기화되지 않습니다. 수동 JSON 백업/복원은 제공되나 OS별 데이터 파일은 별개입니다.
 
-## v2.8.0-beta.1 앱 내부 안전 업데이트
-- 앱 시작 시 하루 최대 2번 GitHub 공개 릴리즈의 업데이트 메타데이터를 조회하며, 설정에서 수동 확인 가능
-- 업데이트 APK를 내려받으면 **SHA-256, com.studyone.app 패키지, 버전코드, 현 설치 앱과 서명 동일 여부**를 확인
-- 검증되면 Android 시스템 설치 화면으로 연결. 자동 설치 또는 몰래 권한 획득 기능은 없음
-- Android 8+에서 필요 시 '이 출처에서 허용' 설치 권한 안내. Play Store 배포 정책은 별도 검토 필요
-- **고정 배포 서명키는 공개 저장소에 커밋하면 안 됨.** 별도로 비공개 전달된 signing bundle을 GitHub Secrets에 등록해야 signed-release 워크플로를 실행 가능
-- 임시 debug 서명으로 설치된 앱은 기존 키가 고정 배포 키와 다를 수 있어 첫 전환 시 백업 후 재설치 필요; 그 이후엔 같은 키로 덮어쓰기 가능
-- 실제 암호화된 계정/자동 동기화, 자동 설치(무인), Play Store 업데이트는 제공하지 않음
+## 빌드 및 CI
 
-## V3 (v3.0.0-beta.1) — AI 학습 도우미
-실제 OpenAI Responses API를 통한 질문·개념 설명, 복습 퀴즈, 맞춤 공부 계획을 제공합니다. **사용자 개인 OpenAI API 키가 있어야 유료 AI 호출 가능**합니다. 키는 Android Keystore AES-GCM으로 암호화해 보관하고 JSON 백업과 APK/저장소에는 포함하지 않습니다. 과제 전송은 기본 해제이며 매 호출 때 전송 내용을 보여주고 명시적 동의를 받습니다. AI 미사용자도 기존 오프라인 계획 기능을 사용할 수 있습니다.
+- Android: Gradle 9.3.1 / AGP 9.1.1 / JDK 17 / SDK 37 / minSdk 26. [Android APK CI](https://github.com/geumyi22/StudyOne/actions/workflows/android.yml)
+- Android 릴리즈: 고정 인증서 서명, manifest·SHA256 검증, API 36 에뮬레이터 테스트 및 v2.8 설치판에서 덮어쓰기 테스트. [Signed release workflow](https://github.com/geumyi22/StudyOne/actions/workflows/signed-release.yml)
+- iOS: SwiftUI / iOS 16+ / macOS Xcode + XcodeGen, signed IPA가 아닌 **unsigned IPA**. [iOS CI](https://github.com/geumyi22/StudyOne/actions/workflows/ios.yml)
+- 개인 OpenAI 유료 API E2E, 실기기 iOS 기능, 자동 동기화는 CI에서 검증하지 않습니다.
 
-CI 테스트는 사용자 API 키 없이 **AI JSON 파싱 fixture, 무효 응답 거부, 에뮬레이터 화면 및 기존 서명 APK에서의 앱 덮어쓰기**만 자동 검증합니다. 실제 AI 유료 호출·답변 품질은 별도 검증이 필요합니다.
+## 문서
+
+- [버전 매트릭스](docs/VERSION-MATRIX.md) · [CHANGELOG](CHANGELOG.md)
+- [현재 릴리즈 노트](docs/RELEASE-3.0.0-BETA.2.md)
+- [iOS 빌드 및 알려진 한계](ios/README.md)
+- [고정 서명 및 업데이트](docs/SIGNING-AND-UPDATES.md)
+
+기존 역사적 v2.x 및 v3 beta.1 릴리즈와 문서는 삭제하지 않습니다.
