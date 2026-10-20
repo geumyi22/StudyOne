@@ -141,6 +141,35 @@ public final class StudyProgressStorage {
         }
     }
 
+    /** Emulator fixture: exercise portable serialization with no user data writes. */
+    public static boolean selfTestBackup() {
+        try {
+            List<StudyProgressItem> sample = new ArrayList<>();
+            StudyProgressItem item = StudyProgressItem.create(
+                    "과학", "오투", "7-2", StudyProgressItem.TODO, true);
+            sample.add(item);
+            String exported = encode(sample, true).toString();
+            List<StudyProgressItem> parsed = parseBackup(exported);
+            if (parsed.size() != 1) return false;
+            StudyProgressItem copy = parsed.get(0);
+            if (!copy.id.equals(item.id) || !copy.subject.equals(item.subject)
+                    || !copy.material.equals(item.material) || !copy.unit.equals(item.unit)
+                    || !copy.status.equals(item.status) || !copy.inExamScope
+                    || copy.revision != item.revision || copy.updatedAt != item.updatedAt) return false;
+            JSONObject wrongVersion = new JSONObject(exported);
+            wrongVersion.put("schema", 2);
+            try { parseBackup(wrongVersion.toString()); return false; }
+            catch (IllegalArgumentException expected) { /* correct */ }
+            JSONObject duplicate = new JSONObject(exported);
+            duplicate.getJSONArray("items").put(duplicate.getJSONArray("items").getJSONObject(0));
+            try { parseBackup(duplicate.toString()); return false; }
+            catch (IllegalArgumentException expected) { /* correct */ }
+            return true;
+        } catch (Exception unexpected) {
+            return false;
+        }
+    }
+
     /** Call only after import preview and an explicit user confirmation. */
     public synchronized void restoreBackup(List<StudyProgressItem> imported) {
         if (imported == null || imported.size() > LIMIT) {
