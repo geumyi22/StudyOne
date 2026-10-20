@@ -191,4 +191,34 @@ try {
 } catch (InvalidDataException) { /* expected */ }
 Console.WriteLine("StudyOne Windows safe incoming merge and HTTPS endpoints: PASS");
 
+var pendingPlan = new SyncClient.PendingPlan {
+    Id = Guid.NewGuid().ToString("D"), Title = "2026년 10월 21일 공부 계획",
+    State = "pending", TaskCount = 1, CreatedAt = 1792512000,
+    ExpiresAt = 1792512000 + 7 * 86400,
+    Tasks = { new StudyTask { Id = 9876543, Type = "숙제 항목",
+              Subject = "과학", Title = "오투 7-2",
+              DueDate = "2026-10-21", Importance = 2, Completed = false } }
+};
+var proposals = new SyncClient.PendingPlans {
+    Schema = 1, Proposals = { pendingPlan }
+};
+SyncClient.ValidateProposals(proposals);
+Check(pendingPlan.Display.Contains("승인 대기"), "AI proposal must remain pending");
+try {
+    SyncClient.GetPendingPlans("test-token-should-not-be-accepted-as-a-real-secret",
+                               SyncClient.ParseEndpoint("http://127.0.0.1:8765/"))
+        .GetAwaiter().GetResult();
+    throw new InvalidOperationException("Proposals incorrectly supported on insecure HTTP");
+} catch (InvalidOperationException error) {
+    if (error.Message.StartsWith("Proposals incorrectly")) throw;
+}
+pendingPlan.State = "approved";
+ExpectInvalid(() => SyncClient.ValidateProposals(proposals),
+              "Previously approved proposal not displayed as pending");
+pendingPlan.State = "pending";
+pendingPlan.Tasks[0].Importance = 99;
+ExpectInvalid(() => SyncClient.ValidateProposals(proposals),
+              "Malformed AI plan task");
+Console.WriteLine("StudyOne Windows ChatGPT proposal approval gate: PASS");
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
