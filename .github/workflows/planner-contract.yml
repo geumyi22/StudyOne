@@ -37,6 +37,8 @@ jobs:
         run: python3 scripts/tests/check_study_categories.py
       - name: Verify textbook progress parity, isolation and backup compatibility
         run: python3 scripts/tests/check_study_progress.py
+      - name: Validate portable progress JSON transfer and confirmed import safeguards
+        run: python3 scripts/tests/check_study_progress_backup.py
       - name: Compile and smoke-test standalone Java role model
         run: |
           mkdir -p /tmp/studyone-contract-classes
