@@ -88,6 +88,7 @@ def validate_record(kind: str, identifier: str, payload: dict) -> dict:
                 or not _text(payload["subject"], 60)
                 or not _text(payload["material"], 120)
                 or not _text(payload["unit"], 200)
+                or not isinstance(payload["status"], str)
                 or payload["status"] not in STATUSES
                 or type(payload["inExamScope"]) is not bool
                 or not _integer(payload["revision"], 1, MAX_TASK_ID)
