@@ -7,6 +7,7 @@ struct ContentView: View {
             DashboardView().tabItem { Label("홈", systemImage: "house") }
             SchoolView().tabItem { Label("시간표·급식", systemImage: "calendar") }
             TasksView().tabItem { Label("일정", systemImage: "checklist") }
+            StudyProgressView().tabItem { Label("진도", systemImage: "chart.bar.xaxis") }
             AiView().tabItem { Label("AI", systemImage: "sparkles") }
             SettingsView().tabItem { Label("설정", systemImage: "gearshape") }
         }.tint(.indigo)
