@@ -245,8 +245,19 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                 endpoint = urlsplit(self.path)
                 if endpoint.path == "/v2/health" and method == "GET":
                     return self.send_json(200, {"status": "ok", "schema": 2})
-                if endpoint.path not in ("/v2/snapshot", "/v2/changes"):
+                parts = endpoint.path.split("/")
+                proposal_action = None
+                proposal_id = None
+                if (len(parts) == 5 and parts[1:3] == ["v2", "proposals"]
+                        and parts[4] in ("approve", "reject")):
+                    proposal_id = parts[3]
+                    proposal_action = parts[4]
+                if (endpoint.path not in
+                        ("/v2/snapshot", "/v2/changes", "/v2/proposals")
+                        and proposal_action is None):
                     raise ApiProblem(404, "NOT_FOUND")
+                if method == "GET" and proposal_action is not None:
+                    raise ApiProblem(405, "METHOD_NOT_ALLOWED")
                 if method == "GET" and endpoint.path == "/v2/changes":
                     opts = parse_qs(endpoint.query, keep_blank_values=True)
                     if (set(opts) - {"after", "limit"} or
@@ -259,18 +270,26 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                         raise ApiProblem(400, "INVALID_QUERY") from None
                 elif endpoint.query:
                     raise ApiProblem(400, "INVALID_QUERY")
-                if method == "POST" and endpoint.path != "/v2/changes":
+                if (method == "POST" and endpoint.path not in
+                        ("/v2/changes", "/v2/proposals") and proposal_action is None):
                     raise ApiProblem(405, "METHOD_NOT_ALLOWED")
                 if method not in ("GET", "POST"):
                     raise ApiProblem(405, "METHOD_NOT_ALLOWED")
                 auth = self.headers.get("Authorization", "")
                 if not auth.startswith("Bearer ") or auth.count(" ") != 1:
                     raise ApiProblem(401, "UNAUTHORIZED")
-                account, device = registry.authorize(auth[7:], write=(method == "POST"))
+                requires_write = method == "POST" and endpoint.path != "/v2/proposals"
+                account, device = registry.authorize(auth[7:], write=requires_write)
                 store = registry.store(account)
                 if method == "GET":
                     if endpoint.path == "/v2/snapshot":
                         return self.send_json(200, store.snapshot())
+                    if endpoint.path == "/v2/proposals":
+                        try:
+                            from .studyone_proposals import ProposalStore
+                        except ImportError:
+                            from studyone_proposals import ProposalStore
+                        return self.send_json(200, ProposalStore(store).pending())
                     return self.send_json(200, store.changes(after, limit))
                 content_type = self.headers.get("Content-Type", "").split(";")[0].strip()
                 if content_type != "application/json":
@@ -282,6 +301,19 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                 if not 0 < length <= MAX_BODY:
                     raise ApiProblem(413, "REQUEST_TOO_LARGE")
                 body = decode_json(self.rfile.read(length))
+                if endpoint.path == "/v2/proposals" or proposal_action is not None:
+                    try:
+                        from .studyone_proposals import ProposalStore
+                    except ImportError:
+                        from studyone_proposals import ProposalStore
+                    proposals = ProposalStore(store)
+                    if endpoint.path == "/v2/proposals":
+                        return self.send_json(200, proposals.create(body))
+                    if body != {}:
+                        raise ApiProblem(400, "INVALID_ACTION_BODY")
+                    if proposal_action == "approve":
+                        return self.send_json(200, proposals.approve(proposal_id))
+                    return self.send_json(200, proposals.reject(proposal_id))
                 result = store.apply(body)
                 # The mutation is committed before the bounded audit write.
                 # The response stays valid if audit persistence fails.
