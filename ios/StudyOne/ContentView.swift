@@ -441,6 +441,18 @@ struct SettingsView: View {
                     }
                     Button("JSON 백업 불러오기") { importPicker = true }
                 }
+                #if DEBUG
+                Section("로컬 동기화 실험 · Canary") {
+                    NavigationLink {
+                        SyncExperimentView()
+                    } label: {
+                        Label("개발용 서버 연결·새 항목 수동 전송",
+                              systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    Text("실제 클라우드 동기화가 아니며, 기존 기록을 덮어쓰지 않습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                #endif
                 Section("앱 정보") {
                     LabeledContent("버전", value: "3.0.0-beta.1 · iOS")
                     LabeledContent("번들 ID", value: "com.studyone.ios")
