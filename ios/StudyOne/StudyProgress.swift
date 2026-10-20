@@ -69,6 +69,13 @@ struct StudyProgressEnvelope: Codable {
     let items: [StudyProgressItem]
 }
 
+/// Explicit progress-only transfer file; not an old StudyOne daily-task backup.
+struct StudyProgressTransfer: Codable {
+    let format: String
+    let schema: Int
+    let items: [StudyProgressItem]
+}
+
 @MainActor
 final class StudyProgressStore: ObservableObject {
     @Published private(set) var items: [StudyProgressItem] = []
@@ -102,6 +109,39 @@ final class StudyProgressStore: ObservableObject {
         let blob = try JSONEncoder().encode(StudyProgressEnvelope(schema: 1, items: entries))
         UserDefaults.standard.set(blob, forKey: storeKey)
         items = entries
+    }
+
+    /// Files can be shared through Files/iCloud; tokens and existing tasks are excluded.
+    func exportBackup() throws -> URL {
+        guard loadError == nil else {
+            throw StudyError.message(loadError ?? "진도 데이터를 읽을 수 없습니다.")
+        }
+        let document = StudyProgressTransfer(format: "studyone-progress",
+                                             schema: 1, items: items)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let bytes = try encoder.encode(document)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StudyOne-progress-\(Date().studyString()).json")
+        try bytes.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// Fully validate before replacing locally stored progress.
+    func importBackup(data: Data) throws {
+        guard data.count <= 2_000_000 else {
+            throw StudyError.message("진도 백업은 최대 2MB입니다.")
+        }
+        let document = try JSONDecoder().decode(StudyProgressTransfer.self, from: data)
+        let ids = document.items.map(\.id)
+        guard document.format == "studyone-progress",
+              document.schema == 1,
+              document.items.count <= limit,
+              Set(ids).count == ids.count,
+              document.items.allSatisfy(\.valid) else {
+            throw StudyError.message("지원되지 않거나 손상된 StudyOne 진도 백업입니다.")
+        }
+        try persist(document.items)
     }
 
     func add(subject: String, material: String, unit: String,
