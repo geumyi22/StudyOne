@@ -6,6 +6,7 @@ struct StudyProgressView: View {
     @State private var filter = "전체"
     @State private var showingEditor = false
     @State private var editing: StudyProgressItem?
+    @State private var deleting: StudyProgressItem?
     @State private var showError = false
     @State private var errorText = ""
 
@@ -70,7 +71,7 @@ struct StudyProgressView: View {
                                 Spacer(minLength: 8)
                                 Menu {
                                     ForEach(StudyProgressStatus.allCases) { status in
-                                        Button(status.rawValue, systemImage: item.status == status ? "checkmark" : "") {
+                                        Button(status.rawValue) {
                                             do {
                                                 try progress.update(item, subject: item.subject,
                                                                     material: item.material, unit: item.unit,
@@ -94,8 +95,7 @@ struct StudyProgressView: View {
                                     .buttonStyle(.borderless)
                                 Spacer()
                                 Button(role: .destructive) {
-                                    do { try progress.remove(item) }
-                                    catch { self.error(error.localizedDescription) }
+                                    deleting = item
                                 } label: { Label("삭제", systemImage: "trash") }
                                     .buttonStyle(.borderless)
                             }
@@ -129,6 +129,21 @@ struct StudyProgressView: View {
                                          unit: unit, status: status, inExamScope: scope)
                     }
                 }
+            }
+            .confirmationDialog("진도 항목을 삭제할까요?", isPresented: Binding(
+                get: { deleting != nil },
+                set: { if !$0 { deleting = nil } }
+            )) {
+                Button("삭제", role: .destructive) {
+                    if let item = deleting {
+                        do { try progress.remove(item) }
+                        catch { self.error(error.localizedDescription) }
+                    }
+                    deleting = nil
+                }
+                Button("취소", role: .cancel) { deleting = nil }
+            } message: {
+                Text(deleting.map { "\($0.subject) · \($0.unit)" } ?? "")
             }
             .alert("진도 관리 오류", isPresented: $showError) {
                 Button("확인", role: .cancel) {}
