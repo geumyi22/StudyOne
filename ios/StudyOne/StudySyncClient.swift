@@ -1,0 +1,241 @@
+#if DEBUG
+import Foundation
+
+/// Debug-only localhost protocol. Production apps must use verified HTTPS
+/// and user-scoped authentication before any cross-device sync is enabled.
+enum StudySyncClient {
+    static let base = URL(string: "http://127.0.0.1:8765/")!
+    static let statuses: Set<String> = ["확인 필요", "미완료", "진행 중", "완료"]
+    private static let maxResponse = 4_000_000
+
+    struct Record: Decodable {
+        let kind: String
+        let id: String
+        let revision: Int64
+        let deleted: Bool
+    }
+
+    struct Snapshot: Decodable {
+        let schema: Int
+        let cursor: Int64
+        let records: [Record]
+    }
+
+    enum Payload: Encodable {
+        case task(StudyTask)
+        case progress(StudyProgressItem)
+
+        func encode(to encoder: Encoder) throws {
+            switch self {
+            case .task(let value): try value.encode(to: encoder)
+            case .progress(let value): try value.encode(to: encoder)
+            }
+        }
+    }
+
+    struct Mutation: Encodable {
+        let kind: String
+        let id: String
+        let baseRevision: Int
+        let deleted: Bool
+        let payload: Payload
+    }
+
+    private struct Batch: Encodable {
+        let requestId: String
+        let mutations: [Mutation]
+    }
+
+    private struct Ack: Decodable {
+        let schema: Int
+        let cursor: Int64
+        let changes: [AckItem]
+    }
+
+    private struct AckItem: Decodable {
+        let kind: String
+        let id: String
+        let revision: Int64
+    }
+
+    private final class RefuseRedirect: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession,
+                        task: URLSessionTask,
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest,
+                        completionHandler: @escaping (URLRequest?) -> Void) {
+            completionHandler(nil)
+        }
+    }
+
+    private static func checkedToken(_ token: String) throws -> String {
+        guard (32...1024).contains(token.count),
+              token.utf8.allSatisfy({ (33...126).contains($0) }) else {
+            throw StudyError.message("로컬 테스트 토큰은 공백 없는 ASCII 32~1024자로 입력하세요.")
+        }
+        return token
+    }
+
+    private static func request(_ token: String, endpoint: String,
+                                body: Data? = nil) async throws -> Data {
+        let safeToken = try checkedToken(token)
+        guard endpoint == "v1/snapshot" || endpoint == "v1/changes" else {
+            throw StudyError.message("지원되지 않는 동기화 경로입니다.")
+        }
+        if let body, body.count > 262_144 {
+            throw StudyError.message("전송 데이터 크기가 제한을 초과했습니다.")
+        }
+
+        // No credentials, cookies or cache persisted in the app.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 12
+        configuration.timeoutIntervalForResource = 15
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let session = URLSession(configuration: configuration, delegate: RefuseRedirect(),
+                                 delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+
+        var req = URLRequest(url: base.appendingPathComponent(endpoint))
+        req.httpMethod = body == nil ? "GET" : "POST"
+        req.setValue("Bearer " + safeToken, forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        if let body {
+            req.httpBody = body
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+
+        let (responseBody, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw StudyError.message("로컬 동기화 서버의 응답을 확인할 수 없습니다.")
+        }
+        switch http.statusCode {
+        case 200: break
+        case 401: throw StudyError.message("동기화 인증이 거절되었습니다.")
+        case 409: throw StudyError.message("다른 기기의 기록과 충돌했습니다. 다시 조회하세요.")
+        default: throw StudyError.message("로컬 서버 오류: HTTP \(http.statusCode)")
+        }
+        guard responseBody.count <= maxResponse else {
+            throw StudyError.message("서버 응답이 크기 제한을 초과했습니다.")
+        }
+        return responseBody
+    }
+
+    static func snapshot(token: String) async throws -> Snapshot {
+        let bytes = try await request(token, endpoint: "v1/snapshot")
+        let snapshot = try JSONDecoder().decode(Snapshot.self, from: bytes)
+        guard snapshot.schema == 1, snapshot.cursor >= 0,
+              snapshot.records.count <= 7000 else {
+            throw StudyError.message("지원되지 않는 서버 데이터입니다.")
+        }
+        var seen = Set<String>()
+        for record in snapshot.records {
+            guard (record.kind == "task" || record.kind == "progress"),
+                  record.revision > 0, !record.deleted,
+                  !record.id.isEmpty,
+                  seen.insert(record.kind + "#" + record.id).inserted else {
+                throw StudyError.message("서버 기록 형식이나 ID에 오류가 있습니다.")
+            }
+        }
+        return snapshot
+    }
+
+    static func newOnly(tasks: [StudyTask], progress: [StudyProgressItem],
+                        snapshot: Snapshot) throws -> [Mutation] {
+        guard snapshot.schema == 1, tasks.count <= 5000, progress.count <= 2000 else {
+            throw StudyError.message("로컬 또는 서버 데이터 크기가 올바르지 않습니다.")
+        }
+        let remote = Set(snapshot.records.map { $0.kind + "#" + $0.id })
+        var seen = Set<String>()
+        var pending: [Mutation] = []
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        for item in tasks {
+            let id = String(item.id)
+            guard item.id > 0, (1...3).contains(item.importance),
+                  !item.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  item.type.count <= 100,
+                  item.subject.count <= 60, item.title.count <= 500,
+                  !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  item.dueDate.count == 10,
+                  let parsed = dateFormatter.date(from: item.dueDate),
+                  dateFormatter.string(from: parsed) == item.dueDate,
+                  seen.insert("task#" + id).inserted else {
+                throw StudyError.message("일정이 중복되거나 형식이 잘못되었습니다. 전송하지 않습니다.")
+            }
+            if !remote.contains("task#" + id) {
+                pending.append(Mutation(kind: "task", id: id, baseRevision: 0,
+                                        deleted: false, payload: .task(item)))
+            }
+        }
+        for item in progress {
+            let id = item.id
+            guard item.valid, statuses.contains(item.status.rawValue),
+                  seen.insert("progress#" + id).inserted else {
+                throw StudyError.message("진도 항목이 중복되거나 손상되었습니다. 전송하지 않습니다.")
+            }
+            if !remote.contains("progress#" + id) {
+                pending.append(Mutation(kind: "progress", id: id, baseRevision: 0,
+                                        deleted: false, payload: .progress(item)))
+            }
+        }
+        return pending
+    }
+
+    /// No retries and no overwrite; if network result is unknown, re-read.
+    static func uploadNew(token: String, pending: [Mutation]) async throws -> Int {
+        var sent = 0
+        let encoder = JSONEncoder()
+        for offset in stride(from: 0, to: pending.count, by: 50) {
+            let part = Array(pending[offset..<min(offset + 50, pending.count)])
+            let payload = Batch(requestId: UUID().uuidString.lowercased(),
+                                mutations: part)
+            let bytes = try encoder.encode(payload)
+            do {
+                let result = try await request(token, endpoint: "v1/changes", body: bytes)
+                let ack = try JSONDecoder().decode(Ack.self, from: result)
+                guard ack.schema == 1, ack.cursor >= 0,
+                      ack.changes.count == part.count else {
+                    throw StudyError.message("서버 저장 확인이 불완전합니다.")
+                }
+                sent += part.count
+            } catch {
+                throw StudyError.message("전송이 중단되었습니다. \(sent)개 전송 후 추가 저장이 "
+                                         + "발생했을 수 있으니 서버를 다시 조회하세요.")
+            }
+        }
+        return sent
+    }
+
+    /// Local-only deterministic test, no network and no user information.
+    static func selfTest() -> Bool {
+        let task = StudyTask(id: 1730000000000, type: "숙제 항목",
+                             subject: "수학", title: "모의 문제",
+                             dueDate: "2026-10-22", importance: 2, completed: false)
+        let item = try? StudyProgressItem.create(
+            subject: "과학", material: "오투", unit: "7-2",
+            status: .todo, inExamScope: true)
+        guard let item else { return false }
+        do {
+            let empty = Snapshot(schema: 1, cursor: 0, records: [])
+            let initial = try newOnly(tasks: [task], progress: [item], snapshot: empty)
+            guard initial.count == 2, initial.allSatisfy({ $0.baseRevision == 0 }) else {
+                return false
+            }
+            let one = Snapshot(schema: 1, cursor: 1,
+                               records: [Record(kind: "task", id: String(task.id),
+                                                revision: 9, deleted: false)])
+            let filtered = try newOnly(tasks: [task], progress: [item], snapshot: one)
+            guard filtered.count == 1, filtered[0].kind == "progress" else { return false }
+            let both = Snapshot(schema: 1, cursor: 2,
+                                records: one.records +
+                                [Record(kind: "progress", id: item.id,
+                                        revision: 2, deleted: false)])
+            return try newOnly(tasks: [task], progress: [item], snapshot: both).isEmpty
+        } catch { return false }
+    }
+}
+#endif
