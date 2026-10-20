@@ -54,6 +54,8 @@ public class MainActivity extends Activity {
     private int currentTab;
     private static final int BACKUP_EXPORT = 4801;
     private static final int BACKUP_IMPORT = 4802;
+    private static final int PROGRESS_EXPORT = 4803;
+    private static final int PROGRESS_IMPORT = 4804;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -268,10 +270,27 @@ public class MainActivity extends Activity {
         c.addView(roles);
 
         c.addView(section("교재 · 시험범위 · 진도"));
-        c.addView(cardText("새 진도는 교재·단원별로 따로 저장됩니다. 기존 숙제·수행평가 일정은 변경되지 않습니다.\n현재 진도 데이터는 기존 JSON 백업(schema 1)에 포함되지 않습니다. 정식 배포 전에 백업/복구 확장이 필요합니다.",12));
+        c.addView(cardText("교재 진도는 기존 일별 숙제와 별도로 관리합니다. 기존 전체 일정 JSON 백업에는 진도가 포함되지 않으므로 아래의 별도 진도 JSON 백업을 사용하세요.",12));
         Button addProgress=secondary("+ 시험범위 진도 추가");
         addProgress.setOnClickListener(v->progressDialog(null));
         c.addView(addProgress);
+        Button progressExport=secondary("진도 JSON 백업 내보내기");
+        progressExport.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-progress.json");
+            startActivityForResult(intent,PROGRESS_EXPORT);
+        });
+        c.addView(progressExport);
+        Button progressImport=secondary("진도 JSON 백업 가져오기");
+        progressImport.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent,PROGRESS_IMPORT);
+        });
+        c.addView(progressImport);
         try {
             List<StudyProgressItem> progress=progressStorage.list();
             int complete=0, total=0, pending=0;
@@ -759,6 +778,39 @@ public class MainActivity extends Activity {
                 os.flush();
                 toast("StudyOne 백업을 저장했습니다.");
             }catch(Exception e){showBackupError(e);}
+        }else if(request==PROGRESS_EXPORT) {
+            try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
+                if(os==null)throw new IllegalStateException("진도 백업 파일을 열 수 없습니다.");
+                os.write(progressStorage.exportBackup().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                os.flush();
+                toast("진도 JSON 백업을 저장했습니다.");
+            } catch(Exception error) { showBackupError(error); }
+        }else if(request==PROGRESS_IMPORT) {
+            try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IllegalStateException("진도 백업 파일을 열 수 없습니다.");
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+                byte[] buffer=new byte[8192];
+                int n;
+                while((n=in.read(buffer))!=-1) {
+                    if(bytes.size()+n>2_000_000)throw new IllegalArgumentException("진도 백업은 최대 2MB입니다.");
+                    bytes.write(buffer,0,n);
+                }
+                List<StudyProgressItem> parsed=StudyProgressStorage.parseBackup(
+                        bytes.toString("UTF-8"));
+                new AlertDialog.Builder(this)
+                        .setTitle("진도 백업 가져오기")
+                        .setMessage("진도 "+parsed.size()+"개를 확인했습니다.\n"
+                                +"현재 이 기기의 진도 목록만 교체합니다. "
+                                +"학교·과제·수행평가 일정은 그대로 유지합니다. "
+                                +"현재 진도도 먼저 백업하는 것이 좋습니다. 계속할까요?")
+                        .setPositiveButton("진도 교체",(dialog,which)->{
+                            try {
+                                progressStorage.restoreBackup(parsed);
+                                showTab(3);
+                                toast("진도 JSON 복원이 완료되었습니다.");
+                            } catch(Exception error) { showBackupError(error); }
+                        }).setNegativeButton("취소",null).show();
+            } catch(Exception error) { showBackupError(error); }
         }else if(request==BACKUP_IMPORT) {
             try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
                 if(in==null)throw new IllegalStateException("파일을 열 수 없습니다.");
