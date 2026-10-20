@@ -84,4 +84,25 @@ finally
 {
     if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true);
 }
+var emptyRemote = new SyncClient.Snapshot { Schema = 1, Cursor = 0 };
+var pending = SyncClient.NewOnly(tasks, progress, emptyRemote);
+Check(pending.Count == 2, "Two local records are staged for explicit create-only upload");
+Check(pending.All(x => x.BaseRevision == 0 && !x.Deleted), "Never overwrite remote records");
+var existingTask = new SyncClient.RemoteRecord {
+    Kind = "task", Id = tasks.Tasks[0].Id.ToString(),
+    Revision = 9, Deleted = false
+};
+var taskExists = new SyncClient.Snapshot {
+    Schema = 1, Cursor = 3, Records = { existingTask }
+};
+var onlyProgress = SyncClient.NewOnly(tasks, progress, taskExists);
+Check(onlyProgress.Count == 1 && onlyProgress[0].Kind == "progress",
+      "Remote existing task ID is skipped, not overwritten");
+taskExists.Records.Add(new SyncClient.RemoteRecord {
+    Kind = "progress", Id = progress.Items[0].Id, Revision = 7, Deleted = false
+});
+Check(SyncClient.NewOnly(tasks, progress, taskExists).Count == 0,
+      "Existing remote IDs never uploaded");
+Console.WriteLine("StudyOne Windows local-only sync upload guard: PASS");
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
