@@ -77,7 +77,7 @@ struct TasksView: View {
     @State private var showingEditor = false
     @State private var editing: StudyTask?
     @State private var filter = "전체"
-    private let filters = ["전체", "과제", "수행평가", "시험", "준비물"]
+    private let filters = StudyCategories.filters
     private var filtered: [StudyTask] {
         store.tasks.filter { filter == "전체" || $0.type == filter }
             .sorted { $0.dueDate == $1.dueDate ? $0.importance > $1.importance : $0.dueDate < $1.dueDate }
@@ -89,6 +89,17 @@ struct TasksView: View {
                     Picker("구분", selection: $filter) {
                         ForEach(filters, id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.menu)
+                }
+                Section {
+                    DisclosureGroup("5개 학습 분류 역할") {
+                        ForEach(StudyCategories.roles, id: \.title) { role in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(role.title).font(.subheadline.bold())
+                                Text(role.description).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
                 }
                 Section("일정 \(filtered.count)개") {
                     if filtered.isEmpty { Text("등록된 일정이 없습니다.").foregroundStyle(.secondary) }
@@ -134,7 +145,7 @@ struct TaskEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: StudyTask?
     let onSave: (StudyTask) -> Void
-    @State private var type = "과제"
+    @State private var type = "숙제 항목"
     @State private var subject = ""
     @State private var title = ""
     @State private var due = Date()
@@ -143,7 +154,7 @@ struct TaskEditor: View {
         NavigationStack {
             Form {
                 Picker("일정 종류", selection: $type) {
-                    ForEach(["과제", "수행평가", "시험", "준비물"], id: \.self) { Text($0) }
+                    ForEach(StudyCategories.taskTypes(preserving: existing?.type), id: \.self) { Text($0) }
                 }
                 TextField("과목", text: $subject)
                 TextField("할 일", text: $title, axis: .vertical).lineLimit(2...4)
