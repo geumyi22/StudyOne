@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private ProgressBackup progressBackup = new();
     private bool tasksLocked;
     private bool progressLocked;
+    private bool syncBusy;
     private long? selectedTask;
     private string? selectedProgress;
 
@@ -363,4 +364,92 @@ public partial class MainWindow : Window
         }
         catch (Exception error) { ShowError(error.Message); }
     }
+
+    private bool BeginSync()
+    {
+        if (syncBusy) return false;
+        syncBusy = true;
+        SyncPreviewButton.IsEnabled = false;
+        SyncUploadButton.IsEnabled = false;
+        SyncResultText.Text = "로컬 동기화 서버 확인 중…";
+        return true;
+    }
+
+    private void EndSync()
+    {
+        syncBusy = false;
+        SyncPreviewButton.IsEnabled = true;
+        SyncUploadButton.IsEnabled = true;
+    }
+
+    private async void SyncPreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            var snapshot = await SyncClient.GetSnapshot(SyncTokenInput.Password);
+            int totalTasks = snapshot.Records.Count(x => x.Kind == "task");
+            int totalProgress = snapshot.Records.Count(x => x.Kind == "progress");
+            SyncResultText.Text =
+                $"로컬 서버 연결 성공 · 서버 변경 cursor {snapshot.Cursor}\n" +
+                $"서버에 저장된 일정 {totalTasks}개 · 진도 {totalProgress}개\n" +
+                "이 기기의 데이터는 읽거나 수정하지 않았고, 서버에 아무것도 업로드하지 않았습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text =
+                "로컬 서버 읽기 실패. 127.0.0.1:8765에 서버가 실행 중인지, 토큰이 맞는지 확인하세요.";
+            ShowError("동기화 연결을 확인하세요.\n" + error.Message);
+        }
+        finally { EndSync(); }
+    }
+
+    private async void SyncUpload_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            if (tasksLocked || progressLocked)
+                throw new InvalidDataException("로컬 일정/진도 원본 읽기에 문제가 있어 전송을 차단했습니다.");
+
+            string token = SyncTokenInput.Password;
+            var snapshot = await SyncClient.GetSnapshot(token);
+            var pending = SyncClient.NewOnly(CloneTasks(), progressBackup, snapshot);
+            int localTotal = taskBackup.Tasks.Count + progressBackup.Items.Count;
+            int skipped = localTotal - pending.Count;
+            if (pending.Count == 0)
+            {
+                SyncResultText.Text =
+                    $"전송할 새 ID가 없습니다. 서버 중복 ID {skipped}개를 보존했습니다.\n" +
+                    "기존 기록이 같은지 비교하거나 갱신하는 기능은 아직 구현하지 않았습니다.";
+                return;
+            }
+            var answer = MessageBox.Show(this,
+                $"현재 PC의 일정·진도 중 서버에 없는 {pending.Count}개를 " +
+                "로컬 StudyOne 동기화 서버로 보낼까요?\n\n" +
+                $"서버에 이미 존재하는 ID {skipped}개는 건너뜁니다. " +
+                "서버 기존 데이터를 수정·삭제하지 않으며, 현재 PC 데이터도 변경하지 않습니다.\n\n" +
+                "교재·과목·개인 학습 기록이 서버의 SQLite DB에 저장됩니다.",
+                "새 학습 기록 전송 승인",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (answer != MessageBoxResult.Yes)
+            {
+                SyncResultText.Text = "전송을 취소했습니다. 개인 학습 데이터는 업로드되지 않았습니다.";
+                return;
+            }
+            int sent = await SyncClient.UploadNew(token, pending);
+            SyncResultText.Text =
+                $"새 기록 {sent}개를 로컬 서버로 보냈습니다.\n" +
+                $"기존 ID {skipped}개는 건너뛰었습니다.\n" +
+                "이 PC의 기존 기록은 변경하지 않았습니다. 다른 기기의 자동 동기화는 아직 지원하지 않습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "동기화 전송이 중단되었습니다. 일부 배치는 서버에 저장됐을 수 있습니다." +
+                                  " 서버 목록을 다시 읽어 확인하세요.";
+            ShowError("동기화 오류\n" + error.Message);
+        }
+        finally { EndSync(); }
+    }
+
 }
