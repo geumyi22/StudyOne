@@ -46,6 +46,8 @@ jobs:
             app/src/main/java/com/studyone/app/StudyCategories.java \
             scripts/tests/StudyCategoriesSmoke.java
           java -cp /tmp/studyone-contract-classes StudyCategoriesSmoke
+      - name: Audit mobile sync local-only transport and explicit-consent safeguards
+        run: python3 scripts/tests/check_mobile_sync_guards.py
       - name: Compile and smoke-test standalone Java progress model
         run: |
           mkdir -p /tmp/studyone-progress-classes
