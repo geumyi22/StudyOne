@@ -526,8 +526,10 @@ public class MainActivity extends Activity {
         result.setPadding(dp(4),dp(12),dp(4),dp(12));
         Button preview=secondary("서버 기록 수 확인 · 전송 없음");
         Button upload=primary("서버에 없는 새 항목만 전송");
+        Button pendingPlans=secondary("AI 공부 계획 승인 대기함");
         form.addView(preview);
         form.addView(upload);
+        form.addView(pendingPlans);
         form.addView(result);
         AlertDialog dialog=new AlertDialog.Builder(this)
                 .setTitle("StudyOne 로컬 동기화 실험")
@@ -536,6 +538,12 @@ public class MainActivity extends Activity {
                 .create();
         dialog.setOnDismissListener(d->token.setText(""));
         dialog.show();
+
+        pendingPlans.setOnClickListener(v->{
+            final String secret=token.getText().toString();
+            final String endpoint=address.getText().toString().trim();
+            showStudyPlanInbox(secret,endpoint,result,dialog);
+        });
 
         preview.setOnClickListener(v->{
             String secret=token.getText().toString();
@@ -637,6 +645,103 @@ public class MainActivity extends Activity {
                     });
                 }
             });
+        });
+    }
+
+    private void showStudyPlanInbox(String token, String endpoint,
+                                    TextView result, AlertDialog parent) {
+        result.setText("AI 계획 승인 대기함을 확인 중…");
+        io.execute(()->{
+            try {
+                JSONArray proposals=StudySyncClient.pendingProposals(token,endpoint)
+                        .getJSONArray("proposals");
+                String[] names=new String[proposals.length()];
+                for(int i=0;i<proposals.length();i++){
+                    JSONObject item=proposals.getJSONObject(i);
+                    names[i]=item.getString("title")+" · "+item.getInt("taskCount")+"개";
+                }
+                runOnUiThread(()->{
+                    if(isFinishing()||isDestroyed()||!parent.isShowing())return;
+                    result.setText("승인 대기 공부 계획 "+names.length+"개를 찾았습니다.");
+                    if(names.length==0){
+                        toast("승인 대기 중인 공부 계획이 없습니다.");
+                        return;
+                    }
+                    new AlertDialog.Builder(this)
+                            .setTitle("AI가 제안한 공부 계획")
+                            .setItems(names,(d,which)->{
+                                try{
+                                    JSONObject item=proposals.getJSONObject(which);
+                                    openStudyPlanDecision(token,endpoint,item,result,parent);
+                                }catch(Exception ignored){toast("초안을 다시 읽어주세요.");}
+                            })
+                            .setNegativeButton("닫기",null).show();
+                });
+            }catch(Exception error) {
+                runOnUiThread(()->{
+                    if(!isFinishing()&&!isDestroyed()&&parent.isShowing())
+                        result.setText("승인 대기함 조회 실패. HTTPS 계정 서버/토큰을 확인하세요.");
+                });
+            }
+        });
+    }
+
+    private void openStudyPlanDecision(String token, String endpoint,
+                                       JSONObject plan, TextView result,
+                                       AlertDialog parent) throws Exception {
+        String id=plan.getString("id");
+        JSONArray tasks=plan.getJSONArray("tasks");
+        StringBuilder details=new StringBuilder();
+        details.append("승인 전에는 실제 숙제 목록에 저장되지 않습니다.\n\n");
+        for(int i=0;i<tasks.length();i++){
+            JSONObject t=tasks.getJSONObject(i);
+            details.append(i+1).append(". [").append(t.getString("dueDate"))
+                    .append("] ").append(t.getString("type")).append(" · ")
+                    .append(t.getString("subject")).append("\n")
+                    .append(t.getString("title")).append("\n\n");
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("AI 공부 계획: "+plan.getString("title"))
+                .setMessage(details.toString())
+                .setPositiveButton("전체 승인",(d,w)->
+                        decideStudyPlan(token,endpoint,plan,true,result,parent))
+                .setNegativeButton("전체 거부",(d,w)->
+                        decideStudyPlan(token,endpoint,plan,false,result,parent))
+                .setNeutralButton("취소",null)
+                .show();
+    }
+
+    private void decideStudyPlan(String token, String endpoint, JSONObject expected,
+                                 boolean approve, TextView result, AlertDialog parent) {
+        result.setText("계획 처리 전 최신 초안을 다시 확인 중…");
+        io.execute(()->{
+            try {
+                JSONArray latest=StudySyncClient.pendingProposals(token,endpoint)
+                        .getJSONArray("proposals");
+                JSONObject same=null;
+                for(int i=0;i<latest.length();i++){
+                    JSONObject candidate=latest.getJSONObject(i);
+                    if(expected.getString("id").equals(candidate.getString("id"))){
+                        same=candidate;break;
+                    }
+                }
+                if(same==null || !same.toString().equals(expected.toString()))
+                    throw new IllegalStateException("계획 내용이 변경되어 처리하지 않았습니다.");
+                StudySyncClient.decideProposal(token,endpoint,
+                        expected.getString("id"),approve);
+                runOnUiThread(()->{
+                    if(!isFinishing()&&!isDestroyed()&&parent.isShowing())
+                        result.setText(approve?
+                                "선택한 공부 계획을 승인해 서버 일정에 등록했습니다. "
+                                +"현재 기기에 자동으로 복사되지는 않습니다.":
+                                "선택한 AI 공부 계획을 거부했습니다. 숙제는 변경되지 않았습니다.");
+                });
+            }catch(Exception error){
+                runOnUiThread(()->{
+                    if(!isFinishing()&&!isDestroyed()&&parent.isShowing())
+                        result.setText("결정 결과를 확인하지 못했습니다. 대기함을 다시 조회하세요.");
+                });
+            }
         });
     }
 
