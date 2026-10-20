@@ -73,8 +73,14 @@ public final class StudySyncClient {
                                    String address) throws Exception {
         validateToken(token);
         String base=checkedAddress(address);
-        if (!endpoint.equals("snapshot") && !endpoint.equals("changes"))
-            throw new IllegalArgumentException("허용되지 않은 동기화 서버 경로입니다.");
+        boolean ordinary=endpoint.equals("snapshot") || endpoint.equals("changes");
+        boolean pending=endpoint.equals("proposals");
+        boolean decision=endpoint.matches(
+                "proposals/[a-fA-F0-9-]{36}/(approve|reject)");
+        if(!ordinary && !pending && !decision)
+            throw new IllegalArgumentException("허용되지 않은 서버 경로입니다.");
+        if((pending || decision) && !base.startsWith("https://"))
+            throw new IllegalArgumentException("AI 학습 계획 승인은 HTTPS 계정 서버가 필요합니다.");
         HttpURLConnection connection=(HttpURLConnection)
                 new URL(base + apiPrefix(base) + endpoint).openConnection(Proxy.NO_PROXY);
         connection.setInstanceFollowRedirects(false);
@@ -98,6 +104,8 @@ public final class StudySyncClient {
             }
             int status=connection.getResponseCode();
             if(status == 401) throw new IllegalStateException("서버 인증이 거절되었습니다.");
+            if(status == 403) throw new IllegalStateException(
+                    "읽기 전용 장치 토큰으로는 AI 학습 계획을 승인하거나 거부할 수 없습니다.");
             if(status == 409) throw new IllegalStateException(
                     "다른 기기의 기록과 충돌했습니다. 서버 목록을 다시 조회하세요.");
             if(status != 200) throw new IllegalStateException("로컬 서버 HTTP 오류: "+status);
@@ -170,6 +178,63 @@ public final class StudySyncClient {
         mutation.put("baseRevision",0);mutation.put("deleted",false);
         mutation.put("payload",payload);
         return mutation;
+    }
+
+    /** Read the authenticated account's pending AI proposals. No user data upload. */
+    public static JSONObject pendingProposals(String token, String address) throws Exception {
+        JSONObject response=call(token,"proposals",null,address);
+        if(response.getInt("schema")!=1)
+            throw new IllegalStateException("지원하지 않는 AI 계획 응답입니다.");
+        JSONArray proposals=response.getJSONArray("proposals");
+        if(proposals.length()>20)
+            throw new IllegalStateException("승인 대기 계획 수 제한을 초과했습니다.");
+        Set<String> ids=new HashSet<>();
+        for(int i=0;i<proposals.length();i++){
+            JSONObject plan=proposals.getJSONObject(i);
+            String id=plan.getString("id");
+            if(!canonicalUuid(id) || !ids.add(id) ||
+                    !"pending".equals(plan.getString("state")) ||
+                    plan.getString("title").trim().isEmpty() ||
+                    plan.getString("title").length()>100 ||
+                    plan.getLong("expiresAt") <= plan.getLong("createdAt"))
+                throw new IllegalStateException("승인 대기 계획 정보가 잘못되었습니다.");
+            JSONArray tasks=plan.getJSONArray("tasks");
+            if(tasks.length()!=plan.getInt("taskCount") ||
+                    tasks.length()<1 || tasks.length()>30)
+                throw new IllegalStateException("승인 대기 학습 일정이 손상되었습니다.");
+            for(int j=0;j<tasks.length();j++){
+                JSONObject task=tasks.getJSONObject(j);
+                if(task.getLong("id")<=0 || task.getInt("importance")<1 ||
+                        task.getInt("importance")>3 ||
+                        task.getString("type").trim().isEmpty() ||
+                        task.getString("subject").length()>60 ||
+                        task.getString("title").trim().isEmpty() ||
+                        task.getString("title").length()>500)
+                    throw new IllegalStateException("승인 대기 학습 일정이 잘못되었습니다.");
+                LocalDate.parse(task.getString("dueDate"));
+            }
+        }
+        return response;
+    }
+
+    private static boolean canonicalUuid(String id) {
+        if(id==null)return false;
+        try {return UUID.fromString(id).toString().equalsIgnoreCase(id);}
+        catch(IllegalArgumentException error){return false;}
+    }
+
+    /** The device user must click an explicit confirmation before calling this. */
+    public static String decideProposal(String token, String address,
+                                        String proposalId, boolean approve) throws Exception {
+        if(!canonicalUuid(proposalId))
+            throw new IllegalArgumentException("AI 계획 ID가 올바르지 않습니다.");
+        String action=approve?"approve":"reject";
+        JSONObject response=call(token,"proposals/"+proposalId+"/"+action,
+                new JSONObject(),address);
+        if(!proposalId.equals(response.getString("id")) ||
+                !(approve?"approved":"rejected").equals(response.getString("state")))
+            throw new IllegalStateException("계획 결정 결과를 확인하지 못했습니다.");
+        return response.getString("state");
     }
 
     /** Derive new-ID-only upload from validated local collections. */
