@@ -1,0 +1,42 @@
+name: StudyOne Planner Contract
+
+on:
+  pull_request:
+    paths:
+      - 'app/src/main/java/com/studyone/app/StudyCategories.java'
+      - 'app/src/main/java/com/studyone/app/BackupIo.java'
+      - 'ios/StudyOne/StudyCategories.swift'
+      - 'ios/StudyOne/ModelsAndStore.swift'
+      - 'scripts/tests/**'
+      - '.github/workflows/planner-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/src/main/java/com/studyone/app/StudyCategories.java'
+      - 'ios/StudyOne/StudyCategories.swift'
+      - 'scripts/tests/**'
+      - '.github/workflows/planner-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  planner-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Android/iOS role parity and backup schema preservation
+        run: python3 scripts/tests/check_study_categories.py
+      - name: Compile and smoke-test standalone Java role model
+        run: |
+          mkdir -p /tmp/studyone-contract-classes
+          javac -encoding UTF-8 -d /tmp/studyone-contract-classes \
+            app/src/main/java/com/studyone/app/StudyCategories.java \
+            scripts/tests/StudyCategoriesSmoke.java
+          java -cp /tmp/studyone-contract-classes StudyCategoriesSmoke
