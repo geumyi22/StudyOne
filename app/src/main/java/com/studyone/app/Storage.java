@@ -128,6 +128,43 @@ public final class Storage {
         return out;
     }
 
+    /**
+     * Strict read-only view for an explicit sync upload.
+     * The legacy tasks() method tolerates malformed JSON, so NEVER use it to
+     * prepare an upload: it can silently return a truncated/empty collection.
+     */
+    public synchronized List<Models.StudyTask> checkedTasksForSync() {
+        try {
+            JSONArray data=new JSONArray(p.getString("tasks","[]"));
+            if(data.length()>5000)
+                throw new IllegalStateException("동기화 일정 수 한도를 초과했습니다.");
+            List<Models.StudyTask> verified=new ArrayList<>();
+            java.util.Set<Long> ids=new java.util.HashSet<>();
+            for(int i=0;i<data.length();i++){
+                JSONObject row=data.getJSONObject(i);
+                long id=row.getLong("id");
+                if(id<=0 || !ids.add(id))
+                    throw new IllegalStateException("동기화 일정 ID가 올바르지 않습니다.");
+                String type=row.getString("type");
+                String subject=row.getString("subject");
+                String title=row.getString("title");
+                LocalDate date=LocalDate.parse(row.getString("due"));
+                int importance=row.getInt("importance");
+                boolean completed=row.getBoolean("completed");
+                if(type.trim().isEmpty() || type.length()>100 ||
+                        subject.length()>60 || title.trim().isEmpty() || title.length()>500 ||
+                        importance<1 || importance>3)
+                    throw new IllegalStateException("동기화할 일정 필드가 올바르지 않습니다.");
+                verified.add(new Models.StudyTask(id,type,subject,title,date,importance,completed));
+            }
+            return verified;
+        }catch(Exception error){
+            throw new IllegalStateException(
+                    "기존 일정 데이터를 안전하게 읽지 못했습니다. 자동 전송하지 않고 원본을 보존합니다.",
+                    error);
+        }
+    }
+
     public void saveTasks(List<Models.StudyTask> tasks) {
         JSONArray a = new JSONArray();
         for (Models.StudyTask t : tasks) {
