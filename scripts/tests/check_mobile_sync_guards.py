@@ -16,7 +16,7 @@ class MobileGuardTests(unittest.TestCase):
         self.assertNotIn('cleartextTrafficPermitted="true"', release)
         self.assertIn('<base-config cleartextTrafficPermitted="false">', debug)
         self.assertEqual(debug.count('cleartextTrafficPermitted="true"'), 1)
-        self.assertIn('<domain>127.0.0.1</domain>', debug)
+        self.assertIn('<domain includeSubdomains="false">127.0.0.1</domain>', debug)
         self.assertNotIn('<domain>0.0.0.0</domain>', debug)
 
     def test_android_requires_confirmation_and_never_saves_token(self):
