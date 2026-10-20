@@ -41,3 +41,5 @@ ios/build/
 *.ipa
 *.xcarchive
 *.xcuserstate
+windows/**/bin/
+windows/**/obj/
