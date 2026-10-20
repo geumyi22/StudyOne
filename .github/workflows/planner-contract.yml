@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - 'app/src/main/java/com/studyone/app/StudyCategories.java'
+      - 'app/src/main/java/com/studyone/app/StudyProgress*.java'
       - 'app/src/main/java/com/studyone/app/BackupIo.java'
       - 'ios/StudyOne/StudyCategories.swift'
+      - 'ios/StudyOne/StudyProgress*.swift'
       - 'ios/StudyOne/ModelsAndStore.swift'
       - 'scripts/tests/**'
       - '.github/workflows/planner-contract.yml'
@@ -33,6 +35,8 @@ jobs:
           java-version: '17'
       - name: Verify Android/iOS role parity and backup schema preservation
         run: python3 scripts/tests/check_study_categories.py
+      - name: Verify textbook progress parity, isolation and backup compatibility
+        run: python3 scripts/tests/check_study_progress.py
       - name: Compile and smoke-test standalone Java role model
         run: |
           mkdir -p /tmp/studyone-contract-classes
@@ -40,3 +44,10 @@ jobs:
             app/src/main/java/com/studyone/app/StudyCategories.java \
             scripts/tests/StudyCategoriesSmoke.java
           java -cp /tmp/studyone-contract-classes StudyCategoriesSmoke
+      - name: Compile and smoke-test standalone Java progress model
+        run: |
+          mkdir -p /tmp/studyone-progress-classes
+          javac -encoding UTF-8 -d /tmp/studyone-progress-classes \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            scripts/tests/StudyProgressSmoke.java
+          java -cp /tmp/studyone-progress-classes StudyProgressSmoke
