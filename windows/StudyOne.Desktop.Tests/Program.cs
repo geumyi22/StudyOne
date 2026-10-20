@@ -48,10 +48,18 @@ Check(parsedProgress.Items[0].Revision == 3 && parsedProgress.Items[0].UpdatedAt
 Check(StudyData.Statuses.SequenceEqual(new[] { "확인 필요", "미완료", "진행 중", "완료" }),
       "Four status values");
 
-string invalidScope = Encoding.UTF8.GetString(originalProgress).Replace("\"진행 중\"", "\"미확인\"");
-ExpectInvalid(() => StudyData.ParseProgress(Encoding.UTF8.GetBytes(invalidScope)), "Invalid status");
-string wrongSchema = Encoding.UTF8.GetString(originalProgress).Replace("\"schema\": 1", "\"schema\": 2");
-ExpectInvalid(() => StudyData.ParseProgress(Encoding.UTF8.GetBytes(wrongSchema)), "Unknown schema");
+ProgressBackup invalidStatus = new()
+{
+    Items =
+    {
+        new StudyProgressItem {
+            Id = id.ToString("D"), Subject = "과학", Material = "오투", Unit = "7-2",
+            Status = "미확인", InExamScope = true, Revision = 3, UpdatedAt = 1790000000000 }
+    }
+};
+ExpectInvalid(() => StudyData.ParseProgress(StudyData.Serialize(invalidStatus)), "Invalid status");
+ProgressBackup wrongSchema = new() { Schema = 2, Items = { progress.Items[0] } };
+ExpectInvalid(() => StudyData.ParseProgress(StudyData.Serialize(wrongSchema)), "Unknown schema");
 
 ProgressBackup duplicate = new() { Items = { progress.Items[0], progress.Items[0] } };
 ExpectInvalid(() => StudyData.SerializeAndValidateProgress(duplicate), "Duplicate ID");
