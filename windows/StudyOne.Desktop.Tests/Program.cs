@@ -105,4 +105,90 @@ Check(SyncClient.NewOnly(tasks, progress, taskExists).Count == 0,
       "Existing remote IDs never uploaded");
 Console.WriteLine("StudyOne Windows local-only sync upload guard: PASS");
 
+Check(SyncClient.ParseEndpoint("http://127.0.0.1:8765/").Scheme == "http",
+      "Loopback test endpoint accepted");
+Check(SyncClient.ParseEndpoint("https://studyone.example/").Scheme == "https",
+      "Verified HTTPS remote endpoint accepted");
+foreach (string badUrl in new [] {
+    "http://studyone.example/", "http://192.168.0.4:8765/",
+    "ftp://studyone.example/", "https://user:pass@studyone.example/",
+    "https://studyone.example/not-root/", "https://studyone.example/?x=1"
+}) {
+    try {
+        SyncClient.ParseEndpoint(badUrl);
+        throw new InvalidOperationException("Insecure endpoint accepted: " + badUrl);
+    } catch (InvalidOperationException error) {
+        if (error.Message.StartsWith("Insecure endpoint accepted:")) throw;
+    }
+}
+
+StudyTask remoteTask = new() {
+    Id = 520110014, Type = "숙제 항목", Subject = "수학",
+    Title = "추가 숙제", DueDate = "2026-10-23", Importance = 2,
+    Completed = false
+};
+StudyProgressItem remoteProgress = new() {
+    Id = Guid.NewGuid().ToString("D"), Subject = "국어", Material = "실전 모의고사",
+    Unit = "중간고사 2회 2단원", Status = "미완료",
+    InExamScope = true, Revision = 5, UpdatedAt = 1792512900000
+};
+SyncClient.RemoteRecord MakeTask(StudyTask value) => new() {
+    Kind = "task", Id = value.Id.ToString(), Revision = 1,
+    Payload = System.Text.Json.JsonSerializer.SerializeToElement(value, StudyData.JsonOptions)
+};
+SyncClient.RemoteRecord MakeProgress(StudyProgressItem value) => new() {
+    Kind = "progress", Id = value.Id, Revision = value.Revision,
+    Payload = System.Text.Json.JsonSerializer.SerializeToElement(value, StudyData.JsonOptions)
+};
+
+var remoteSnapshot = new SyncClient.Snapshot {
+    Schema = 1, Cursor = 4,
+    Records = { MakeTask(remoteTask), MakeProgress(remoteProgress),
+                MakeTask(tasks.Tasks[0]), MakeProgress(progress.Items[0]) }
+};
+var inbound = SyncClient.PreviewNewRemote(tasks, progress, remoteSnapshot);
+Check(inbound.NewTasks.Count == 1 && inbound.NewProgress.Count == 1,
+      "Only server-side new IDs are staged");
+Check(inbound.ExistingIdentical == 2 && inbound.Conflicts == 0,
+      "Existing same IDs are skipped");
+var mergedTasks = SyncClient.MakeMergedTasks(tasks, inbound);
+var mergedProgress = SyncClient.MakeMergedProgress(progress, inbound);
+Check(mergedTasks.Tasks.Count == 2 && mergedProgress.Items.Count == 2,
+      "Additive imports preserve existing items");
+Check(tasks.Tasks.Count == 1 && progress.Items.Count == 1,
+      "Preview never changes original objects");
+
+// Existing ID with differing content is a conflict; no overwrite.
+var changed = new StudyTask {
+    Id = tasks.Tasks[0].Id, Type = tasks.Tasks[0].Type,
+    Subject = tasks.Tasks[0].Subject, Title = "Conflicting remote edit",
+    DueDate = tasks.Tasks[0].DueDate, Importance = 2, Completed = true
+};
+remoteSnapshot.Records[2] = MakeTask(changed);
+var conflicted = SyncClient.PreviewNewRemote(tasks, progress, remoteSnapshot);
+Check(conflicted.Conflicts == 1 && conflicted.NewTasks.Count == 1,
+      "Conflicting same ID is reported but not staged");
+Check(SyncClient.MakeMergedTasks(tasks, conflicted).Tasks[0].Title == "기출 복습",
+      "Local task cannot be overwritten by conflict");
+
+// Forged or corrupted payloads must never reach the local save operation.
+var forgedRecord = MakeTask(remoteTask);
+forgedRecord.Id = "678901";
+try {
+    SyncClient.PreviewNewRemote(tasks, progress,
+        new SyncClient.Snapshot { Schema = 1, Records = { forgedRecord } });
+    throw new InvalidOperationException("Mismatched identity incorrectly accepted");
+} catch (InvalidDataException) { /* expected */ }
+var malformedProgress = new StudyProgressItem {
+    Id = Guid.NewGuid().ToString("D"), Subject = "과학", Material = "오투",
+    Unit = "7-2", Status = "bad-status", InExamScope = true,
+    Revision = 1, UpdatedAt = 1792512983795
+};
+try {
+    SyncClient.PreviewNewRemote(tasks, progress,
+        new SyncClient.Snapshot { Schema = 1, Records = { MakeProgress(malformedProgress) } });
+    throw new InvalidOperationException("Malformed progress accepted");
+} catch (InvalidDataException) { /* expected */ }
+Console.WriteLine("StudyOne Windows safe incoming merge and HTTPS endpoints: PASS");
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
