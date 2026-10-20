@@ -195,4 +195,124 @@ internal static class SyncClient
         }
         return sent;
     }
+
+    internal sealed class IncomingPlan
+    {
+        public List<StudyTask> NewTasks { get; } = new();
+        public List<StudyProgressItem> NewProgress { get; } = new();
+        public int Conflicts { get; set; }
+        public int ExistingIdentical { get; set; }
+        public long ServerCursor { get; set; }
+    }
+
+    private static bool MatchingKeys(JsonElement element, params string[] expected)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return false;
+        return element.EnumerateObject().Select(p => p.Name)
+            .ToHashSet(StringComparer.Ordinal)
+            .SetEquals(expected);
+    }
+
+    private static bool TaskContentEquals(StudyTask a, StudyTask b) =>
+        a.Id == b.Id && a.Type == b.Type && a.Subject == b.Subject &&
+        a.Title == b.Title && a.DueDate == b.DueDate &&
+        a.Importance == b.Importance && a.Completed == b.Completed;
+
+    private static bool ProgressContentEquals(StudyProgressItem a, StudyProgressItem b) =>
+        a.Id.Equals(b.Id, StringComparison.OrdinalIgnoreCase) &&
+        a.Subject == b.Subject && a.Material == b.Material && a.Unit == b.Unit &&
+        a.Status == b.Status && a.InExamScope == b.InExamScope;
+
+    /// <summary>
+    /// Preview only remote IDs missing on this PC. No server or disk writes.
+    /// Existing ID with different content -> conflict, never an overwrite.
+    /// Server-side deletions remain unapplied pending explicit tombstone UX.
+    /// </summary>
+    internal static IncomingPlan PreviewNewRemote(
+        TaskBackup tasks, ProgressBackup progress, Snapshot remote)
+    {
+        StudyData.SerializeAndValidateTasks(tasks);
+        StudyData.SerializeAndValidateProgress(progress);
+        if (remote.Schema != 1 || remote.Cursor < 0 ||
+            remote.Records is null || remote.Records.Count > 7000)
+            throw new InvalidDataException("지원되지 않는 동기화 스냅샷입니다.");
+
+        var localTasks = tasks.Tasks.ToDictionary(x => x.Id);
+        var localProgress = progress.Items.ToDictionary(x => x.Id,
+                                                          StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var plan = new IncomingPlan { ServerCursor = remote.Cursor };
+        foreach (RemoteRecord row in remote.Records)
+        {
+            if (row is null || row.Deleted || row.Revision < 1 ||
+                (row.Kind != "task" && row.Kind != "progress") ||
+                !seen.Add(row.Kind + "#" + row.Id))
+                throw new InvalidDataException("중복되거나 손상된 서버 진도 기록입니다.");
+
+            if (row.Kind == "task")
+            {
+                if (!MatchingKeys(row.Payload, "id", "type", "subject",
+                                   "title", "dueDate", "importance", "completed"))
+                    throw new InvalidDataException("서버 일정 필드가 잘못되었습니다.");
+                StudyTask item = row.Payload.Deserialize<StudyTask>(StudyData.JsonOptions)
+                                 ?? throw new InvalidDataException("서버 일정이 비어 있습니다.");
+                if (item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) != row.Id)
+                    throw new InvalidDataException("서버 일정 ID가 서로 일치하지 않습니다.");
+                if (localTasks.TryGetValue(item.Id, out var old))
+                {
+                    if (TaskContentEquals(old, item)) plan.ExistingIdentical++;
+                    else plan.Conflicts++;
+                }
+                else plan.NewTasks.Add(item);
+            }
+            else
+            {
+                if (!MatchingKeys(row.Payload, "id", "subject", "material", "unit",
+                                   "status", "inExamScope", "revision", "updatedAt"))
+                    throw new InvalidDataException("서버 진도 필드가 잘못되었습니다.");
+                StudyProgressItem item = row.Payload.Deserialize<StudyProgressItem>(StudyData.JsonOptions)
+                                         ?? throw new InvalidDataException("서버 진도가 비어 있습니다.");
+                if (!item.Id.Equals(row.Id, StringComparison.OrdinalIgnoreCase) ||
+                    item.Revision != row.Revision)
+                    throw new InvalidDataException("서버 진도 ID·수정 기록이 일치하지 않습니다.");
+                if (localProgress.TryGetValue(item.Id, out var old))
+                {
+                    if (ProgressContentEquals(old, item)) plan.ExistingIdentical++;
+                    else plan.Conflicts++;
+                }
+                else plan.NewProgress.Add(item);
+            }
+        }
+        // Validate resulting files before displaying a merge confirmation.
+        MakeMergedTasks(tasks, plan);
+        MakeMergedProgress(progress, plan);
+        return plan;
+    }
+
+    internal static TaskBackup MakeMergedTasks(TaskBackup current, IncomingPlan plan)
+    {
+        var candidate = new TaskBackup
+        {
+            Format = current.Format, Schema = current.Schema,
+            ExportedAt = DateTime.Today.ToString("yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture),
+            Grade = current.Grade, ClassName = current.ClassName,
+            School = current.School,
+            Tasks = current.Tasks.Concat(plan.NewTasks).ToList()
+        };
+        StudyData.SerializeAndValidateTasks(candidate);
+        return candidate;
+    }
+
+    internal static ProgressBackup MakeMergedProgress(ProgressBackup current, IncomingPlan plan)
+    {
+        var candidate = new ProgressBackup
+        {
+            Format = current.Format, Schema = current.Schema,
+            Items = current.Items.Concat(plan.NewProgress).ToList()
+        };
+        StudyData.SerializeAndValidateProgress(candidate);
+        return candidate;
+    }
+
 }
