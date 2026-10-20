@@ -255,8 +255,15 @@ public class MainActivity extends Activity {
 
     private View planner() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
-        Button add=primary("+ 과제 / 수행평가 / 시험 / 준비물 추가");
+        Button add=primary("+ 학습 일정 추가");
         add.setOnClickListener(v->taskDialog(null)); c.addView(add);
+
+        Button roles=secondary("5개 학습 분류의 역할 보기");
+        roles.setOnClickListener(v->new AlertDialog.Builder(this)
+                .setTitle("학습 분류 안내")
+                .setMessage(StudyCategories.guide())
+                .setPositiveButton("확인",null).show());
+        c.addView(roles);
 
         List<Models.StudyTask> tasks=storage.tasks();
         if(tasks.isEmpty()){
@@ -288,8 +295,21 @@ public class MainActivity extends Activity {
         if(count==0) rec.addView(tv("모든 일정을 완료했습니다.",14,MUTED,false));
         c.addView(rec);
 
-        c.addView(section("전체 일정"));
-        for(Models.StudyTask t:tasks) c.addView(taskCard(t));
+        c.addView(section("분류별 일정"));
+        for(String role:StudyCategories.ROLE_TITLES) {
+            boolean hasRole=false;
+            for(Models.StudyTask t:tasks) {
+                if(!role.equals(t.type))continue;
+                if(!hasRole){c.addView(section(role));hasRole=true;}
+                c.addView(taskCard(t));
+            }
+        }
+        boolean hasLegacy=false;
+        for(Models.StudyTask t:tasks) {
+            if(StudyCategories.isRole(t.type))continue;
+            if(!hasLegacy){c.addView(section("기존 일정 (이전 분류)"));hasLegacy=true;}
+            c.addView(taskCard(t));
+        }
         return s;
     }
 
@@ -746,11 +766,10 @@ public class MainActivity extends Activity {
         LinearLayout box=column();
         box.setPadding(dp(18),dp(4),dp(18),0);
         Spinner type=new Spinner(this);
-        String[] types={"과제","수행평가","시험","준비물"};
+        String[] types=StudyCategories.taskTypes(existing==null?null:existing.type);
         type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,types));
-        if(existing!=null){
-            for(int i=0;i<types.length;i++)if(types[i].equals(existing.type))type.setSelection(i);
-        }
+        if(existing==null)type.setSelection(3); // 숙제 항목 for newly created items.
+        else for(int i=0;i<types.length;i++)if(types[i].equals(existing.type))type.setSelection(i);
         EditText subject=input("과목",existing==null?"":existing.subject);
         EditText task=input("내용",existing==null?"":existing.title);
         LocalDate picked=existing==null?LocalDate.now().plusDays(1):existing.dueDate;
