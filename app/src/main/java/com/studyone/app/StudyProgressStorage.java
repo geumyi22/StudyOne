@@ -98,24 +98,88 @@ public final class StudyProgressStorage {
         throw new IllegalStateException("해당 진도 항목을 찾을 수 없습니다.");
     }
 
+    /**
+     * Explicit, portable progress-only backup. Separate from legacy task
+     * schema 1 so older Android/iOS installations do not import it as tasks.
+     */
+    public synchronized String exportBackup() {
+        try {
+            JSONObject envelope = encode(list(), true);
+            return envelope.toString(2);
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException("진도 백업 생성에 실패했습니다.", error);
+        }
+    }
+
+    /** Validate an entire imported backup before replacing any saved entries. */
+    public static List<StudyProgressItem> parseBackup(String data) {
+        if (data == null || data.length() > 2_000_000) {
+            throw new IllegalArgumentException("진도 백업은 최대 2MB까지 가져올 수 있습니다.");
+        }
+        try {
+            JSONObject root = new JSONObject(data);
+            if (!"studyone-progress".equals(root.getString("format"))
+                    || root.getInt("schema") != 1) {
+                throw new IllegalArgumentException("지원하지 않는 StudyOne 진도 백업 형식입니다.");
+            }
+            JSONArray a = root.getJSONArray("items");
+            if (a.length() > LIMIT) throw new IllegalArgumentException("진도 백업 항목 수 초과");
+            List<StudyProgressItem> parsed = new ArrayList<>();
+            Set<String> ids = new HashSet<>();
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                StudyProgressItem item = new StudyProgressItem(
+                        o.getString("id"), o.getString("subject"), o.getString("material"),
+                        o.getString("unit"), o.getString("status"), o.getBoolean("inExamScope"),
+                        o.getLong("revision"), o.getLong("updatedAt"));
+                if (!ids.add(item.id)) throw new IllegalArgumentException("진도 백업 ID 중복");
+                parsed.add(item);
+            }
+            return parsed;
+        } catch (org.json.JSONException e) {
+            throw new IllegalArgumentException("진도 백업 JSON이 손상되었습니다.", e);
+        }
+    }
+
+    /** Call only after import preview and an explicit user confirmation. */
+    public synchronized void restoreBackup(List<StudyProgressItem> imported) {
+        if (imported == null || imported.size() > LIMIT) {
+            throw new IllegalArgumentException("진도 백업 크기가 올바르지 않습니다.");
+        }
+        Set<String> ids = new HashSet<>();
+        for (StudyProgressItem entry : imported) {
+            if (entry == null || !ids.add(entry.id)) {
+                throw new IllegalArgumentException("진도 백업에 잘못된 ID가 있습니다.");
+            }
+        }
+        write(new ArrayList<>(imported));
+    }
+
+    private static JSONObject encode(List<StudyProgressItem> data, boolean portable)
+            throws org.json.JSONException {
+        JSONObject root = new JSONObject();
+        if (portable) root.put("format", "studyone-progress");
+        root.put("schema", 1);
+        JSONArray items = new JSONArray();
+        for (StudyProgressItem item : data) {
+            JSONObject object = new JSONObject();
+            object.put("id", item.id);
+            object.put("subject", item.subject);
+            object.put("material", item.material);
+            object.put("unit", item.unit);
+            object.put("status", item.status);
+            object.put("inExamScope", item.inExamScope);
+            object.put("revision", item.revision);
+            object.put("updatedAt", item.updatedAt);
+            items.put(object);
+        }
+        root.put("items", items);
+        return root;
+    }
+
     private void write(List<StudyProgressItem> data) {
         try {
-            JSONObject root = new JSONObject();
-            root.put("schema", 1);
-            JSONArray items = new JSONArray();
-            for (StudyProgressItem item : data) {
-                JSONObject object = new JSONObject();
-                object.put("id", item.id);
-                object.put("subject", item.subject);
-                object.put("material", item.material);
-                object.put("unit", item.unit);
-                object.put("status", item.status);
-                object.put("inExamScope", item.inExamScope);
-                object.put("revision", item.revision);
-                object.put("updatedAt", item.updatedAt);
-                items.put(object);
-            }
-            root.put("items", items);
+            JSONObject root = encode(data, false);
             if (!preferences.edit().putString(KEY, root.toString()).commit()) {
                 throw new IllegalStateException("진도 저장에 실패했습니다. 다시 시도하세요.");
             }
