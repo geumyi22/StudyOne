@@ -434,14 +434,11 @@ public class MainActivity extends Activity {
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
 
-        if ((getApplicationInfo().flags &
-                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            c.addView(section("로컬 동기화 실험 · Canary"));
-            c.addView(cardText("이 기기의 127.0.0.1:8765 로컬 서버만 연결합니다. Android 에뮬레이터에서는 개발 PC의 서버에 adb reverse로 연결할 수 있습니다. 실제 클라우드/다른 휴대전화 동기화는 아직 지원하지 않습니다.",12));
-            Button sync=secondary("개발용 동기화 서버 연결");
-            sync.setOnClickListener(v->syncExperimentDialog());
-            c.addView(sync);
-        }
+        c.addView(section("보안 HTTPS 동기화 실험 · Canary"));
+        c.addView(cardText("승인된 HTTPS 계정 서버가 있어야 작동합니다. 실제 계정·인증서·도메인이 아직 없다면 연결되지 않습니다. Debug 에뮬레이터만 localhost HTTP 테스트를 이용할 수 있습니다. 기존 데이터의 자동 수정/삭제 기능은 없습니다.",12));
+        Button sync=secondary("계정 서버 수동 연결·신규 항목 전송");
+        sync.setOnClickListener(v->syncExperimentDialog());
+        c.addView(sync);
 
         c.addView(section("학습 알림"));
         c.addView(cardText("알림은 사용자가 직접 켠 경우에만 작동합니다. 배터리 정책에 따라 설정 시각보다 늦게 도착할 수 있습니다.",12));
@@ -514,9 +511,14 @@ public class MainActivity extends Activity {
     private void syncExperimentDialog() {
         LinearLayout form=column();
         form.setPadding(dp(20),dp(6),dp(20),dp(8));
-        form.addView(cardText("로컬 전용 · 127.0.0.1:8765\n"
-                +"데이터 전송은 직접 승인한 때에만 수행합니다. "
-                +"다른 기기에서 자동으로 변경사항을 가져오는 기능은 아직 없습니다.",12));
+        form.addView(cardText("보안 계정 서버: HTTPS 필수. Debug에서만 127.0.0.1 로컬 HTTP 테스트가 가능합니다.\n"
+                +"기존 기록의 자동 수정·삭제와 백그라운드 동기화는 아직 지원하지 않습니다.",12));
+        boolean debug=(getApplicationInfo().flags &
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0;
+        EditText address=input("HTTPS 서버 URL (예: https://example.com/)",
+                debug?"http://127.0.0.1:8765/":"https://");
+        address.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+        form.addView(address);
         EditText token=input("로컬 테스트 Bearer 토큰 (저장 안 함)","");
         token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         form.addView(token);
@@ -537,11 +539,12 @@ public class MainActivity extends Activity {
 
         preview.setOnClickListener(v->{
             String secret=token.getText().toString();
+            String endpoint=address.getText().toString().trim();
             preview.setEnabled(false);
             result.setText("로컬 서버 조회 중…");
             io.execute(()->{
                 try {
-                    JSONObject server=StudySyncClient.snapshot(secret);
+                    JSONObject server=StudySyncClient.snapshot(secret,endpoint);
                     JSONArray records=server.getJSONArray("records");
                     int tasks=0, progress=0;
                     for(int i=0;i<records.length();i++){
@@ -570,13 +573,14 @@ public class MainActivity extends Activity {
 
         upload.setOnClickListener(v->{
             final String secret=token.getText().toString();
+            final String endpoint=address.getText().toString().trim();
             upload.setEnabled(false);
             result.setText("서버·로컬 진도를 검증해 전송 후보를 확인 중…");
             io.execute(()->{
                 try {
                     JSONArray prepared=StudySyncClient.prepareNewOnly(
                             storage.checkedTasksForSync(), progressStorage.list(),
-                            StudySyncClient.snapshot(secret));
+                            StudySyncClient.snapshot(secret,endpoint));
                     final int count=prepared.length();
                     runOnUiThread(()->{
                         if(isFinishing() || isDestroyed() || !dialog.isShowing()) return;
@@ -588,7 +592,7 @@ public class MainActivity extends Activity {
                         new AlertDialog.Builder(this)
                                 .setTitle("새 학습 기록 전송 승인")
                                 .setMessage("이 기기의 일정·진도 중 서버에 없는 "+count
-                                        +"개를 같은 기기의 로컬 SQLite 서버로 전송하시겠습니까?\n"
+                                        +"개를 지정한 HTTPS 계정 서버 또는 로컬 테스트 서버로 전송하시겠습니까?\n"
                                         +"과목·교재·학습 진도 정보가 저장됩니다. "
                                         +"기존 서버 기록과 기기 기록은 수정·삭제하지 않습니다.")
                                 .setNegativeButton("취소",(dd,w)->result.setText("전송을 취소했습니다."))
@@ -599,12 +603,12 @@ public class MainActivity extends Activity {
                                         try {
                                             JSONArray confirmed=StudySyncClient.prepareNewOnly(
                                                     storage.checkedTasksForSync(),progressStorage.list(),
-                                                    StudySyncClient.snapshot(secret));
+                                                    StudySyncClient.snapshot(secret,endpoint));
                                             if(!prepared.toString().equals(confirmed.toString())){
                                                 throw new IllegalStateException(
                                                     "확인 도중 데이터가 바뀌어 전송을 중단했습니다.");
                                             }
-                                            int sent=StudySyncClient.uploadNew(secret,confirmed);
+                                            int sent=StudySyncClient.uploadNew(secret,confirmed,endpoint);
                                             runOnUiThread(()->{
                                                 if(!isFinishing() && !isDestroyed() && dialog.isShowing()){
                                                     result.setText("서버에 새 기록 "+sent
