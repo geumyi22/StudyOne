@@ -121,6 +121,35 @@ final class StudyOneStore: ObservableObject {
         }
         restoreCache()
     }
+    /// Fail closed for explicit sync. Legacy initial load tolerates a broken
+    /// UserDefaults blob; it must never silently upload a truncated task list.
+    func checkedTasksForSync() throws -> [StudyTask] {
+        guard let bytes = UserDefaults.standard.data(forKey: settingsKey) else {
+            guard tasks.isEmpty else {
+                throw StudyError.message("일정이 디스크에 저장되지 않았습니다. 전송을 중단합니다.")
+            }
+            return []
+        }
+        guard let saved = try? JSONDecoder().decode(Saved.self, from: bytes),
+              saved.tasks == tasks, saved.tasks.count <= 5000 else {
+            throw StudyError.message("저장된 일정과 현재 화면의 진도가 일치하지 않습니다. 전송하지 않습니다.")
+        }
+        var ids = Set<Int64>()
+        for task in saved.tasks {
+            guard task.id > 0,
+                  ids.insert(task.id).inserted,
+                  !task.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  task.type.count <= 100,
+                  task.subject.count <= 60,
+                  !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  task.title.count <= 500,
+                  (1...3).contains(task.importance) else {
+                throw StudyError.message("일정 ID 또는 필드가 잘못되어 전송을 차단했습니다.")
+            }
+        }
+        return saved.tasks
+    }
+
     func persist() {
         let saved = Saved(school: school, grade: grade, className: className, tasks: tasks)
         if let bytes = try? JSONEncoder().encode(saved) {
