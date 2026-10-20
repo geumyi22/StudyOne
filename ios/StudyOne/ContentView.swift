@@ -441,18 +441,16 @@ struct SettingsView: View {
                     }
                     Button("JSON 백업 불러오기") { importPicker = true }
                 }
-                #if DEBUG
-                Section("로컬 동기화 실험 · Canary") {
+                Section("보안 HTTPS 계정 동기화 실험 · Canary") {
                     NavigationLink {
                         SyncExperimentView()
                     } label: {
-                        Label("개발용 서버 연결·새 항목 수동 전송",
-                              systemImage: "arrow.triangle.2.circlepath")
+                        Label("HTTPS 서버 수동 연결·새 항목 전송",
+                              systemImage: "lock.shield")
                     }
-                    Text("실제 클라우드 동기화가 아니며, 기존 기록을 덮어쓰지 않습니다.")
+                    Text("사용자가 HTTPS 주소·기기 토큰을 입력해야 연결됩니다. 기존 기록 덮어쓰기·자동 동기화는 지원하지 않습니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                #endif
                 Section("앱 정보") {
                     LabeledContent("버전", value: "3.0.0-beta.1 · iOS")
                     LabeledContent("번들 ID", value: "com.studyone.ios")
