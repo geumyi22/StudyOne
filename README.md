@@ -41,5 +41,13 @@ Android의 OpenAI 키는 Android Keystore AES-GCM, iOS 키는 Keychain에 저장
 - [현재 릴리즈 노트](docs/RELEASE-3.0.0-BETA.2.md)
 - [iOS 빌드 및 알려진 한계](ios/README.md)
 - [고정 서명 및 업데이트](docs/SIGNING-AND-UPDATES.md)
+- [다음 Stable 개발 로드맵 (계획)](docs/NEXT-STABLE-ROADMAP.md)
+- [ChatGPT ↔ StudyOne 동기화 설계 (미구현)](docs/CHATGPT-SYNC-DESIGN.md)
+- [Stable·Beta·Canary 릴리즈 및 저장소 관리 원칙](docs/RELEASE-POLICY.md)
 
 기존 역사적 v2.x 및 v3 beta.1 릴리즈와 문서는 삭제하지 않습니다.
+
+
+## 차기 StudyOne 방향 (개발 전)
+
+Android·iOS·Windows 설치형 앱, UI/UX 전면 개선, 신뢰할 수 있는 기기간 데이터 동기화, 그리고 ChatGPT에서 `할꺼`/ `변경사항 인지해`로 StudyOne 데이터를 읽고 쓰는 통합을 **검토·설계 중**입니다. 이 기능들은 현재 `v3.0.0-beta.2`의 동작 기능이나 배포 약속이 아닙니다. 구현 전에 기존 플랫폼 코드·데이터 보존·릴리즈 서명 체계를 감사하고 새 Stable의 검증 조건을 통과해야 합니다. 상세 범위와 보안 조건은 위의 차기 로드맵 및 연동 설계 문서에 정리했습니다.
