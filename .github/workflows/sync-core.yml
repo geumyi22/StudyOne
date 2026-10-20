@@ -1,0 +1,28 @@
+name: StudyOne Sync Core Canary
+
+on:
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/sync-core.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-sqlite:
+    name: Python SQLite sync API & security tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile sync backend
+        run: python -m compileall -q server
+      - name: Exercise transactional API, conflict tests and loopback HTTP
+        run: python -m unittest discover -s server/tests -p 'test_*.py' -v
