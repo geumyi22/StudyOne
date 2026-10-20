@@ -1,0 +1,51 @@
+name: StudyOne Windows Canary EXE
+
+on:
+  pull_request:
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-canary:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run portable task/progress JSON compatibility tests
+        run: dotnet run --project windows/StudyOne.Desktop.Tests/StudyOne.Desktop.Tests.csproj -c Release
+
+      - name: Build Windows WPF application
+        run: dotnet build windows/StudyOne.Desktop/StudyOne.Desktop.csproj -c Release --nologo
+
+      - name: Publish x64 self-contained single-file EXE
+        run: dotnet publish windows/StudyOne.Desktop/StudyOne.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none --nologo
+
+      - name: Verify executable and checksum
+        shell: pwsh
+        run: |
+          $exe = "windows/StudyOne.Desktop/bin/Release/net8.0-windows/win-x64/publish/StudyOne.exe"
+          if (-not (Test-Path $exe)) { throw "Windows EXE missing" }
+          $file = Get-Item $exe
+          if ($file.Length -lt 1024) { throw "Windows EXE unexpectedly small" }
+          Get-FileHash $exe -Algorithm SHA256 | Format-Table -AutoSize
+          Write-Host ("StudyOne canary unsigned EXE: {0} bytes" -f $file.Length)
+
+      - name: Retain Windows canary build as CI artifact (not a Stable release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-Windows-Canary-win-x64-unsigned
+          path: windows/StudyOne.Desktop/bin/Release/net8.0-windows/win-x64/publish/StudyOne.exe
+          if-no-files-found: error
+          retention-days: 14
