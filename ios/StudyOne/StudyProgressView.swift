@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A local textbook/exam progress workspace. This view never modifies daily tasks.
 struct StudyProgressView: View {
@@ -7,6 +8,11 @@ struct StudyProgressView: View {
     @State private var showingEditor = false
     @State private var editing: StudyProgressItem?
     @State private var deleting: StudyProgressItem?
+    @State private var importPicker = false
+    @State private var pendingImport: Data?
+    @State private var importCount = 0
+    @State private var exportURL: URL?
+    @State private var backupNotice = ""
     @State private var showError = false
     @State private var errorText = ""
 
@@ -104,8 +110,25 @@ struct StudyProgressView: View {
                         .padding(.vertical, 3)
                     }
                 }
-                Section {
-                    Text("진도는 현재 기기에만 저장됩니다. 이 개발 단계의 진도 데이터는 기존 schema-1 JSON 백업에 포함되지 않으며, Android·iOS·ChatGPT와 자동 동기화되지 않습니다.")
+                Section("진도 데이터 백업·복원") {
+                    Text("진도만 별도 JSON 파일로 내보낼 수 있습니다. 기존 학교·일정 백업과는 다른 파일입니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("진도 JSON 백업 파일 준비") {
+                        do {
+                            exportURL = try progress.exportBackup()
+                            backupNotice = "진도 백업 파일을 준비했습니다."
+                        } catch { self.error(error.localizedDescription) }
+                    }
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("진도 JSON 공유·저장", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Button("진도 JSON 백업 불러오기") { importPicker = true }
+                    if !backupNotice.isEmpty {
+                        Text(backupNotice).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("여전히 기기별 로컬 데이터입니다. ChatGPT나 다른 기기로 실시간 자동 동기화되지 않습니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -130,20 +153,64 @@ struct StudyProgressView: View {
                     }
                 }
             }
-            .confirmationDialog("진도 항목을 삭제할까요?", isPresented: Binding(
-                get: { deleting != nil },
-                set: { if !$0 { deleting = nil } }
-            )) {
-                Button("삭제", role: .destructive) {
-                    if let item = deleting {
+            .fileImporter(isPresented: $importPicker, allowedContentTypes: [.json]) { result in
+                do {
+                    let file = try result.get()
+                    guard file.startAccessingSecurityScopedResource() else {
+                        throw StudyError.message("진도 백업 파일 접근 권한이 없습니다.")
+                    }
+                    defer { file.stopAccessingSecurityScopedResource() }
+                    let bytes = try Data(contentsOf: file)
+                    guard bytes.count <= 2_000_000 else {
+                        throw StudyError.message("진도 백업은 최대 2MB입니다.")
+                    }
+                    let parsed = try JSONDecoder().decode(StudyProgressTransfer.self, from: bytes)
+                    let ids = parsed.items.map(\.id)
+                    guard parsed.format == "studyone-progress", parsed.schema == 1,
+                          parsed.items.count <= 2000, Set(ids).count == ids.count,
+                          parsed.items.allSatisfy(\.valid) else {
+                        throw StudyError.message("지원되지 않거나 손상된 진도 백업입니다.")
+                    }
+                    importCount = parsed.items.count
+                    pendingImport = bytes
+                } catch { self.error(error.localizedDescription) }
+            }
+            .confirmationDialog(
+                pendingImport == nil ? "진도 항목을 삭제할까요?" : "진도 백업으로 기존 데이터를 교체할까요?",
+                isPresented: Binding(
+                    get: { deleting != nil || pendingImport != nil },
+                    set: {
+                        if !$0 {
+                            deleting = nil
+                            pendingImport = nil
+                        }
+                    }
+                ), titleVisibility: .visible
+            ) {
+                if let item = deleting {
+                    Button("삭제", role: .destructive) {
                         do { try progress.remove(item) }
                         catch { self.error(error.localizedDescription) }
+                        deleting = nil
                     }
-                    deleting = nil
                 }
-                Button("취소", role: .cancel) { deleting = nil }
+                if let bytes = pendingImport {
+                    Button("진도 \(importCount)개로 교체", role: .destructive) {
+                        do {
+                            try progress.importBackup(data: bytes)
+                            backupNotice = "진도 JSON 백업을 복원했습니다."
+                        } catch { self.error(error.localizedDescription) }
+                        pendingImport = nil
+                    }
+                }
+                Button("취소", role: .cancel) {
+                    deleting = nil
+                    pendingImport = nil
+                }
             } message: {
-                Text(deleting.map { "\($0.subject) · \($0.unit)" } ?? "")
+                Text(pendingImport == nil
+                     ? (deleting.map { "\($0.subject) · \($0.unit)" } ?? "")
+                     : "현재 이 기기의 진도만 교체됩니다. 학교·숙제·시험 일정은 그대로 보존됩니다. 기존 진도도 먼저 백업하세요.")
             }
             .alert("진도 관리 오류", isPresented: $showError) {
                 Button("확인", role: .cancel) {}
