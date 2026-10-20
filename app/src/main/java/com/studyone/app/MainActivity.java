@@ -92,6 +92,36 @@ public class MainActivity extends Activity {
             if(!StudySyncClient.selfTest())throw new IllegalStateException("Sync client fixture failed");
             android.util.Log.i("StudyOneSync","SYNC_CREATE_ONLY_GUARDS_PASSED");
         }
+        // Emulator-only synthetic HTTP round-trip: never touches local user data.
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                && getIntent()!=null &&
+                getIntent().getBooleanExtra("studyone_sync_network_self_test",false)) {
+            final String ephemeralToken=getIntent().getStringExtra("studyone_sync_test_token");
+            io.execute(()->{
+                try {
+                    JSONObject before=StudySyncClient.snapshot(ephemeralToken);
+                    Models.StudyTask syntheticTask=new Models.StudyTask(1730000001234L,
+                            "숙제 항목","과학","CI 실험 문제",LocalDate.of(2026,10,22),2,false);
+                    StudyProgressItem syntheticProgress=StudyProgressItem.create(
+                            "과학","오투","7-2","미완료",true);
+                    JSONArray candidates=StudySyncClient.prepareNewOnly(
+                            java.util.Collections.singletonList(syntheticTask),
+                            java.util.Collections.singletonList(syntheticProgress),before);
+                    if(candidates.length()!=2)
+                        throw new IllegalStateException("Expected two synthetic entries");
+                    if(StudySyncClient.uploadNew(ephemeralToken,candidates)!=2)
+                        throw new IllegalStateException("Synthetic upload ack incomplete");
+                    JSONObject after=StudySyncClient.snapshot(ephemeralToken);
+                    if(StudySyncClient.prepareNewOnly(
+                            java.util.Collections.singletonList(syntheticTask),
+                            java.util.Collections.singletonList(syntheticProgress),after).length()!=0)
+                        throw new IllegalStateException("Existing IDs must be skipped");
+                    android.util.Log.i("StudyOneSync","LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED");
+                } catch(Exception ignored) {
+                    android.util.Log.e("StudyOneSync","LOCAL_SYNC_HTTP_ROUNDTRIP_FAILED");
+                }
+            });
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
             if(!StudyProgressStorage.selfTestBackup()) {
                 throw new IllegalStateException("Progress backup fixture round-trip failed");
