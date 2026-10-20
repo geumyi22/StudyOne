@@ -13,7 +13,32 @@ namespace StudyOne.Desktop;
 /// </summary>
 internal static class SyncClient
 {
-    private static readonly Uri BaseAddress = new("http://127.0.0.1:8765/");
+    private static readonly Uri LocalAddress = new("http://127.0.0.1:8765/");
+
+    /// <summary>HTTP is allowed only on loopback; every remote endpoint must be HTTPS.</summary>
+    internal static Uri ParseEndpoint(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment) || uri.AbsolutePath != "/")
+            throw new InvalidOperationException("서버 주소는 HTTPS 도메인 루트만 허용합니다.");
+        if (uri.Scheme == Uri.UriSchemeHttp)
+        {
+            if (uri.Host != "127.0.0.1" && uri.Host != "localhost" &&
+                uri.Host != "[::1]" && uri.Host != "::1")
+                throw new InvalidOperationException("HTTP는 로컬 개발 서버에만 사용할 수 있습니다.");
+            if (uri.Port != 8765)
+                throw new InvalidOperationException("개발용 HTTP는 8765 포트만 허용합니다.");
+        }
+        else if (uri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException("서버에 연결하려면 유효한 HTTPS 주소가 필요합니다.");
+        }
+        return uri;
+    }
+
+    private static string ApiRoot(Uri endpoint) =>
+        endpoint.Scheme == Uri.UriSchemeHttp ? "v1/" : "v2/";
 
     internal sealed class Snapshot
     {
@@ -41,18 +66,20 @@ internal static class SyncClient
         public object? Payload { get; set; }
     }
 
-    private static HttpClient OpenClient(string token)
+    private static HttpClient OpenClient(string token, Uri? endpoint = null)
     {
-        if (string.IsNullOrWhiteSpace(token) || token.Length < 32)
+        if (string.IsNullOrWhiteSpace(token) || token.Length < 32 ||
+            token.Length > 1024 || token.Any(c => c <= 32 || c >= 127))
             throw new InvalidOperationException("동기화 토큰은 32자 이상이어야 합니다.");
         var handler = new HttpClientHandler
         {
             UseProxy = false,
-            AllowAutoRedirect = false
+            AllowAutoRedirect = false,
+            UseCookies = false
         };
         var client = new HttpClient(handler)
         {
-            BaseAddress = BaseAddress,
+            BaseAddress = ParseEndpoint((endpoint ?? LocalAddress).AbsoluteUri),
             Timeout = TimeSpan.FromSeconds(12)
         };
         client.DefaultRequestHeaders.Authorization =
@@ -79,10 +106,11 @@ internal static class SyncClient
     }
 
     internal static async Task<Snapshot> GetSnapshot(string token,
-                                                       CancellationToken cancel = default)
+                                                       CancellationToken cancel = default,
+                                                       Uri? endpoint = null)
     {
-        using var http = OpenClient(token);
-        using var response = await http.GetAsync("v1/snapshot", cancel);
+        using var http = OpenClient(token, endpoint);
+        using var response = await http.GetAsync(ApiRoot(http.BaseAddress!) + "snapshot", cancel);
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException(
                 response.StatusCode == HttpStatusCode.Unauthorized
@@ -134,10 +162,11 @@ internal static class SyncClient
     /// Any conflict halts the batch; safe retry re-reads current server IDs.
     /// </summary>
     internal static async Task<int> UploadNew(string token, List<Mutation> pending,
-                                               CancellationToken cancel = default)
+                                               CancellationToken cancel = default,
+                                               Uri? endpoint = null)
     {
         int sent = 0;
-        using var http = OpenClient(token);
+        using var http = OpenClient(token, endpoint);
         foreach (var batch in pending.Chunk(50))
         {
             var body = new
@@ -145,7 +174,8 @@ internal static class SyncClient
                 requestId = Guid.NewGuid().ToString("D"),
                 mutations = batch
             };
-            using var request = new HttpRequestMessage(HttpMethod.Post, "v1/changes")
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                ApiRoot(http.BaseAddress!) + "changes")
             {
                 Content = new ByteArrayContent(StudyData.Serialize(body))
             };
