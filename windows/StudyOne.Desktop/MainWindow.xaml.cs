@@ -373,6 +373,9 @@ public partial class MainWindow : Window
         SyncUploadButton.IsEnabled = false;
         SyncPullTasksButton.IsEnabled = false;
         SyncPullProgressButton.IsEnabled = false;
+        SyncLoadPlansButton.IsEnabled = false;
+        SyncApprovePlanButton.IsEnabled = false;
+        SyncRejectPlanButton.IsEnabled = false;
         SyncResultText.Text = "로컬 동기화 서버 확인 중…";
         return true;
     }
@@ -384,6 +387,9 @@ public partial class MainWindow : Window
         SyncUploadButton.IsEnabled = true;
         SyncPullTasksButton.IsEnabled = true;
         SyncPullProgressButton.IsEnabled = true;
+        SyncLoadPlansButton.IsEnabled = true;
+        SyncApprovePlanButton.IsEnabled = true;
+        SyncRejectPlanButton.IsEnabled = true;
     }
 
     private async void SyncPreview_Click(object sender, RoutedEventArgs e)
@@ -567,6 +573,93 @@ public partial class MainWindow : Window
             SyncResultText.Text = "서버 신규 기록 가져오기가 중단되었습니다. " +
                                   "기존 ID는 자동 변경하지 않습니다.";
             ShowError("가져오기 오류\n" + error.Message);
+        }
+        finally { EndSync(); }
+    }
+
+
+    private void PendingPlansList_SelectionChanged(object sender,
+                                                     SelectionChangedEventArgs e)
+    {
+        if (PendingPlansList.SelectedItem is not SyncClient.PendingPlan plan)
+        {
+            PendingPlanDetailsText.Text = "초안을 선택하면 세부 공부와 시험범위를 확인할 수 있습니다.";
+            return;
+        }
+        PendingPlanDetailsText.Text =
+            $"{plan.Title}\n승인 전: 실제 일정에 등록되지 않습니다.\n\n" +
+            string.Join("\n", plan.Tasks.Select((t, i) =>
+                $"{i + 1}. [{t.DueDate}] {t.Type} · {t.Subject} · {t.Title} (중요도 {t.Importance})"));
+    }
+
+    private async void SyncLoadPlans_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            Uri endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            var received = await SyncClient.GetPendingPlans(SyncTokenInput.Password, endpoint);
+            PendingPlansList.ItemsSource = received.Proposals;
+            PendingPlanDetailsText.Text = received.Proposals.Count == 0
+                ? "현재 승인 대기 중인 공부 계획이 없습니다."
+                : "계획을 선택해서 내용을 먼저 확인하세요. 승인하기 전에는 실제 일정이 바뀌지 않습니다.";
+            SyncResultText.Text = $"서버의 승인 대기 공부 계획 {received.Proposals.Count}개를 확인했습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "승인 대기 계획 조회 실패. 서버 주소·권한을 확인하세요.";
+            ShowError(error.Message);
+        }
+        finally { EndSync(); }
+    }
+
+    private async void SyncApprovePlan_Click(object sender, RoutedEventArgs e) =>
+        await DecideSelectedPlan(approve: true);
+
+    private async void SyncRejectPlan_Click(object sender, RoutedEventArgs e) =>
+        await DecideSelectedPlan(approve: false);
+
+    private async Task DecideSelectedPlan(bool approve)
+    {
+        if (PendingPlansList.SelectedItem is not SyncClient.PendingPlan selected)
+        {
+            ShowError("먼저 승인 대기 목록에서 공부 계획을 선택해 주세요.");
+            return;
+        }
+        string action = approve ? "승인" : "거부";
+        if (!BeginSync()) return;
+        try
+        {
+            Uri endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            if (selected.State != "pending")
+                throw new InvalidDataException("이미 처리된 공부 계획입니다. 목록을 다시 읽어 주세요.");
+            if (MessageBox.Show(this,
+                    $"선택한 AI 공부 계획: {selected.Title}\n" +
+                    $"항목 {selected.TaskCount}개를 {action}하시겠습니까?\n\n" +
+                    (approve
+                        ? "승인하면 HTTPS 서버에 실제 일정이 생성됩니다. " +
+                          "현재 PC에 자동으로 가져오지는 않으므로 이후 신규 일정 받기를 실행하세요."
+                        : "거부하면 이 계획은 실제 일정으로 추가되지 않습니다."),
+                    $"AI 공부 계획 {action} 최종 확인",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                SyncResultText.Text = "AI 계획 결정을 취소했습니다. 기존 일정은 그대로입니다.";
+                return;
+            }
+            string finalState = await SyncClient.DecideProposal(
+                SyncTokenInput.Password, endpoint, selected.Id, approve);
+            var remaining = await SyncClient.GetPendingPlans(SyncTokenInput.Password, endpoint);
+            PendingPlansList.ItemsSource = remaining.Proposals;
+            PendingPlanDetailsText.Text = "결정 내용을 저장했습니다. 다른 계획을 선택해 확인하세요.";
+            SyncResultText.Text = approve
+                ? $"계획 '{selected.Title}' 승인: 서버 일정 {selected.TaskCount}개가 등록됐습니다.\n" +
+                  "현재 PC에서 내용을 확인하려면 '서버의 신규 일정만 가져오기' 버튼을 사용하세요."
+                : $"계획 '{selected.Title}'을(를) 거부했습니다. 실제 일정이 변경되지 않았습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "계획 결정을 확인하지 못했습니다. 서버의 대기 목록을 새로고침하세요.";
+            ShowError(error.Message);
         }
         finally { EndSync(); }
     }
