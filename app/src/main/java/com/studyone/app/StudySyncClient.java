@@ -27,6 +27,36 @@ import java.util.UUID;
  */
 public final class StudySyncClient {
     private static final String BASE = "http://127.0.0.1:8765/";
+
+    /** Only explicit HTTPS hosts or the test loopback HTTP address are allowed. */
+    public static String checkedAddress(String address) {
+        try {
+            java.net.URI uri = new java.net.URI(address);
+            if (uri.getHost() == null || uri.getHost().isEmpty()
+                    || uri.getUserInfo() != null || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null || uri.getRawPath() == null
+                    || !uri.getRawPath().equals("/")
+                    || uri.getPort() > 65535 || uri.getPort() == 0)
+                throw new IllegalArgumentException("서버 주소는 HTTPS 루트 주소여야 합니다.");
+            String protocol=uri.getScheme();
+            boolean local="127.0.0.1".equals(uri.getHost())
+                    || "localhost".equals(uri.getHost())
+                    || "::1".equals(uri.getHost());
+            if("http".equalsIgnoreCase(protocol)) {
+                if(!local || uri.getPort()!=8765)
+                    throw new IllegalArgumentException("HTTP는 로컬 8765 포트 실험만 허용합니다.");
+            }else if(!"https".equalsIgnoreCase(protocol)){
+                throw new IllegalArgumentException("외부 서버에는 HTTPS가 필요합니다.");
+            }
+            return uri.toASCIIString();
+        }catch(java.net.URISyntaxException error) {
+            throw new IllegalArgumentException("유효한 HTTPS 주소를 입력하세요.",error);
+        }
+    }
+
+    private static String apiPrefix(String base) {
+        return base.startsWith("http://") ? "v1/" : "v2/";
+    }
     private static final int MAX_RESPONSE = 4_000_000;
     private static final int BATCH = 50;
     private StudySyncClient() {}
@@ -39,13 +69,14 @@ public final class StudySyncClient {
                 throw new IllegalArgumentException("토큰에 허용되지 않는 문자가 있습니다.");
     }
 
-    private static JSONObject call(String token, String endpoint, JSONObject body)
-            throws Exception {
+    private static JSONObject call(String token, String endpoint, JSONObject body,
+                                   String address) throws Exception {
         validateToken(token);
-        if (!endpoint.equals("v1/snapshot") && !endpoint.equals("v1/changes"))
-            throw new IllegalArgumentException("허용되지 않은 로컬 서버 경로입니다.");
+        String base=checkedAddress(address);
+        if (!endpoint.equals("snapshot") && !endpoint.equals("changes"))
+            throw new IllegalArgumentException("허용되지 않은 동기화 서버 경로입니다.");
         HttpURLConnection connection=(HttpURLConnection)
-                new URL(BASE + endpoint).openConnection(Proxy.NO_PROXY);
+                new URL(base + apiPrefix(base) + endpoint).openConnection(Proxy.NO_PROXY);
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(4000);
         connection.setReadTimeout(10000);
@@ -85,7 +116,11 @@ public final class StudySyncClient {
 
     /** GET does not upload task or progress content to the server. */
     public static JSONObject snapshot(String token) throws Exception {
-        JSONObject root=call(token,"v1/snapshot",null);
+        return snapshot(token, BASE);
+    }
+
+    public static JSONObject snapshot(String token, String address) throws Exception {
+        JSONObject root=call(token,"snapshot",null,address);
         if(root.getInt("schema")!=1 || root.getLong("cursor")<0)
             throw new IllegalStateException("동기화 서버 버전을 확인하세요.");
         JSONArray records=root.getJSONArray("records");
@@ -173,7 +208,12 @@ public final class StudySyncClient {
 
     /** Each requested batch is atomic; no implicit retry if result is unknown. */
     public static int uploadNew(String token, JSONArray pending) throws Exception {
+        return uploadNew(token, pending, BASE);
+    }
+
+    public static int uploadNew(String token, JSONArray pending, String address) throws Exception {
         validateToken(token);
+        checkedAddress(address);
         if(pending==null || pending.length()==0)return 0;
         int sent=0;
         for(int i=0;i<pending.length();i+=BATCH) {
@@ -184,7 +224,7 @@ public final class StudySyncClient {
             payload.put("requestId",UUID.randomUUID().toString());
             payload.put("mutations",batch);
             try {
-                JSONObject response=call(token,"v1/changes",payload);
+                JSONObject response=call(token,"changes",payload,address);
                 if(response.getInt("schema")!=1 ||
                         response.getJSONArray("changes").length()!=batch.length())
                     throw new IllegalStateException("서버 저장 결과를 확인하지 못했습니다.");
