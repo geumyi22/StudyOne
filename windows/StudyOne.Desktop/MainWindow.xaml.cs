@@ -371,6 +371,8 @@ public partial class MainWindow : Window
         syncBusy = true;
         SyncPreviewButton.IsEnabled = false;
         SyncUploadButton.IsEnabled = false;
+        SyncPullTasksButton.IsEnabled = false;
+        SyncPullProgressButton.IsEnabled = false;
         SyncResultText.Text = "로컬 동기화 서버 확인 중…";
         return true;
     }
@@ -380,6 +382,8 @@ public partial class MainWindow : Window
         syncBusy = false;
         SyncPreviewButton.IsEnabled = true;
         SyncUploadButton.IsEnabled = true;
+        SyncPullTasksButton.IsEnabled = true;
+        SyncPullProgressButton.IsEnabled = true;
     }
 
     private async void SyncPreview_Click(object sender, RoutedEventArgs e)
@@ -387,7 +391,9 @@ public partial class MainWindow : Window
         if (!BeginSync()) return;
         try
         {
-            var snapshot = await SyncClient.GetSnapshot(SyncTokenInput.Password);
+            var endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            var snapshot = await SyncClient.GetSnapshot(SyncTokenInput.Password,
+                                                       endpoint: endpoint);
             int totalTasks = snapshot.Records.Count(x => x.Kind == "task");
             int totalProgress = snapshot.Records.Count(x => x.Kind == "progress");
             SyncResultText.Text =
@@ -413,7 +419,8 @@ public partial class MainWindow : Window
                 throw new InvalidDataException("로컬 일정/진도 원본 읽기에 문제가 있어 전송을 차단했습니다.");
 
             string token = SyncTokenInput.Password;
-            var snapshot = await SyncClient.GetSnapshot(token);
+            var endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            var snapshot = await SyncClient.GetSnapshot(token, endpoint: endpoint);
             var pending = SyncClient.NewOnly(CloneTasks(), progressBackup, snapshot);
             int localTotal = taskBackup.Tasks.Count + progressBackup.Items.Count;
             int skipped = localTotal - pending.Count;
@@ -437,7 +444,7 @@ public partial class MainWindow : Window
                 SyncResultText.Text = "전송을 취소했습니다. 개인 학습 데이터는 업로드되지 않았습니다.";
                 return;
             }
-            int sent = await SyncClient.UploadNew(token, pending);
+            int sent = await SyncClient.UploadNew(token, pending, endpoint: endpoint);
             SyncResultText.Text =
                 $"새 기록 {sent}개를 로컬 서버로 보냈습니다.\n" +
                 $"기존 ID {skipped}개는 건너뛰었습니다.\n" +
@@ -448,6 +455,118 @@ public partial class MainWindow : Window
             SyncResultText.Text = "동기화 전송이 중단되었습니다. 일부 배치는 서버에 저장됐을 수 있습니다." +
                                   " 서버 목록을 다시 읽어 확인하세요.";
             ShowError("동기화 오류\n" + error.Message);
+        }
+        finally { EndSync(); }
+    }
+
+
+    private async void SyncPullTasks_Click(object sender, RoutedEventArgs e) =>
+        await PullNewRemote(taskKind: true);
+
+    private async void SyncPullProgress_Click(object sender, RoutedEventArgs e) =>
+        await PullNewRemote(taskKind: false);
+
+    /// <summary>
+    /// Explicit add-only inbound merge. User approval, second server fetch,
+    /// unchanged local bytes and a local backup are required before one file
+    /// is atomically replaced. Never imports deletes/edits of existing IDs.
+    /// </summary>
+    private async Task PullNewRemote(bool taskKind)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            if (tasksLocked || progressLocked)
+                throw new InvalidDataException(
+                    "로컬 저장 데이터가 손상된 상태에서는 가져올 수 없습니다.");
+
+            string token = SyncTokenInput.Password;
+            Uri endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            // Read the actual persisted files rather than potentially stale UI state.
+            TaskBackup originalTasks = StudyData.LoadTasks();
+            ProgressBackup originalProgress = StudyData.LoadProgress();
+            byte[] taskFingerprint = StudyData.SerializeAndValidateTasks(originalTasks);
+            byte[] progressFingerprint = StudyData.SerializeAndValidateProgress(originalProgress);
+
+            var first = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+            var proposed = SyncClient.PreviewNewRemote(originalTasks, originalProgress, first);
+            int incoming = taskKind ? proposed.NewTasks.Count : proposed.NewProgress.Count;
+            string kind = taskKind ? "일정" : "진도";
+            if (incoming == 0)
+            {
+                SyncResultText.Text = $"가져올 새 {kind} ID가 없습니다.\n" +
+                    $"기존 ID 충돌/차이 {proposed.Conflicts}개는 안전을 위해 건너뛰었습니다.";
+                return;
+            }
+            if (MessageBox.Show(this,
+                    $"서버에서 현재 PC에 없는 새 {kind} {incoming}개를 추가할까요?\n\n" +
+                    $"서버에서 발견한 기존 ID 충돌 {proposed.Conflicts}개는 덮어쓰지 않습니다.\n" +
+                    "현재 PC의 기존 데이터는 변경하지 않으며, 교체 전 백업 파일을 만듭니다.\n" +
+                    "이 실행 이후에 다른 장치에서 서버를 수정했다면 가져오기를 취소합니다.",
+                    "신규 항목 가져오기 승인", MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                SyncResultText.Text = "서버 신규 기록 가져오기를 취소했습니다.";
+                return;
+            }
+            var second = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+            if (first.Cursor != second.Cursor)
+                throw new InvalidOperationException(
+                    "서버 기록이 승인 중 변경되었습니다. 다시 미리보기부터 확인하세요.");
+            var latestTasks = StudyData.LoadTasks();
+            var latestProgress = StudyData.LoadProgress();
+            if (!StudyData.SerializeAndValidateTasks(latestTasks).SequenceEqual(taskFingerprint) ||
+                !StudyData.SerializeAndValidateProgress(latestProgress).SequenceEqual(progressFingerprint))
+                throw new InvalidOperationException(
+                    "PC 저장 데이터가 승인 중 변경되었습니다. 처음부터 다시 확인하세요.");
+            var verified = SyncClient.PreviewNewRemote(latestTasks, latestProgress, second);
+            var initialIds = taskKind
+                ? proposed.NewTasks.Select(t => t.Id.ToString()).OrderBy(x => x)
+                : proposed.NewProgress.Select(p => p.Id).OrderBy(x => x);
+            var confirmedIds = taskKind
+                ? verified.NewTasks.Select(t => t.Id.ToString()).OrderBy(x => x)
+                : verified.NewProgress.Select(p => p.Id).OrderBy(x => x);
+            if (!initialIds.SequenceEqual(confirmedIds) ||
+                proposed.Conflicts != verified.Conflicts)
+                throw new InvalidOperationException("동기화 후보가 변경되어 저장하지 않았습니다.");
+
+            string file = taskKind ? StudyData.TasksPath : StudyData.ProgressPath;
+            string backupLocation = "";
+            // No change occurs if backup creation fails.
+            if (File.Exists(file))
+            {
+                backupLocation = file + ".before-sync-" +
+                    DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "-" +
+                    Guid.NewGuid().ToString("N") + ".bak";
+                File.Copy(file, backupLocation, overwrite: false);
+            }
+            if (taskKind)
+            {
+                var merged = SyncClient.MakeMergedTasks(latestTasks, verified);
+                StudyData.SaveTasks(merged);
+                taskBackup = merged;
+                RefreshTasks();
+                ClearTaskForm();
+            }
+            else
+            {
+                var merged = SyncClient.MakeMergedProgress(latestProgress, verified);
+                StudyData.SaveProgress(merged);
+                progressBackup = merged;
+                RefreshProgress();
+                ClearProgressForm();
+            }
+            SyncResultText.Text = $"서버의 신규 {kind} {incoming}개를 PC에 추가했습니다.\n" +
+                $"기존 ID 충돌 {verified.Conflicts}개는 변경하지 않았습니다.\n" +
+                (string.IsNullOrEmpty(backupLocation)
+                    ? "기존 저장 파일이 없어 최초 데이터 파일로 기록했습니다."
+                    : "기존 데이터의 안전 복사본: " + backupLocation);
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "서버 신규 기록 가져오기가 중단되었습니다. " +
+                                  "기존 ID는 자동 변경하지 않습니다.";
+            ShowError("가져오기 오류\n" + error.Message);
         }
         finally { EndSync(); }
     }
