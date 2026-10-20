@@ -200,13 +200,13 @@
             <TabItem Header="동기화 실험">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="28" MaxWidth="760" HorizontalAlignment="Left">
-                        <TextBlock Text="StudyOne Sync · 로컬 연동 실험" FontSize="22"
+                        <TextBlock Text="StudyOne Sync · HTTPS 계정 연동 실험" FontSize="22"
                                    Foreground="#243351" FontWeight="Bold"/>
                         <Border Background="#FFF4DD" CornerRadius="12" Padding="14"
                                 Margin="0,14,0,14">
                             <TextBlock TextWrapping="Wrap" FontSize="13"
                                        Foreground="#765724"
-                                       Text="Canary 개발 기능입니다. 현재 PC의 127.0.0.1:8765에서 실행한 StudyOne 동기화 서버만 연결할 수 있습니다. 클라우드/휴대전화 자동 동기화는 아직 되지 않습니다. 앱은 인증 토큰을 저장하지 않으며, 사용자가 전송 버튼을 눌러야만 데이터가 서버로 보내집니다."/>
+                                       Text="Canary 개발 기능입니다. 기존 로컬 서버 또는 사용자가 준비한 HTTPS 계정 서버를 수동 연결할 수 있습니다. 실제 클라우드 서비스는 아직 배포되지 않았습니다. 앱은 기기 토큰을 저장하지 않으며 사용자가 승인한 동작만 실행합니다."/>
                         </Border>
                         <TextBlock Text="서버 주소" FontWeight="SemiBold"/>
                         <TextBox x:Name="SyncUrlInput" Width="540"
@@ -215,7 +215,7 @@
                                  ToolTip="실제 원격 서버는 유효한 HTTPS 주소만 허용합니다."/>
                         <TextBlock Text="로컬 HTTP: 127.0.0.1:8765만 허용 · 원격 계정 서버: HTTPS 필수"
                                    FontSize="12" Foreground="#67758D" Margin="0,5,0,12"/>
-                        <TextBlock Text="로컬 테스트용 Bearer 토큰" FontWeight="SemiBold"/>
+                        <TextBlock Text="계정별 기기 Bearer 토큰 (저장하지 않음)" FontWeight="SemiBold"/>
                         <PasswordBox x:Name="SyncTokenInput" Width="440"
                                      Height="38" Margin="0,8,0,14"
                                      HorizontalAlignment="Left"/>
@@ -243,6 +243,34 @@
                             <TextBlock x:Name="SyncResultText" Text="아직 연결하지 않았습니다."
                                        FontSize="13" Foreground="#284066" TextWrapping="Wrap"/>
                         </Border>
+                        <Separator Margin="0,24,0,20"/>
+                        <TextBlock Text="ChatGPT · AI 학습 계획 승인 대기함"
+                                   FontSize="18" FontWeight="SemiBold" Foreground="#243351"/>
+                        <TextBlock Text="AI가 제안한 공부 계획은 앱에서 승인하기 전까지 실제 일정에 저장되지 않습니다. HTTPS 계정 서버와 읽기·쓰기 기기 토큰이 필요합니다."
+                                   FontSize="12" Foreground="#63728C" Margin="0,7,0,12"
+                                   TextWrapping="Wrap"/>
+                        <Button x:Name="SyncLoadPlansButton"
+                                Content="서버의 승인 대기 계획 확인"
+                                Click="SyncLoadPlans_Click" HorizontalAlignment="Left"/>
+                        <ListBox x:Name="PendingPlansList" Height="140" Margin="0,12,0,8"
+                                 DisplayMemberPath="Display"
+                                 SelectionChanged="PendingPlansList_SelectionChanged"/>
+                        <Border Background="#F5F7FC" CornerRadius="10" Padding="12">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="230">
+                                <TextBlock x:Name="PendingPlanDetailsText"
+                                           Text="계획을 선택하면 과목·일정과 세부 공부를 확인할 수 있습니다."
+                                           TextWrapping="Wrap" FontSize="13"
+                                           Foreground="#3C4D6F"/>
+                            </ScrollViewer>
+                        </Border>
+                        <WrapPanel Margin="0,12,0,0">
+                            <Button x:Name="SyncApprovePlanButton"
+                                    Content="선택한 공부 계획 승인 · 실제 서버 일정 등록"
+                                    Click="SyncApprovePlan_Click"/>
+                            <Button x:Name="SyncRejectPlanButton"
+                                    Content="선택한 계획 거부"
+                                    Click="SyncRejectPlan_Click"/>
+                        </WrapPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
