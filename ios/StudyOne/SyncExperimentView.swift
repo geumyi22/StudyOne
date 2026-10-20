@@ -1,4 +1,3 @@
-#if DEBUG
 import SwiftUI
 
 /// Intentionally not shown in Release builds. Requires the developer's
@@ -9,6 +8,7 @@ struct SyncExperimentView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var token = ""
+    @State private var serverAddress = StudySyncClient.defaultAddress
     @State private var status = "아직 서버를 조회하지 않았습니다."
     @State private var busy = false
     @State private var pending: [StudySyncClient.Mutation] = []
@@ -33,14 +33,18 @@ struct SyncExperimentView: View {
             Section {
                 Label("로컬 서버만 연결", systemImage: "lock.shield")
                     .font(.headline)
-                Text("개발 실험 기능입니다. 이 기기의 127.0.0.1:8765에 실행한 StudyOne 서버만 조회합니다. 실제 Android·iOS·Windows 간 자동 동기화나 인터넷 연결 서비스는 아직 지원하지 않습니다.")
+                Text("보안 계정 서버의 HTTPS 주소와 장치별 토큰이 필요합니다. Debug 시뮬레이터에서만 127.0.0.1:8765 HTTP 실험을 지원합니다. 기존 데이터의 자동 양방향 갱신은 아직 구현되지 않았습니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Section("로컬 서버 인증") {
-                Text("http://127.0.0.1:8765")
-                    .font(.caption.monospaced())
+                TextField("HTTPS 서버 주소 (예: https://example.com/)", text: $serverAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                Text("HTTPS는 유효한 도메인·공인 인증서가 필요합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
                 SecureField("테스트 Bearer 토큰 (저장되지 않음)", text: $token)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -56,7 +60,7 @@ struct SyncExperimentView: View {
                     Task {
                         defer { busy = false }
                         do {
-                            let remote = try await StudySyncClient.snapshot(token: token)
+                            let remote = try await StudySyncClient.snapshot(token: token, address: serverAddress)
                             let tasks = remote.records.filter { $0.kind == "task" }.count
                             let progress = remote.records.filter { $0.kind == "progress" }.count
                             status = "서버 조회 성공 · 변경 cursor \(remote.cursor)\n"
@@ -78,7 +82,7 @@ struct SyncExperimentView: View {
                     Task {
                         defer { busy = false }
                         do {
-                            let remote = try await StudySyncClient.snapshot(token: token)
+                            let remote = try await StudySyncClient.snapshot(token: token, address: serverAddress)
                             let result = try candidates(snapshot: remote)
                             pending = result
                             if result.isEmpty {
@@ -110,7 +114,7 @@ struct SyncExperimentView: View {
             Section("보호 및 제한") {
                 Text("서버에 이미 존재하는 일정·진도 ID는 건너뛰며, 기존 서버 기록을 수정하거나 삭제하지 않습니다. 전송 승인 전과 직전에 서버와 로컬 데이터가 동일한지 다시 확인합니다.")
                 Text("전송 중 연결이 끊기면 일부 배치가 저장됐을 수 있습니다. 서버 목록을 다시 확인한 뒤 진행하세요. 기존 로컬 기록은 변경되지 않습니다.")
-                Text("실제 iPhone에서 다른 PC의 127.0.0.1에 직접 연결할 수는 없습니다. 모바일 자동 동기화에는 별도 HTTPS 서버와 계정 인증이 필요합니다.")
+                Text("원격 HTTPS 서버와 토큰을 수동 입력해야 사용 가능합니다. 실시간 자동 동기화와 기존 기록 갱신·삭제는 아직 지원하지 않습니다.")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -131,7 +135,7 @@ struct SyncExperimentView: View {
                         busy = false
                     }
                     do {
-                        let remote = try await StudySyncClient.snapshot(token: token)
+                        let remote = try await StudySyncClient.snapshot(token: token, address: serverAddress)
                         let latest = try candidates(snapshot: remote)
                         let encoder = JSONEncoder()
                         guard try encoder.encode(latest) == encoder.encode(expected) else {
@@ -139,7 +143,7 @@ struct SyncExperimentView: View {
                                 "확인 중 기록이 변경되었습니다. 전송하지 않고 다시 조회합니다."
                             )
                         }
-                        let sent = try await StudySyncClient.uploadNew(token: token, pending: latest)
+                        let sent = try await StudySyncClient.uploadNew(token: token, pending: latest, address: serverAddress)
                         status = "새 항목 \(sent)개를 로컬 서버로 전송했습니다. "
                             + "기존 기록은 덮어쓰거나 삭제하지 않았습니다."
                     } catch {
@@ -160,4 +164,3 @@ struct SyncExperimentView: View {
         }
     }
 }
-#endif
