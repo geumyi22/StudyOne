@@ -1,10 +1,40 @@
-#if DEBUG
 import Foundation
 
 /// Debug-only localhost protocol. Production apps must use verified HTTPS
 /// and user-scoped authentication before any cross-device sync is enabled.
 enum StudySyncClient {
-    static let base = URL(string: "http://127.0.0.1:8765/")!
+    #if DEBUG
+    static let defaultAddress = "http://127.0.0.1:8765/"
+    #else
+    static let defaultAddress = "https://"
+    #endif
+
+    static func checkedAddress(_ address: String) throws -> (URL, String) {
+        guard let components = URLComponents(string: address),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.path == "/" else {
+            throw StudyError.message("서버 주소는 루트 HTTPS 주소여야 합니다.")
+        }
+        if scheme == "http" {
+            #if DEBUG
+            guard (host == "127.0.0.1" || host == "localhost" || host == "::1"),
+                  components.port == 8765 else {
+                throw StudyError.message("HTTP는 Debug localhost:8765에서만 허용됩니다.")
+            }
+            #else
+            throw StudyError.message("배포 앱에서는 HTTPS 연결만 허용합니다.")
+            #endif
+        } else if scheme != "https" {
+            throw StudyError.message("외부 계정 서버는 HTTPS로 연결해야 합니다.")
+        }
+        guard let url = components.url else {
+            throw StudyError.message("지원되지 않는 동기화 서버 주소입니다.")
+        }
+        return (url, scheme == "https" ? "v2/" : "v1/")
+    }
     static let statuses: Set<String> = ["확인 필요", "미완료", "진행 중", "완료"]
     private static let maxResponse = 4_000_000
 
@@ -77,9 +107,11 @@ enum StudySyncClient {
     }
 
     private static func request(_ token: String, endpoint: String,
-                                body: Data? = nil) async throws -> Data {
+                                body: Data? = nil,
+                                address: String = defaultAddress) async throws -> Data {
         let safeToken = try checkedToken(token)
-        guard endpoint == "v1/snapshot" || endpoint == "v1/changes" else {
+        let (base, prefix) = try checkedAddress(address)
+        guard endpoint == "snapshot" || endpoint == "changes" else {
             throw StudyError.message("지원되지 않는 동기화 경로입니다.")
         }
         if let body, body.count > 262_144 {
@@ -98,7 +130,7 @@ enum StudySyncClient {
                                  delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
 
-        var req = URLRequest(url: base.appendingPathComponent(endpoint))
+        var req = URLRequest(url: base.appendingPathComponent(prefix + endpoint))
         req.httpMethod = body == nil ? "GET" : "POST"
         req.setValue("Bearer " + safeToken, forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -124,8 +156,8 @@ enum StudySyncClient {
         return responseBody
     }
 
-    static func snapshot(token: String) async throws -> Snapshot {
-        let bytes = try await request(token, endpoint: "v1/snapshot")
+    static func snapshot(token: String, address: String = defaultAddress) async throws -> Snapshot {
+        let bytes = try await request(token, endpoint: "snapshot", address: address)
         let snapshot = try JSONDecoder().decode(Snapshot.self, from: bytes)
         guard snapshot.schema == 1, snapshot.cursor >= 0,
               snapshot.records.count <= 7000 else {
@@ -186,7 +218,8 @@ enum StudySyncClient {
     }
 
     /// No retries and no overwrite; if network result is unknown, re-read.
-    static func uploadNew(token: String, pending: [Mutation]) async throws -> Int {
+    static func uploadNew(token: String, pending: [Mutation],
+                          address: String = defaultAddress) async throws -> Int {
         var sent = 0
         let encoder = JSONEncoder()
         for offset in stride(from: 0, to: pending.count, by: 50) {
@@ -195,7 +228,8 @@ enum StudySyncClient {
                                 mutations: part)
             let bytes = try encoder.encode(payload)
             do {
-                let result = try await request(token, endpoint: "v1/changes", body: bytes)
+                let result = try await request(token, endpoint: "changes",
+                                               body: bytes, address: address)
                 let ack = try JSONDecoder().decode(Ack.self, from: result)
                 guard ack.schema == 1, ack.cursor >= 0,
                       ack.changes.count == part.count else {
@@ -238,4 +272,3 @@ enum StudySyncClient {
         } catch { return false }
     }
 }
-#endif
