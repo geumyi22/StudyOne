@@ -19,6 +19,11 @@ adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_ai_self_te
 sleep 2
 adb logcat -d -s StudyOneAI:I | grep -q 'AI_OFFLINE_FIXTURE_TEST_PASSED'
 echo 'AI_OFFLINE_FIXTURE_TEST_PASSED'
+adb shell am force-stop com.studyone.app
+adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_progress_self_test true
+sleep 2
+adb logcat -d -s StudyOneProgress:I | grep -q 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
+echo 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
 adb shell pidof com.studyone.app | grep -E '[0-9]+'
 SIZE="$(adb shell wm size | sed -n 's/.*: //p' | tr -d '\r' | head -n1)"
 WIDTH="${SIZE%x*}"
