@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
             DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN);
 
     private Storage storage;
+    private StudyProgressStorage progressStorage;
     private final NeisClient neis = new NeisClient();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private FrameLayout content;
@@ -57,6 +58,7 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         storage = new Storage(this);
+        progressStorage = new StudyProgressStorage(this);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
 
@@ -265,10 +267,36 @@ public class MainActivity extends Activity {
                 .setPositiveButton("확인",null).show());
         c.addView(roles);
 
+        c.addView(section("교재 · 시험범위 · 진도"));
+        c.addView(cardText("새 진도는 교재·단원별로 따로 저장됩니다. 기존 숙제·수행평가 일정은 변경되지 않습니다.\n현재 진도 데이터는 기존 JSON 백업(schema 1)에 포함되지 않습니다. 정식 배포 전에 백업/복구 확장이 필요합니다.",12));
+        Button addProgress=secondary("+ 시험범위 진도 추가");
+        addProgress.setOnClickListener(v->progressDialog(null));
+        c.addView(addProgress);
+        try {
+            List<StudyProgressItem> progress=progressStorage.list();
+            int complete=0, total=0, pending=0;
+            for(StudyProgressItem item:progress) {
+                if(!item.inExamScope)continue;
+                total++;
+                if(StudyProgressItem.DONE.equals(item.status))complete++;
+                if(StudyProgressItem.UNKNOWN.equals(item.status))pending++;
+            }
+            c.addView(cardText("시험범위 항목 "+total+"개 · 완료 "+complete+"개 · 확인 필요 "+pending+"개",13));
+            if(progress.isEmpty()) {
+                c.addView(cardText("등록된 교재 진도가 없습니다. 위 버튼에서 직접 추가할 수 있습니다.",13));
+            } else {
+                progress.sort(Comparator.comparing((StudyProgressItem item)->item.subject)
+                        .thenComparing(item->item.material).thenComparing(item->item.unit));
+                for(StudyProgressItem item:progress) c.addView(progressCard(item));
+            }
+        } catch (IllegalStateException e) {
+            c.addView(cardText("진도 데이터 읽기 오류: "+e.getMessage(),13));
+        }
+
         List<Models.StudyTask> tasks=storage.tasks();
         if(tasks.isEmpty()){
             c.addView(spacer(12));
-            c.addView(cardText("등록된 일정이 없습니다.\n시험, 숙제, 수행평가와 준비물을 추가해 보세요.",14));
+            c.addView(cardText("일별 일정은 아직 없습니다. 위에서 교재 진도를 별도로 관리할 수 있습니다.",14));
             return s;
         }
 
@@ -760,6 +788,93 @@ public class MainActivity extends Activity {
                 .setTitle("백업 처리 실패")
                 .setMessage(e.getMessage()==null?"파일 형식을 확인하세요.":e.getMessage())
                 .setPositiveButton("확인",null).show();
+    }
+
+    private void progressDialog(StudyProgressItem existing) {
+        LinearLayout fields=column();
+        fields.setPadding(dp(18),dp(6),dp(18),dp(2));
+        EditText subject=input("과목 (예: 과학)",existing==null?"":existing.subject);
+        EditText material=input("교재 (예: 오투)",existing==null?"":existing.material);
+        EditText unit=input("진도 이름 (예: 7-2 또는 시험범위 전체 오답 복습)",
+                existing==null?"":existing.unit);
+        Spinner status=new Spinner(this);
+        status.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,
+                StudyProgressItem.STATUSES));
+        String current=existing==null?StudyProgressItem.TODO:existing.status;
+        for(int i=0;i<StudyProgressItem.STATUSES.length;i++) {
+            if(StudyProgressItem.STATUSES[i].equals(current))status.setSelection(i);
+        }
+        CheckBox scope=new CheckBox(this);
+        scope.setText("이번 시험범위에 포함");
+        scope.setChecked(existing==null||existing.inExamScope);
+        fields.addView(subject);
+        fields.addView(material);
+        fields.addView(unit);
+        fields.addView(tv("진도 상태",13,MUTED,false));
+        fields.addView(status);
+        fields.addView(scope);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle(existing==null?"교재 진도 추가":"교재 진도 수정")
+                .setView(fields)
+                .setPositiveButton("저장",null)
+                .setNegativeButton("취소",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v->{
+                    try {
+                        String s=subject.getText().toString();
+                        String m=material.getText().toString();
+                        String u=unit.getText().toString();
+                        String statusText=StudyProgressItem.STATUSES[status.getSelectedItemPosition()];
+                        if(existing==null)progressStorage.add(s,m,u,statusText,scope.isChecked());
+                        else progressStorage.update(existing.id,existing.revision,s,m,u,statusText,scope.isChecked());
+                        dialog.dismiss();
+                        showTab(3);
+                    } catch (RuntimeException error) {
+                        toast(error.getMessage()==null?"입력을 확인하세요.":error.getMessage());
+                    }
+                }));
+        dialog.show();
+    }
+
+    private View progressCard(StudyProgressItem item) {
+        LinearLayout box=card();
+        box.addView(tv(item.subject+" · "+item.material+" · "+item.unit,14,TEXT,true));
+        box.addView(tv(item.status+" · "+(item.inExamScope?"시험범위 포함":"시험범위 제외")
+                +" · 수정 "+item.revision+"회차",12,MUTED,false));
+        LinearLayout buttons=new LinearLayout(this);
+        Button cycle=secondary("상태 변경");
+        cycle.setOnClickListener(v->{
+            int index=0;
+            for(int i=0;i<StudyProgressItem.STATUSES.length;i++)
+                if(StudyProgressItem.STATUSES[i].equals(item.status))index=i;
+            String next=StudyProgressItem.STATUSES[(index+1)%StudyProgressItem.STATUSES.length];
+            try {
+                progressStorage.update(item.id,item.revision,item.subject,item.material,item.unit,
+                        next,item.inExamScope);
+                showTab(3);
+            } catch(RuntimeException error) {
+                toast(error.getMessage()==null?"변경 실패":error.getMessage());
+            }
+        });
+        buttons.addView(cycle,new LinearLayout.LayoutParams(0,dp(46),1f));
+        Button edit=secondary("수정");
+        edit.setOnClickListener(v->progressDialog(item));
+        buttons.addView(edit,new LinearLayout.LayoutParams(0,dp(46),1f));
+        Button delete=secondary("삭제");
+        delete.setOnClickListener(v->new AlertDialog.Builder(this)
+                .setTitle("진도 삭제")
+                .setMessage(item.subject+" · "+item.unit+" 항목을 삭제하시겠습니까?")
+                .setPositiveButton("삭제",(d,w)->{
+                    try {
+                        progressStorage.delete(item.id,item.revision);
+                        showTab(3);
+                    } catch(RuntimeException error) {
+                        toast(error.getMessage()==null?"삭제 실패":error.getMessage());
+                    }
+                }).setNegativeButton("취소",null).show());
+        buttons.addView(delete,new LinearLayout.LayoutParams(0,dp(46),1f));
+        box.addView(buttons);
+        return box;
     }
 
     private void taskDialog(Models.StudyTask existing) {
