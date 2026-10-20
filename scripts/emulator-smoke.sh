@@ -24,6 +24,49 @@ adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_progress_s
 sleep 2
 adb logcat -d -s StudyOneProgress:I | grep -q 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
 echo 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
+adb shell am force-stop com.studyone.app
+adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_sync_self_test true
+sleep 2
+adb logcat -d -s StudyOneSync:I | grep -q 'SYNC_CREATE_ONLY_GUARDS_PASSED'
+echo 'SYNC_CREATE_ONLY_GUARDS_PASSED'
+
+# Spawn an isolated same-run server with a synthetic token and disposable DB.
+SYNC_TMP_DIR="$(mktemp -d)"
+export STUDYONE_SYNC_TOKEN='StudyOneEmulatorContractFixtureTokenONLY2026'
+python3 server/studyone_sync.py --db "$SYNC_TMP_DIR/sync.sqlite3" --host 127.0.0.1 --port 8765 &
+SYNC_PID=$!
+cleanup_sync_fixture() {
+  kill "$SYNC_PID" 2>/dev/null || true
+  wait "$SYNC_PID" 2>/dev/null || true
+  rm -rf "$SYNC_TMP_DIR"
+}
+trap cleanup_sync_fixture EXIT
+for attempt in $(seq 1 15); do
+  if [[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/v1/snapshot || true)" == '401' ]]; then
+    break
+  fi
+  sleep 1
+done
+test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/v1/snapshot)" = '401'
+adb reverse tcp:8765 tcp:8765
+adb shell am force-stop com.studyone.app
+adb shell am start -W -n com.studyone.app/.MainActivity \
+  --ez studyone_sync_network_self_test true \
+  --es studyone_sync_test_token "$STUDYONE_SYNC_TOKEN"
+for attempt in $(seq 1 16); do
+  if adb logcat -d -s StudyOneSync:I StudyOneSync:E | grep -q 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'; then
+    break
+  fi
+  if adb logcat -d -s StudyOneSync:I StudyOneSync:E | grep -q 'LOCAL_SYNC_HTTP_ROUNDTRIP_FAILED'; then
+    adb logcat -d -s StudyOneSync:I StudyOneSync:E
+    exit 1
+  fi
+  sleep 1
+done
+adb logcat -d -s StudyOneSync:I | grep -q 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
+echo 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
+adb shell am force-stop com.studyone.app
+adb shell am start -W -n com.studyone.app/.MainActivity
 adb shell pidof com.studyone.app | grep -E '[0-9]+'
 SIZE="$(adb shell wm size | sed -n 's/.*: //p' | tr -d '\r' | head -n1)"
 WIDTH="${SIZE%x*}"
