@@ -243,6 +243,34 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                 if self.headers.get("Origin"):
                     raise ApiProblem(403, "BROWSER_ORIGIN_UNSUPPORTED")
                 endpoint = urlsplit(self.path)
+                if endpoint.path == "/mcp" and method == "POST":
+                    if endpoint.query:
+                        raise ApiProblem(400, "INVALID_QUERY")
+                    auth = self.headers.get("Authorization", "")
+                    if not auth.startswith("Bearer ") or auth.count(" ") != 1:
+                        raise ApiProblem(401, "UNAUTHORIZED")
+                    account, _ = registry.authorize(auth[7:], write=False)
+                    if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                        raise ApiProblem(415, "JSON_REQUIRED")
+                    try:
+                        length = int(self.headers.get("Content-Length", "0"))
+                    except ValueError:
+                        raise ApiProblem(400, "INVALID_LENGTH") from None
+                    if not 0 < length <= MAX_BODY:
+                        raise ApiProblem(413, "REQUEST_TOO_LARGE")
+                    request = decode_json(self.rfile.read(length))
+                    try:
+                        from .studyone_mcp import dispatch
+                    except ImportError:
+                        from studyone_mcp import dispatch
+                    response = dispatch(registry, account, request)
+                    if response is None:
+                        self.send_response(202)
+                        self.send_header("Content-Length", "0")
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        return
+                    return self.send_json(200, response)
                 if endpoint.path == "/v2/health" and method == "GET":
                     return self.send_json(200, {"status": "ok", "schema": 2})
                 parts = endpoint.path.split("/")
