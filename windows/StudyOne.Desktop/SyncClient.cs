@@ -315,4 +315,99 @@ internal static class SyncClient
         return candidate;
     }
 
+
+    internal sealed class PendingPlans
+    {
+        public int Schema { get; set; }
+        public List<PendingPlan> Proposals { get; set; } = new();
+    }
+
+    internal sealed class PendingPlan
+    {
+        public string Id { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string State { get; set; } = "";
+        public long CreatedAt { get; set; }
+        public long ExpiresAt { get; set; }
+        public int TaskCount { get; set; }
+        public List<StudyTask> Tasks { get; set; } = new();
+        public long? Cursor { get; set; }
+
+        public string Display => $"{Title} · {TaskCount}개 항목 · 승인 대기";
+    }
+
+    private static void RequirePrivateEndpoint(Uri endpoint)
+    {
+        if (ParseEndpoint(endpoint.AbsoluteUri).Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException(
+                "AI 학습 계획 승인은 계정별 HTTPS 서버에서만 지원합니다.");
+    }
+
+    internal static void ValidateProposals(PendingPlans proposals)
+    {
+        if (proposals.Schema != 1 || proposals.Proposals is null ||
+            proposals.Proposals.Count > 20)
+            throw new InvalidDataException("지원되지 않는 학습 계획 응답입니다.");
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var plan in proposals.Proposals)
+        {
+            if (plan is null || !Guid.TryParse(plan.Id, out _) ||
+                !ids.Add(plan.Id) || string.IsNullOrWhiteSpace(plan.Title) ||
+                plan.Title.Length > 100 || plan.State != "pending" ||
+                plan.TaskCount < 1 || plan.TaskCount > 30 ||
+                plan.Tasks is null || plan.TaskCount != plan.Tasks.Count ||
+                plan.ExpiresAt <= plan.CreatedAt)
+                throw new InvalidDataException("학습 계획 초안이 손상되었습니다.");
+            var mockBackup = new TaskBackup {
+                Tasks = plan.Tasks
+            };
+            StudyData.SerializeAndValidateTasks(mockBackup);
+        }
+    }
+
+    internal static async Task<PendingPlans> GetPendingPlans(
+        string token, Uri endpoint, CancellationToken cancel = default)
+    {
+        RequirePrivateEndpoint(endpoint);
+        using var http = OpenClient(token, endpoint);
+        using var response = await http.GetAsync("v2/proposals", cancel);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"초안 목록 조회 실패: HTTP {(int)response.StatusCode}");
+        var raw = await ReadLimited(response, cancel);
+        var plans = JsonSerializer.Deserialize<PendingPlans>(raw, StudyData.JsonOptions)
+                    ?? throw new InvalidDataException("학습 계획 목록이 비어 있습니다.");
+        ValidateProposals(plans);
+        return plans;
+    }
+
+    internal static async Task<string> DecideProposal(
+        string token, Uri endpoint, string proposalId,
+        bool approve, CancellationToken cancel = default)
+    {
+        RequirePrivateEndpoint(endpoint);
+        if (!Guid.TryParse(proposalId, out _))
+            throw new InvalidDataException("학습 계획 ID가 올바르지 않습니다.");
+        string action = approve ? "approve" : "reject";
+        using var http = OpenClient(token, endpoint);
+        using var message = new HttpRequestMessage(HttpMethod.Post,
+            "v2/proposals/" + Uri.EscapeDataString(proposalId) + "/" + action)
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("{}"))
+        };
+        message.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        using var response = await http.SendAsync(message, cancel);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                response.StatusCode == HttpStatusCode.Forbidden
+                    ? "읽기 전용 토큰은 계획을 승인할 수 없습니다."
+                    : $"계획 {(approve ? "승인" : "거부")} 실패: HTTP {(int)response.StatusCode}");
+        var bytes = await ReadLimited(response, cancel);
+        using var doc = JsonDocument.Parse(bytes);
+        string state = doc.RootElement.GetProperty("state").GetString() ?? "";
+        if (state != (approve ? "approved" : "rejected") ||
+            doc.RootElement.GetProperty("id").GetString() != proposalId)
+            throw new InvalidDataException("초안 결정 결과를 확인하지 못했습니다.");
+        return state;
+    }
+
 }
