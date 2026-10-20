@@ -88,6 +88,12 @@ public class MainActivity extends Activity {
             if(!AiClient.selfTest())throw new IllegalStateException("AI fixture parser test failed");
             android.util.Log.i("StudyOneAI","AI_OFFLINE_FIXTURE_TEST_PASSED");
         }
+        if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
+            if(!StudyProgressStorage.selfTestBackup()) {
+                throw new IllegalStateException("Progress backup fixture round-trip failed");
+            }
+            android.util.Log.i("StudyOneProgress","PROGRESS_BACKUP_ROUNDTRIP_PASSED");
+        }
     }
 
     @Override protected void onResume() {
