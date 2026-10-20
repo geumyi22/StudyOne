@@ -88,6 +88,10 @@ public class MainActivity extends Activity {
             if(!AiClient.selfTest())throw new IllegalStateException("AI fixture parser test failed");
             android.util.Log.i("StudyOneAI","AI_OFFLINE_FIXTURE_TEST_PASSED");
         }
+        if(getIntent()!=null && getIntent().getBooleanExtra("studyone_sync_self_test",false)){
+            if(!StudySyncClient.selfTest())throw new IllegalStateException("Sync client fixture failed");
+            android.util.Log.i("StudyOneSync","SYNC_CREATE_ONLY_GUARDS_PASSED");
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
             if(!StudyProgressStorage.selfTestBackup()) {
                 throw new IllegalStateException("Progress backup fixture round-trip failed");
@@ -400,6 +404,15 @@ public class MainActivity extends Activity {
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
 
+        if ((getApplicationInfo().flags &
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            c.addView(section("로컬 동기화 실험 · Canary"));
+            c.addView(cardText("이 기기의 127.0.0.1:8765 로컬 서버만 연결합니다. Android 에뮬레이터에서는 개발 PC의 서버에 adb reverse로 연결할 수 있습니다. 실제 클라우드/다른 휴대전화 동기화는 아직 지원하지 않습니다.",12));
+            Button sync=secondary("개발용 동기화 서버 연결");
+            sync.setOnClickListener(v->syncExperimentDialog());
+            c.addView(sync);
+        }
+
         c.addView(section("학습 알림"));
         c.addView(cardText("알림은 사용자가 직접 켠 경우에만 작동합니다. 배터리 정책에 따라 설정 시각보다 늦게 도착할 수 있습니다.",12));
         for(int slot=0;slot<2;slot++){
@@ -462,6 +475,135 @@ public class MainActivity extends Activity {
         c.addView(section("앱 정보"));
         c.addView(cardText("StudyOne 3.0.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
         return s;
+    }
+
+    /**
+     * Development-only manual sync: never sends data until a second explicit
+     * confirmation. It never mutates local tasks or progress records.
+     */
+    private void syncExperimentDialog() {
+        LinearLayout form=column();
+        form.setPadding(dp(20),dp(6),dp(20),dp(8));
+        form.addView(cardText("로컬 전용 · 127.0.0.1:8765\n"
+                +"데이터 전송은 직접 승인한 때에만 수행합니다. "
+                +"다른 기기에서 자동으로 변경사항을 가져오는 기능은 아직 없습니다.",12));
+        EditText token=input("로컬 테스트 Bearer 토큰 (저장 안 함)","");
+        token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        form.addView(token);
+        TextView result=tv("서버를 읽기 전입니다. 서버 프로그램을 별도로 실행해야 합니다.",13,MUTED,false);
+        result.setPadding(dp(4),dp(12),dp(4),dp(12));
+        Button preview=secondary("서버 기록 수 확인 · 전송 없음");
+        Button upload=primary("서버에 없는 새 항목만 전송");
+        form.addView(preview);
+        form.addView(upload);
+        form.addView(result);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("StudyOne 로컬 동기화 실험")
+                .setView(form)
+                .setPositiveButton("닫기",(d,w)->{})
+                .create();
+        dialog.setOnDismissListener(d->token.setText(""));
+        dialog.show();
+
+        preview.setOnClickListener(v->{
+            String secret=token.getText().toString();
+            preview.setEnabled(false);
+            result.setText("로컬 서버 조회 중…");
+            io.execute(()->{
+                try {
+                    JSONObject server=StudySyncClient.snapshot(secret);
+                    JSONArray records=server.getJSONArray("records");
+                    int tasks=0, progress=0;
+                    for(int i=0;i<records.length();i++){
+                        if("task".equals(records.getJSONObject(i).getString("kind")))tasks++;
+                        else progress++;
+                    }
+                    final String message="로컬 서버 조회 완료 · 변경 cursor "
+                            +server.getLong("cursor")+"\n서버 일정 "+tasks+"개 · 진도 "+progress
+                            +"개\n기기에 저장된 데이터를 서버로 전송하지 않았습니다.";
+                    runOnUiThread(()->{
+                        if(!isFinishing() && !isDestroyed() && dialog.isShowing()) {
+                            result.setText(message);
+                            preview.setEnabled(true);
+                        }
+                    });
+                }catch(Exception e){
+                    runOnUiThread(()->{
+                        if(!isFinishing() && !isDestroyed() && dialog.isShowing()){
+                            result.setText("연결 실패: 로컬 서버 실행 상태·토큰을 확인하세요.");
+                            preview.setEnabled(true);
+                        }
+                    });
+                }
+            });
+        });
+
+        upload.setOnClickListener(v->{
+            final String secret=token.getText().toString();
+            upload.setEnabled(false);
+            result.setText("서버·로컬 진도를 검증해 전송 후보를 확인 중…");
+            io.execute(()->{
+                try {
+                    JSONArray prepared=StudySyncClient.prepareNewOnly(
+                            storage.checkedTasksForSync(), progressStorage.list(),
+                            StudySyncClient.snapshot(secret));
+                    final int count=prepared.length();
+                    runOnUiThread(()->{
+                        if(isFinishing() || isDestroyed() || !dialog.isShowing()) return;
+                        upload.setEnabled(true);
+                        if(count==0){
+                            result.setText("서버에 없는 새 항목이 없습니다. 기존 기록은 수정하지 않았습니다.");
+                            return;
+                        }
+                        new AlertDialog.Builder(this)
+                                .setTitle("새 학습 기록 전송 승인")
+                                .setMessage("이 기기의 일정·진도 중 서버에 없는 "+count
+                                        +"개를 같은 기기의 로컬 SQLite 서버로 전송하시겠습니까?\n"
+                                        +"과목·교재·학습 진도 정보가 저장됩니다. "
+                                        +"기존 서버 기록과 기기 기록은 수정·삭제하지 않습니다.")
+                                .setNegativeButton("취소",(dd,w)->result.setText("전송을 취소했습니다."))
+                                .setPositiveButton("새 기록 전송",(dd,w)->{
+                                    upload.setEnabled(false);
+                                    result.setText("전송 직전 데이터 변경 여부를 다시 확인 중…");
+                                    io.execute(()->{
+                                        try {
+                                            JSONArray confirmed=StudySyncClient.prepareNewOnly(
+                                                    storage.checkedTasksForSync(),progressStorage.list(),
+                                                    StudySyncClient.snapshot(secret));
+                                            if(!prepared.toString().equals(confirmed.toString())){
+                                                throw new IllegalStateException(
+                                                    "확인 도중 데이터가 바뀌어 전송을 중단했습니다.");
+                                            }
+                                            int sent=StudySyncClient.uploadNew(secret,confirmed);
+                                            runOnUiThread(()->{
+                                                if(!isFinishing() && !isDestroyed() && dialog.isShowing()){
+                                                    result.setText("서버에 새 기록 "+sent
+                                                            +"개 전송 완료. 기존 기록은 덮어쓰지 않았습니다.");
+                                                    upload.setEnabled(true);
+                                                }
+                                            });
+                                        }catch(Exception error){
+                                            runOnUiThread(()->{
+                                                if(!isFinishing() && !isDestroyed() && dialog.isShowing()){
+                                                    result.setText("전송을 중단했습니다. 서버 목록을 다시 확인하세요. "
+                                                            +"일부 배치는 반영되었을 수 있습니다.");
+                                                    upload.setEnabled(true);
+                                                }
+                                            });
+                                        }
+                                    });
+                                }).show();
+                    });
+                }catch(Exception error){
+                    runOnUiThread(()->{
+                        if(!isFinishing() && !isDestroyed() && dialog.isShowing()){
+                            result.setText("데이터 검증 또는 연결 실패. 전송하지 않았습니다.");
+                            upload.setEnabled(true);
+                        }
+                    });
+                }
+            });
+        });
     }
 
     private LocalDate weekStart() {
