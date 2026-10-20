@@ -240,6 +240,15 @@ public final class StudySyncClient {
     /** Pure local fixture; does not read private records or issue network calls. */
     public static boolean selfTest() {
         try {
+            if(!checkedAddress("https://example.org/").startsWith("https://"))return false;
+            if(!checkedAddress("http://127.0.0.1:8765/").contains("8765"))return false;
+            for(String forbidden:new String[]{"http://192.168.0.2:8765/",
+                    "http://example.org/", "ftp://example.org/",
+                    "https://user:pass@example.org/", "https://example.org/path/",
+                    "https://example.org/?secret=1"}) {
+                try {checkedAddress(forbidden);return false;}
+                catch(IllegalArgumentException expected){/* secure rejection */}
+            }
             Models.StudyTask task=new Models.StudyTask(
                     1730000000000L,"숙제 항목","수학","테스트 문제", LocalDate.of(2026,10,22),2,false);
             StudyProgressItem item=StudyProgressItem.create(
