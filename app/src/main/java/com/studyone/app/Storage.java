@@ -165,6 +165,56 @@ public final class Storage {
         }
     }
 
+    /** Exact original bytes used to detect local modifications during review. */
+    public synchronized String rawTasksForSync() {
+        return p.getString("tasks", "[]");
+    }
+
+    /**
+     * Explicit additive import. Keeps a private backup of the original tasks
+     * before one synchronous preferences commit; never touches school/API keys.
+     * The old task IDs and their content are always retained.
+     */
+    public synchronized String appendNewTasksForSync(
+            String expectedOriginal, List<Models.StudyTask> newEntries,
+            Context context) throws Exception {
+        if(newEntries==null||newEntries.isEmpty())
+            throw new IllegalArgumentException("추가할 일정이 없습니다.");
+        List<Models.StudyTask> old=checkedTasksForSync();
+        String current=rawTasksForSync();
+        if(!current.equals(expectedOriginal))
+            throw new IllegalStateException("검토 도중 로컬 일정이 변경되었습니다.");
+        if(old.size()+newEntries.size()>5000)
+            throw new IllegalStateException("일정 저장 한도를 초과합니다.");
+        java.util.Set<Long> ids=new java.util.HashSet<>();
+        for(Models.StudyTask item:old)ids.add(item.id);
+        List<Models.StudyTask> merged=new ArrayList<>(old);
+        for(Models.StudyTask item:newEntries) {
+            if(item==null||item.id<=0||!ids.add(item.id))
+                throw new IllegalArgumentException("기존 또는 중복 일정 ID를 변경할 수 없습니다.");
+            merged.add(item);
+        }
+        JSONArray payload=new JSONArray();
+        for(Models.StudyTask item:merged) {
+            JSONObject o=new JSONObject();
+            o.put("id",item.id);o.put("type",item.type);o.put("subject",item.subject);
+            o.put("title",item.title);o.put("due",item.dueDate.toString());
+            o.put("importance",item.importance);o.put("completed",item.completed);
+            payload.put(o);
+        }
+        String next=payload.toString();
+        String name="StudyOne-tasks-before-sync-"+System.currentTimeMillis()
+                +"-"+java.util.UUID.randomUUID()+".json";
+        // app-private backup; if the backup cannot be written, do not import.
+        try(java.io.FileOutputStream file=context.openFileOutput(name,Context.MODE_PRIVATE)) {
+            file.write(current.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            file.getFD().sync();
+        }
+        if(!p.edit().putString("tasks",next).commit())
+            throw new IllegalStateException("일정 저장 실패. 백업을 보존했습니다.");
+        return name;
+    }
+
     public void saveTasks(List<Models.StudyTask> tasks) {
         JSONArray a = new JSONArray();
         for (Models.StudyTask t : tasks) {
