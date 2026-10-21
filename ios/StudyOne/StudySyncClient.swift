@@ -304,13 +304,17 @@ enum StudySyncClient {
               records.count <= 7000 else {
             throw StudyError.message("동기화 서버 스냅샷이 올바르지 않습니다.")
         }
-        let taskIds = Dictionary(uniqueKeysWithValues: localTasks.map { ($0.id, $0) })
-        let progressIds = Dictionary(
-            uniqueKeysWithValues: localProgress.map { ($0.id.lowercased(), $0) }
-        )
-        guard taskIds.count == localTasks.count,
-              progressIds.count == localProgress.count else {
-            throw StudyError.message("로컬 기록 ID 중복으로 가져오기를 중단했습니다.")
+        var taskIds: [Int64: StudyTask] = [:]
+        var progressIds: [String: StudyProgressItem] = [:]
+        for item in localTasks {
+            guard taskIds.updateValue(item, forKey: item.id) == nil else {
+                throw StudyError.message("로컬 일정 ID가 중복되어 가져오기를 차단했습니다.")
+            }
+        }
+        for item in localProgress {
+            guard progressIds.updateValue(item, forKey: item.id.lowercased()) == nil else {
+                throw StudyError.message("로컬 진도 ID가 중복되어 가져오기를 차단했습니다.")
+            }
         }
         var seen = Set<String>()
         var newTasks: [StudyTask] = []
