@@ -210,7 +210,7 @@ class SyncStore:
                     "nextCursor": page[-1]["seq"] if page else after,
                     "hasMore": len(rows) > limit, "changes": results}
 
-    def apply(self, body):
+    def apply(self, body, *, connection=None):
         if not isinstance(body, dict) or set(body) != {"requestId", "mutations"}:
             raise ApiProblem(400, "INVALID_REQUEST")
         request_id = body["requestId"]
@@ -249,9 +249,18 @@ class SyncStore:
                 payload = validate_record(kind, identifier, mutation["payload"])
                 validated.append((kind, identifier, base, False, payload))
         fingerprint = hashlib.sha256(json_bytes(body)).hexdigest()
-        with self.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            previous = db.execute(
+        if connection is None:
+            with self.connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                return self._apply_checked(db, request_id, fingerprint, validated)
+        if not connection.in_transaction:
+            raise ValueError("Shared SQLite connection must already be in a transaction")
+        return self._apply_checked(connection, request_id, fingerprint, validated)
+
+    @staticmethod
+    def _apply_checked(db, request_id, fingerprint, validated):
+        """Runs under the caller's SQLite write transaction; never commits itself."""
+    
                 "SELECT body_hash,response FROM requests WHERE request_id=?", (request_id,)
             ).fetchone()
             if previous:
