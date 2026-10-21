@@ -23,6 +23,7 @@ class RecoveryTests(unittest.TestCase):
         self.registry = Registry(self.registry_path, self.records_path)
         self.first = self.registry.account("synth-1")
         self.second = self.registry.account("synth-2")
+        self.registry.store(self.second)  # Initialize second account's DB before offline backup.
         self.token = self.registry.device(self.first, "test-device")
         self.dataset = self.registry.store(self.first)
         self.dataset.apply({
