@@ -13,6 +13,10 @@ struct SyncExperimentView: View {
     @State private var busy = false
     @State private var pending: [StudySyncClient.Mutation] = []
     @State private var showApproval = false
+    @State private var pendingPlans: [StudySyncClient.PendingPlan] = []
+    @State private var selectedPlan: StudySyncClient.PendingPlan?
+    @State private var planActionApprove = false
+    @State private var showPlanDecision = false
 
     private func candidates(snapshot: StudySyncClient.Snapshot) throws
             -> [StudySyncClient.Mutation] {
@@ -104,6 +108,70 @@ struct SyncExperimentView: View {
                 if busy { ProgressView("확인 중…") }
             }
 
+            Section("AI 공부 계획 승인 대기함") {
+                Text("AI가 제안한 계획은 기기에서 승인하기 전까지 실제 일정으로 등록되지 않습니다. HTTPS 계정 서버에서만 이용할 수 있습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Button {
+                    busy = true
+                    status = "AI 공부 계획을 확인 중…"
+                    Task {
+                        defer { busy = false }
+                        do {
+                            let result = try await StudySyncClient.pendingPlans(
+                                token: token, address: serverAddress)
+                            pendingPlans = result
+                            status = "승인 대기 중인 AI 공부 계획 \(result.count)개"
+                        } catch {
+                            pendingPlans = []
+                            status = "AI 계획 조회 실패: \(error.localizedDescription)"
+                        }
+                    }
+                } label: {
+                    Label("승인 대기 공부 계획 다시 읽기",
+                          systemImage: "text.book.closed")
+                }
+                .disabled(busy || token.count < 32)
+
+                if pendingPlans.isEmpty {
+                    Text("아직 승인 대기 목록을 조회하지 않았거나 대기 중인 계획이 없습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                ForEach(pendingPlans) { plan in
+                    DisclosureGroup {
+                        Text("승인 전에는 실제 공부 일정이 변경되지 않습니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(plan.tasks, id: \.id) { task in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("\(task.dueDate) · \(task.subject) · \(task.type)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(task.title)
+                                    .font(.subheadline)
+                            }
+                        }
+                        Button("선택한 계획 승인 · 서버 일정 등록") {
+                            selectedPlan = plan
+                            planActionApprove = true
+                            showPlanDecision = true
+                        }
+                        .disabled(busy)
+                        Button("선택한 계획 거부", role: .destructive) {
+                            selectedPlan = plan
+                            planActionApprove = false
+                            showPlanDecision = true
+                        }
+                        .disabled(busy)
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(plan.title).font(.headline)
+                            Text("과목별 공부 항목 \(plan.taskCount)개 · 승인 대기")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             Section("최근 결과") {
                 Text(status)
                     .font(.subheadline)
@@ -158,9 +226,57 @@ struct SyncExperimentView: View {
         } message: {
             Text("일정·과목·교재·진도 정보가 이 기기의 SQLite 서버에 저장됩니다. 기존 기록은 수정하지 않습니다.")
         }
+        .confirmationDialog(
+            "이 공부 계획을 \(planActionApprove ? "승인" : "거부")하시겠습니까?",
+            isPresented: $showPlanDecision,
+            titleVisibility: .visible
+        ) {
+            Button(planActionApprove
+                   ? "승인 · 실제 서버 일정 추가"
+                   : "거부 · 실제 일정 변경 없음",
+                   role: .destructive) {
+                guard let selected = selectedPlan else { return }
+                let approval = planActionApprove
+                busy = true
+                status = "현재 서버에 대기 중인 계획과 비교 중…"
+                Task {
+                    defer {
+                        busy = false
+                        selectedPlan = nil
+                    }
+                    do {
+                        let current = try await StudySyncClient.pendingPlans(
+                            token: token, address: serverAddress)
+                        guard let latest = current.first(where: { $0.id == selected.id }),
+                              latest.state == "pending",
+                              latest.title == selected.title,
+                              latest.expiresAt == selected.expiresAt,
+                              latest.tasks == selected.tasks else {
+                            throw StudyError.message(
+                                "서버 계획이 변경되었습니다. 다시 조회 후 결정하세요.")
+                        }
+                        _ = try await StudySyncClient.decidePlan(
+                            token: token, address: serverAddress,
+                            id: selected.id, approve: approval)
+                        pendingPlans = try await StudySyncClient.pendingPlans(
+                            token: token, address: serverAddress)
+                        status = approval
+                            ? "계획 승인 완료. HTTPS 서버에 공부 일정이 등록됐습니다. 이 iPhone의 로컬 목록에는 자동 반영되지 않습니다."
+                            : "계획을 거부했습니다. 기존 일정은 변경되지 않았습니다."
+                    } catch {
+                        status = "계획 처리 상태를 확인하지 못했습니다. 다시 목록을 조회하세요: \(error.localizedDescription)"
+                    }
+                }
+            }
+            Button("취소", role: .cancel) { selectedPlan = nil }
+        } message: {
+            Text("이 기기의 계정 토큰으로 결정합니다. 승인하면 서버에 실제 숙제 항목이 생성됩니다.")
+        }
         .onDisappear {
             token = ""
             pending = []
+            selectedPlan = nil
+            pendingPlans = []
         }
     }
 }
