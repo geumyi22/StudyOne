@@ -1,0 +1,30 @@
+name: StudyOne Recovery Rehearsal Canary
+
+on:
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/recovery-crossplatform.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-rehearsal:
+    name: SQLite backup recovery and checksum (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile recovery module
+        run: python -m compileall -q server
+      - name: Test offline backup, tampering, rollback and isolated restore
+        run: python -m unittest discover -s server/tests -p test_recovery.py -v
