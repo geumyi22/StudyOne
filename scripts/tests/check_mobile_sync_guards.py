@@ -96,5 +96,26 @@ class MobileGuardTests(unittest.TestCase):
         self.assertIn('token = ""', ios_ui)
         self.assertIn('token.setText("")', android_ui)
 
+    def test_android_inbound_only_new_ids_with_private_backups(self):
+        client = read("app/src/main/java/com/studyone/app/StudySyncClient.java")
+        ui = read("app/src/main/java/com/studyone/app/MainActivity.java")
+        tasks = read("app/src/main/java/com/studyone/app/Storage.java")
+        progress = read("app/src/main/java/com/studyone/app/StudyProgressStorage.java")
+        for phrase in ("previewInbound(", "sameInbound(", "checkedRemoteTask(",
+                       "checkedRemoteProgress(", "newTasks.add(", "newProgress.add(",
+                       "plan.conflicts++", "apiKey"):
+            if phrase != "apiKey":
+                self.assertIn(phrase, client)
+        for phrase in ("importNewRemote(", "appendNewTasksForSync(",
+                       "appendNewProgressForSync(", "sameInbound(first,second,tasks)",
+                       "server", "서버의 신규 일정만", "서버의 신규 진도만"):
+            if phrase != "server": self.assertIn(phrase, ui)
+        for phrase in ("openFileOutput(", "Context.MODE_PRIVATE",
+                       "file.getFD().sync()", ".commit()"):
+            self.assertIn(phrase, tasks)
+            self.assertIn(phrase, progress)
+        self.assertIn("if(!current.equals(expectedOriginal))", tasks)
+        self.assertIn("Objects.equals(now,original)", progress)
+
 if __name__ == "__main__":
     unittest.main()
