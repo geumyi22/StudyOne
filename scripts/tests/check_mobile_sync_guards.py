@@ -74,5 +74,27 @@ class MobileGuardTests(unittest.TestCase):
         self.assertIn('status == 409', java)
         self.assertIn('case 409:', swift)
 
+    def test_mobile_ai_approval_is_explicit_and_https_only(self):
+        android_ui = read("app/src/main/java/com/studyone/app/MainActivity.java")
+        android_api = read("app/src/main/java/com/studyone/app/StudySyncClient.java")
+        ios_ui = read("ios/StudyOne/SyncExperimentView.swift")
+        ios_api = read("ios/StudyOne/StudySyncClient.swift")
+        for text in ('showStudyPlanInbox(', 'openStudyPlanDecision(',
+                     'setPositiveButton("전체 승인"', 'setNegativeButton("전체 거부"',
+                     'StudySyncClient.pendingProposals(', 'StudySyncClient.decideProposal('):
+            self.assertIn(text, android_ui)
+        for text in ('AI 공부 계획 승인은 HTTPS 계정 서버', 'pendingProposals(',
+                     'decideProposal(', 'canonicalUuid(', 'response.getString("state")'):
+            self.assertIn(text, android_api)
+        for text in ('AI 공부 계획 승인 대기함', 'DisclosureGroup',
+                     'showPlanDecision = true', 'StudySyncClient.pendingPlans(',
+                     'StudySyncClient.decidePlan(', 'latest.tasks == selected.tasks'):
+            self.assertIn(text, ios_ui)
+        for text in ('pendingPlans(token:', 'decidePlan(token:',
+                     'prefix != "v2/"', 'URLSessionConfiguration.ephemeral'):
+            self.assertIn(text, ios_api)
+        self.assertIn('token = ""', ios_ui)
+        self.assertIn('token.setText("")', android_ui)
+
 if __name__ == "__main__":
     unittest.main()
