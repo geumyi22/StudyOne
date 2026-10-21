@@ -84,7 +84,7 @@ class MobileGuardTests(unittest.TestCase):
                      'setPositiveButton("전체 승인"', 'setNegativeButton("전체 거부"',
                      'StudySyncClient.pendingProposals(', 'StudySyncClient.decideProposal('):
             self.assertIn(text, android_ui)
-        for text in ('AI 공부 계획 승인은 HTTPS 계정 서버', 'pendingProposals(',
+        for text in ('AI 학습 계획 승인은 HTTPS 계정 서버', 'pendingProposals(',
                      'decideProposal(', 'canonicalUuid(', 'response.getString("state")'):
             self.assertIn(text, android_api)
         self.assertIn('StudyPlanInboxView(token: token, serverAddress: serverAddress)', ios_ui)
