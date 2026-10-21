@@ -55,6 +55,47 @@ public final class StudyProgressStorage {
         }
     }
 
+    /** Exact stored progress bytes, to detect changes after user review. */
+    public synchronized String rawProgressForSync() {
+        return preferences.getString(KEY, null);
+    }
+
+    /**
+     * Saves the original progress in app-private storage, then applies new IDs
+     * only. Existing progress status/revisions are never overwritten.
+     */
+    public synchronized String appendNewProgressForSync(
+            String original, List<StudyProgressItem> additions,
+            Context context) throws Exception {
+        if(additions==null || additions.isEmpty())
+            throw new IllegalArgumentException("추가할 진도 항목이 없습니다.");
+        String now=rawProgressForSync();
+        if(!java.util.Objects.equals(now,original))
+            throw new IllegalStateException("검토 도중 기기의 진도가 변경되었습니다.");
+        List<StudyProgressItem> current=list();
+        if(current.size()+additions.size()>LIMIT)
+            throw new IllegalArgumentException("진도 저장 제한을 초과합니다.");
+        Set<String> ids=new HashSet<>();
+        for(StudyProgressItem p:current)ids.add(p.id.toLowerCase(java.util.Locale.ROOT));
+        List<StudyProgressItem> merged=new ArrayList<>(current);
+        for(StudyProgressItem item:additions){
+            if(item==null || !ids.add(item.id.toLowerCase(java.util.Locale.ROOT)))
+                throw new IllegalArgumentException("기존 진도 ID를 덮어쓸 수 없습니다.");
+            merged.add(item);
+        }
+        // Fully validate the resulting payload before generating a backup.
+        JSONObject next=encode(merged,false);
+        String filename="StudyOne-progress-before-sync-"+System.currentTimeMillis()
+                +"-"+java.util.UUID.randomUUID()+".json";
+        try(java.io.FileOutputStream file=context.openFileOutput(filename,Context.MODE_PRIVATE)){
+            file.write((now==null?"":now).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            file.getFD().sync();
+        }
+        if(!preferences.edit().putString(KEY,next.toString()).commit())
+            throw new IllegalStateException("진도 저장 실패. 기존 데이터 백업을 보존했습니다.");
+        return filename;
+    }
+
     public synchronized StudyProgressItem add(String subject, String material,
                                               String unit, String status, boolean scope) {
         List<StudyProgressItem> data = list();
