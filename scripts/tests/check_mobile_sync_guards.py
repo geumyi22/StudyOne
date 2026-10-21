@@ -117,5 +117,34 @@ class MobileGuardTests(unittest.TestCase):
         self.assertIn("if(!current.equals(expectedOriginal))", tasks)
         self.assertIn("Objects.equals(now,original)", progress)
 
+    def test_ios_safe_incoming_preview_and_protected_backups(self):
+        network = read("ios/StudyOne/StudySyncClient.swift")
+        view = read("ios/StudyOne/SyncExperimentView.swift")
+        tasks = read("ios/StudyOne/ModelsAndStore.swift")
+        progress = read("ios/StudyOne/StudyProgress.swift")
+        backups = read("ios/StudyOne/StudySyncBackup.swift")
+        for part in ("previewIncoming(", "Set(payload.keys) == expectedFields",
+                     "conflicts += 1", "newTasks.append(candidate)",
+                     "newProgress.append(candidate)", "incoming.matches",
+                     "return IncomingPlan("):
+            if part != "incoming.matches":
+                self.assertIn(part, network)
+        for part in ("prepareIncoming(tasks:", "applyIncoming()",
+                     "initial.matches(verified, importingTasks:",
+                     "incomingTasksBaseline", "incomingProgressBaseline",
+                     "mergeNewTasksFromServer(", "mergeNewProgressFromServer(",
+                     "showImportConfirmation = true"):
+            self.assertIn(part, view)
+        for part in ("StudySyncBackup.save(", "guard verified == expected",
+                     "guard UserDefaults.standard.data(forKey: settingsKey) == blob"):
+            self.assertIn(part, tasks)
+        for part in ("StudySyncBackup.save(", "decoded.items == expected",
+                     "guard UserDefaults.standard.data(forKey: storeKey) == data"):
+            self.assertIn(part, progress)
+        self.assertIn(".protectionKey", backups)
+        self.assertIn("FileProtectionType.completeUntilFirstUserAuthentication", backups)
+        self.assertIn(".applicationSupportDirectory", backups)
+        self.assertNotIn("UserDefaults.standard.set", network)
+
 if __name__ == "__main__":
     unittest.main()
