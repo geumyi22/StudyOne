@@ -147,29 +147,32 @@ class ProposalStore:
     def approve(self, proposal_id):
         if not canonical_uuid(proposal_id):
             raise ApiProblem(400, "INVALID_PROPOSAL_ID")
+        # The proposal's approval marker and all newly created tasks must
+        # commit in ONE transaction. Otherwise a concurrent rejection could
+        # race with active task creation, or a crash could orphan approved tasks.
         with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT * FROM study_plan_proposals WHERE id=?", (proposal_id,)
             ).fetchone()
-        if row is None:
-            raise ApiProblem(404, "PROPOSAL_NOT_FOUND")
-        if row["state"] == "approved":
-            return {"id": proposal_id, "state": "approved", "cursor": row["cursor"]}
-        if row["state"] != "pending" or row["expires_at"] <= int(time.time()):
-            raise ApiProblem(409, "PROPOSAL_UNAVAILABLE")
-        body = {
-            "requestId": proposal_id, "mutations": json.loads(row["mutations_json"])
-        }
-        # Same proposal ID serves as the idempotency request ID; a crash
-        # between store.apply and the approval marker does NOT duplicate tasks.
-        result = self.store.apply(body)
-        with self.store.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            db.execute("""
+            if row is None:
+                raise ApiProblem(404, "PROPOSAL_NOT_FOUND")
+            if row["state"] == "approved":
+                return {"id": proposal_id, "state": "approved", "cursor": row["cursor"]}
+            if row["state"] != "pending" or row["expires_at"] <= int(time.time()):
+                raise ApiProblem(409, "PROPOSAL_UNAVAILABLE")
+            body = {
+                "requestId": proposal_id,
+                "mutations": json.loads(row["mutations_json"])
+            }
+            result = self.store.apply(body, connection=db)
+            changed = db.execute("""
                 UPDATE study_plan_proposals SET state='approved',cursor=?
                 WHERE id=? AND state='pending'
             """, (result["cursor"], proposal_id))
-        return {"id": proposal_id, "state": "approved", "cursor": result["cursor"]}
+            if changed.rowcount != 1:
+                raise ApiProblem(409, "PROPOSAL_UNAVAILABLE")
+            return {"id": proposal_id, "state": "approved", "cursor": result["cursor"]}
 
     def reject(self, proposal_id):
         if not canonical_uuid(proposal_id):
