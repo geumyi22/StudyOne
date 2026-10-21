@@ -527,8 +527,12 @@ public class MainActivity extends Activity {
         Button preview=secondary("서버 기록 수 확인 · 전송 없음");
         Button upload=primary("서버에 없는 새 항목만 전송");
         Button pendingPlans=secondary("AI 공부 계획 승인 대기함");
+        Button pullTasks=secondary("서버의 신규 일정만 안전하게 가져오기");
+        Button pullProgress=secondary("서버의 신규 진도만 안전하게 가져오기");
         form.addView(preview);
         form.addView(upload);
+        form.addView(pullTasks);
+        form.addView(pullProgress);
         form.addView(pendingPlans);
         form.addView(result);
         AlertDialog dialog=new AlertDialog.Builder(this)
@@ -538,6 +542,13 @@ public class MainActivity extends Activity {
                 .create();
         dialog.setOnDismissListener(d->token.setText(""));
         dialog.show();
+
+        pullTasks.setOnClickListener(v->
+                importNewRemote(true, token.getText().toString(),
+                        address.getText().toString().trim(),result,dialog));
+        pullProgress.setOnClickListener(v->
+                importNewRemote(false,token.getText().toString(),
+                        address.getText().toString().trim(),result,dialog));
 
         pendingPlans.setOnClickListener(v->{
             final String secret=token.getText().toString();
@@ -645,6 +656,104 @@ public class MainActivity extends Activity {
                     });
                 }
             });
+        });
+    }
+
+    /** Manual additive-only download, two server reads and local backup. */
+    private void importNewRemote(boolean tasks, String token, String endpoint,
+                                 TextView result, AlertDialog parent) {
+        final String kind=tasks?"일정":"진도";
+        result.setText("서버의 신규 "+kind+"을(를) 안전하게 검증 중…");
+        io.execute(()->{
+            try {
+                final String originalTasks=storage.rawTasksForSync();
+                final String originalProgress=progressStorage.rawProgressForSync();
+                List<Models.StudyTask> localTasks=storage.checkedTasksForSync();
+                List<StudyProgressItem> localProgress=progressStorage.list();
+                StudySyncClient.IncomingPlan first=StudySyncClient.previewInbound(
+                        localTasks,localProgress,StudySyncClient.snapshot(token,endpoint));
+                int count=tasks?first.newTasks.size():first.newProgress.size();
+                StringBuilder items=new StringBuilder();
+                if(tasks) {
+                    for(int i=0;i<Math.min(10,count);i++){
+                        Models.StudyTask item=first.newTasks.get(i);
+                        items.append("\n").append(i+1).append(". ")
+                                .append(item.subject).append(" · ").append(item.title);
+                    }
+                }else{
+                    for(int i=0;i<Math.min(10,count);i++){
+                        StudyProgressItem item=first.newProgress.get(i);
+                        items.append("\n").append(i+1).append(". ")
+                                .append(item.subject).append(" · ").append(item.unit);
+                    }
+                }
+                runOnUiThread(()->{
+                    if(isFinishing()||isDestroyed()||!parent.isShowing())return;
+                    if(count==0){
+                        result.setText("서버에만 있는 신규 "+kind+"이 없습니다. 기존 ID 충돌 "
+                                +first.conflicts+"개는 덮어쓰지 않았습니다.");
+                        return;
+                    }
+                    new AlertDialog.Builder(this)
+                            .setTitle("서버의 신규 "+kind+" "+count+"개 가져오기")
+                            .setMessage("가져오기 전에 기기의 기존 "+kind+" 데이터를 "
+                                    +"앱 전용 보관함에 백업합니다. 동일한 ID는 절대 덮어쓰지 않습니다.\n"
+                                    +"기존 항목과 내용이 다른 ID "+first.conflicts
+                                    +"개는 그대로 보존합니다.\n"+items.toString()
+                                    +(count>10?"\n외 "+(count-10)+"개":"")
+                                    +"\n\n확인 후 추가하시겠습니까?")
+                            .setNegativeButton("취소",(d,w)->
+                                    result.setText("가져오기를 취소했습니다. 기존 기록은 그대로입니다."))
+                            .setPositiveButton("신규 "+kind+"만 추가",(d,w)->{
+                                result.setText("승인 후 서버/로컬 기록을 다시 확인 중…");
+                                io.execute(()->{
+                                    try {
+                                        if(!originalTasks.equals(storage.rawTasksForSync()) ||
+                                                !java.util.Objects.equals(originalProgress,
+                                                        progressStorage.rawProgressForSync()))
+                                            throw new IllegalStateException(
+                                                    "확인 도중 로컬 기록이 변경되었습니다.");
+                                        StudySyncClient.IncomingPlan second=
+                                                StudySyncClient.previewInbound(
+                                                    storage.checkedTasksForSync(),
+                                                    progressStorage.list(),
+                                                    StudySyncClient.snapshot(token,endpoint));
+                                        if(!StudySyncClient.sameInbound(first,second,tasks))
+                                            throw new IllegalStateException(
+                                                    "확인 도중 서버 기록이 변경되었습니다.");
+                                        String backup=tasks?
+                                                storage.appendNewTasksForSync(
+                                                        originalTasks,second.newTasks,
+                                                        getApplicationContext()):
+                                                progressStorage.appendNewProgressForSync(
+                                                        originalProgress,second.newProgress,
+                                                        getApplicationContext());
+                                        runOnUiThread(()->{
+                                            if(!isFinishing()&&!isDestroyed()){
+                                                StudyWidget.refresh(this);
+                                                if(parent.isShowing())
+                                                    result.setText("신규 "+kind+" "+count
+                                                            +"개를 안전하게 추가했습니다. "
+                                                            +"기존 ID "+second.conflicts
+                                                            +"개는 보존했습니다.\n개인 백업: "+backup);
+                                            }
+                                        });
+                                    }catch(Exception error){
+                                        runOnUiThread(()->{
+                                            if(!isFinishing()&&!isDestroyed()&&parent.isShowing())
+                                                result.setText("안전 검사 또는 저장 오류로 가져오기를 중단했습니다."
+                                                        +" 기존 로컬 기록을 확인해 주세요.");
+                                        });
+                                    }
+                                });
+                            }).show();
+                });
+            }catch(Exception error){
+                runOnUiThread(()->{
+                    if(!isFinishing()&&!isDestroyed()&&parent.isShowing())
+                        result.setText("서버 데이터를 검증하지 못했습니다. 아무것도 가져오지 않았습니다.");
+                });
+            }
         });
     }
 
