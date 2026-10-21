@@ -274,6 +274,115 @@ enum StudySyncClient {
         return sent
     }
 
+    struct IncomingPlan {
+        let newTasks: [StudyTask]
+        let newProgress: [StudyProgressItem]
+        let conflicts: Int
+        let unchanged: Int
+        let cursor: Int64
+
+        func matches(_ other: IncomingPlan, importingTasks: Bool) -> Bool {
+            cursor == other.cursor && conflicts == other.conflicts
+                && (importingTasks ? newTasks == other.newTasks
+                                  : newProgress == other.newProgress)
+        }
+    }
+
+    /// Read and validate every remote payload before presenting any import.
+    /// Existing IDs are counted as conflicts or unchanged; never overwritten.
+    static func previewIncoming(token: String, address: String,
+                                localTasks: [StudyTask],
+                                localProgress: [StudyProgressItem]) async throws -> IncomingPlan {
+        guard localTasks.count <= 5000, localProgress.count <= 2000 else {
+            throw StudyError.message("로컬 일정·진도 저장 제한을 초과했습니다.")
+        }
+        let bytes = try await request(token, endpoint: "snapshot", address: address)
+        guard let root = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              let schema = root["schema"] as? Int, schema == 1,
+              let cursor = root["cursor"] as? Int64, cursor >= 0,
+              let records = root["records"] as? [[String: Any]],
+              records.count <= 7000 else {
+            throw StudyError.message("동기화 서버 스냅샷이 올바르지 않습니다.")
+        }
+        let taskIds = Dictionary(uniqueKeysWithValues: localTasks.map { ($0.id, $0) })
+        let progressIds = Dictionary(
+            uniqueKeysWithValues: localProgress.map { ($0.id.lowercased(), $0) }
+        )
+        guard taskIds.count == localTasks.count,
+              progressIds.count == localProgress.count else {
+            throw StudyError.message("로컬 기록 ID 중복으로 가져오기를 중단했습니다.")
+        }
+        var seen = Set<String>()
+        var newTasks: [StudyTask] = []
+        var newProgress: [StudyProgressItem] = []
+        var conflicts = 0
+        var unchanged = 0
+        let decoder = JSONDecoder()
+        let dateParser = ISO8601DateFormatter()
+        dateParser.formatOptions = [.withFullDate]
+
+        for record in records {
+            guard Set(record.keys) == Set(["kind", "id", "revision",
+                                           "deleted", "updatedAt", "payload"]),
+                  let kind = record["kind"] as? String,
+                  kind == "task" || kind == "progress",
+                  let id = record["id"] as? String,
+                  let revision = record["revision"] as? Int64, revision >= 1,
+                  let deleted = record["deleted"] as? Bool, !deleted,
+                  let payload = record["payload"] as? [String: Any],
+                  seen.insert(kind + "#" + id.lowercased()).inserted else {
+                throw StudyError.message("서버에 중복 또는 손상된 기록이 있습니다.")
+            }
+            let expectedFields: Set<String> = kind == "task"
+                ? ["id", "type", "subject", "title", "dueDate", "importance", "completed"]
+                : ["id", "subject", "material", "unit", "status",
+                   "inExamScope", "revision", "updatedAt"]
+            guard Set(payload.keys) == expectedFields else {
+                throw StudyError.message("서버 기록에 예상하지 못한 필드가 포함됐습니다.")
+            }
+            let encoded = try JSONSerialization.data(withJSONObject: payload)
+            if kind == "task" {
+                let candidate = try decoder.decode(StudyTask.self, from: encoded)
+                guard candidate.id > 0, String(candidate.id) == id,
+                      !candidate.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      candidate.type.count <= 100, candidate.subject.count <= 60,
+                      !candidate.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      candidate.title.count <= 500,
+                      (1...3).contains(candidate.importance),
+                      candidate.dueDate.count == 10,
+                      let parsed = dateParser.date(from: candidate.dueDate),
+                      dateParser.string(from: parsed) == candidate.dueDate else {
+                    throw StudyError.message("서버 일정의 ID 또는 값이 유효하지 않습니다.")
+                }
+                if let existing = taskIds[candidate.id] {
+                    if existing == candidate { unchanged += 1 }
+                    else { conflicts += 1 }
+                } else {
+                    newTasks.append(candidate)
+                }
+            } else {
+                let candidate = try decoder.decode(StudyProgressItem.self, from: encoded)
+                guard candidate.valid,
+                      candidate.id.lowercased() == id.lowercased(),
+                      candidate.revision == revision else {
+                    throw StudyError.message("서버 진도 ID 또는 수정 이력이 유효하지 않습니다.")
+                }
+                if let existing = progressIds[candidate.id.lowercased()] {
+                    if existing == candidate { unchanged += 1 }
+                    else { conflicts += 1 }
+                } else {
+                    newProgress.append(candidate)
+                }
+            }
+        }
+        guard newTasks.count + localTasks.count <= 5000,
+              newProgress.count + localProgress.count <= 2000 else {
+            throw StudyError.message("가져오기 후 데이터 수가 허용 범위를 초과합니다.")
+        }
+        return IncomingPlan(newTasks: newTasks, newProgress: newProgress,
+                            conflicts: conflicts, unchanged: unchanged, cursor: cursor)
+    }
+
     /// Read-only preview of the authenticated account's proposals.
     static func pendingPlans(token: String, address: String) async throws -> [PendingPlan] {
         let bytes = try await request(token, endpoint: "proposals", address: address)
