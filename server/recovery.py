@@ -40,7 +40,7 @@ def _digest(path: Path):
 def _integrity(path: Path):
     if not path.is_file() or path.is_symlink():
         raise ValueError("Database file missing or unsafe symlink")
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=8)
+    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=8)
     try:
         verdict = connection.execute("PRAGMA integrity_check").fetchone()
         if verdict is None or verdict[0] != "ok":
@@ -53,7 +53,7 @@ def _db_copy(source: Path, target: Path):
     if not source.is_file() or source.is_symlink():
         raise ValueError("Invalid source database path")
     _integrity(source)
-    src = sqlite3.connect(f"file:{source}?mode=ro", uri=True, timeout=8)
+    src = sqlite3.connect(f"{source.resolve().as_uri()}?mode=ro", uri=True, timeout=8)
     dst = sqlite3.connect(str(target), timeout=8)
     try:
         src.backup(dst)
@@ -66,7 +66,7 @@ def _db_copy(source: Path, target: Path):
 
 
 def _account_ids(registry: Path):
-    connection = sqlite3.connect(f"file:{registry}?mode=ro", uri=True, timeout=8)
+    connection = sqlite3.connect(f"{registry.resolve().as_uri()}?mode=ro", uri=True, timeout=8)
     try:
         rows = connection.execute("SELECT id FROM accounts ORDER BY id").fetchall()
     finally:
