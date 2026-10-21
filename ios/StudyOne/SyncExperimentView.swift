@@ -172,19 +172,6 @@ struct SyncExperimentView: View {
                 }
             }
 
-            Section("ChatGPT · AI 공부 계획 승인") {
-                NavigationLink {
-                    StudyPlanInboxView(token: token, serverAddress: serverAddress)
-                } label: {
-                    Label("승인 대기함 보기", systemImage: "checklist.checked")
-                }
-                .disabled(busy || token.count < 32 ||
-                          !serverAddress.lowercased().hasPrefix("https://"))
-                Text("검토·승인해야만 서버에 일정이 생성됩니다. "
-                     + "현재 기기에 자동으로 기록을 덮어쓰거나 삭제하지 않습니다.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
             Section("최근 결과") {
                 Text(status)
                     .font(.subheadline)
