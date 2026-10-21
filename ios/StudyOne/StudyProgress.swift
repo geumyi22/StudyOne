@@ -111,6 +111,47 @@ final class StudyProgressStore: ObservableObject {
         items = entries
     }
 
+    /// Save a protected local copy and append only server IDs not already present.
+    func mergeNewProgressFromServer(_ additions: [StudyProgressItem],
+                                    original expected: [StudyProgressItem]) throws -> URL {
+        guard loadError == nil else {
+            throw StudyError.message(loadError ?? "진도 저장소를 읽을 수 없습니다.")
+        }
+        // Avoid overwriting independently edited progress from another tab.
+        guard items == expected else {
+            throw StudyError.message("승인 도중 iPhone 진도가 변경됐습니다.")
+        }
+        let disk = UserDefaults.standard.data(forKey: storeKey)
+        if let disk {
+            let decoded = try JSONDecoder().decode(StudyProgressEnvelope.self, from: disk)
+            guard decoded.schema == 1 && decoded.items == expected else {
+                throw StudyError.message("기존 진도 데이터가 변경되어 병합을 중단했습니다.")
+            }
+        } else if !items.isEmpty {
+            throw StudyError.message("저장된 진도 원본을 확인하지 못했습니다.")
+        }
+        guard !additions.isEmpty, expected.count + additions.count <= limit else {
+            throw StudyError.message("추가할 진도가 없거나 한도를 초과했습니다.")
+        }
+        var ids = Set(expected.map { $0.id.lowercased() })
+        for item in additions {
+            guard item.valid, ids.insert(item.id.lowercased()).inserted else {
+                throw StudyError.message("중복 또는 손상된 진도 ID를 발견했습니다.")
+            }
+        }
+        let next = expected + additions
+        let data = try JSONEncoder().encode(
+            StudyProgressEnvelope(schema: 1, items: next)
+        )
+        let backup = try StudySyncBackup.save(disk, kind: "progress")
+        UserDefaults.standard.set(data, forKey: storeKey)
+        guard UserDefaults.standard.data(forKey: storeKey) == data else {
+            throw StudyError.message("진도 저장 실패. 기존 진도 백업은 보존됐습니다.")
+        }
+        items = next
+        return backup
+    }
+
     /// Files can be shared through Files/iCloud; tokens and existing tasks are excluded.
     func exportBackup() throws -> URL {
         guard loadError == nil else {
