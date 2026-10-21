@@ -260,51 +260,51 @@ class SyncStore:
     @staticmethod
     def _apply_checked(db, request_id, fingerprint, validated):
         """Runs under the caller's SQLite write transaction; never commits itself."""
-    
-                "SELECT body_hash,response FROM requests WHERE request_id=?", (request_id,)
+        previous = db.execute(
+            "SELECT body_hash,response FROM requests WHERE request_id=?", (request_id,)
+        ).fetchone()
+        if previous:
+            if previous["body_hash"] != fingerprint:
+                raise ApiProblem(409, "IDEMPOTENCY_KEY_REUSED")
+            return json.loads(previous["response"])
+        # Preflight entire batch; no partial commits on conflict.
+        for kind, identifier, base, deleted, _ in validated:
+            stored = db.execute(
+                "SELECT revision,deleted FROM records WHERE kind=? AND id=?",
+                (kind, identifier)
             ).fetchone()
-            if previous:
-                if previous["body_hash"] != fingerprint:
-                    raise ApiProblem(409, "IDEMPOTENCY_KEY_REUSED")
-                return json.loads(previous["response"])
-            # Preflight entire batch; no partial commits on conflict.
-            for kind, identifier, base, deleted, _ in validated:
-                stored = db.execute(
-                    "SELECT revision,deleted FROM records WHERE kind=? AND id=?",
-                    (kind, identifier)
-                ).fetchone()
-                if (stored is None and base != 0) or (
-                    stored is not None and (stored["revision"] != base or
-                                            (stored["deleted"] == 1 and not deleted))
-                ):
-                    raise ApiProblem(409, "REVISION_CONFLICT")
-                if stored is not None and stored["deleted"] and deleted:
-                    raise ApiProblem(409, "ALREADY_DELETED")
-            now = int(time.time() * 1000)
-            changes = []
-            for kind, identifier, base, deleted, payload in validated:
-                revision = base + 1
-                if payload is not None and kind == "progress":
-                    payload["revision"] = revision
-                    payload["updatedAt"] = now
-                encoded = json_bytes(payload).decode("utf-8") if payload is not None else None
-                db.execute("""
-                    INSERT INTO records(kind,id,payload,revision,deleted,updated_at)
-                    VALUES(?,?,?,?,?,?)
-                    ON CONFLICT(kind,id) DO UPDATE SET
-                    payload=excluded.payload,revision=excluded.revision,
-                    deleted=excluded.deleted,updated_at=excluded.updated_at
-                """, (kind, identifier, encoded, revision, int(deleted), now))
-                cursor = db.execute("""
-                    INSERT INTO change_log(kind,id,payload,revision,deleted,updated_at)
-                    VALUES(?,?,?,?,?,?)
-                """, (kind, identifier, encoded, revision, int(deleted), now)).lastrowid
-                changes.append({"seq": cursor, "kind": kind, "id": identifier,
-                                "revision": revision, "deleted": deleted, "updatedAt": now})
-            response = {"schema": 1, "cursor": changes[-1]["seq"], "changes": changes}
-            db.execute("INSERT INTO requests(request_id,body_hash,response) VALUES(?,?,?)",
-                       (request_id, fingerprint, json_bytes(response).decode("utf-8")))
-            return response
+            if (stored is None and base != 0) or (
+                stored is not None and (stored["revision"] != base or
+                                        (stored["deleted"] == 1 and not deleted))
+            ):
+                raise ApiProblem(409, "REVISION_CONFLICT")
+            if stored is not None and stored["deleted"] and deleted:
+                raise ApiProblem(409, "ALREADY_DELETED")
+        now = int(time.time() * 1000)
+        changes = []
+        for kind, identifier, base, deleted, payload in validated:
+            revision = base + 1
+            if payload is not None and kind == "progress":
+                payload["revision"] = revision
+                payload["updatedAt"] = now
+            encoded = json_bytes(payload).decode("utf-8") if payload is not None else None
+            db.execute("""
+                INSERT INTO records(kind,id,payload,revision,deleted,updated_at)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(kind,id) DO UPDATE SET
+                payload=excluded.payload,revision=excluded.revision,
+                deleted=excluded.deleted,updated_at=excluded.updated_at
+            """, (kind, identifier, encoded, revision, int(deleted), now))
+            cursor = db.execute("""
+                INSERT INTO change_log(kind,id,payload,revision,deleted,updated_at)
+                VALUES(?,?,?,?,?,?)
+            """, (kind, identifier, encoded, revision, int(deleted), now)).lastrowid
+            changes.append({"seq": cursor, "kind": kind, "id": identifier,
+                            "revision": revision, "deleted": deleted, "updatedAt": now})
+        response = {"schema": 1, "cursor": changes[-1]["seq"], "changes": changes}
+        db.execute("INSERT INTO requests(request_id,body_hash,response) VALUES(?,?,?)",
+                   (request_id, fingerprint, json_bytes(response).decode("utf-8")))
+        return response
 
 
 def make_handler(store: SyncStore, token: str):
