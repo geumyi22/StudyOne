@@ -78,6 +78,7 @@ class MobileGuardTests(unittest.TestCase):
         android_ui = read("app/src/main/java/com/studyone/app/MainActivity.java")
         android_api = read("app/src/main/java/com/studyone/app/StudySyncClient.java")
         ios_ui = read("ios/StudyOne/SyncExperimentView.swift")
+        inbox = read("ios/StudyOne/StudyPlanInboxView.swift")
         ios_api = read("ios/StudyOne/StudySyncClient.swift")
         for text in ('showStudyPlanInbox(', 'openStudyPlanDecision(',
                      'setPositiveButton("전체 승인"', 'setNegativeButton("전체 거부"',
@@ -86,10 +87,11 @@ class MobileGuardTests(unittest.TestCase):
         for text in ('AI 공부 계획 승인은 HTTPS 계정 서버', 'pendingProposals(',
                      'decideProposal(', 'canonicalUuid(', 'response.getString("state")'):
             self.assertIn(text, android_api)
-        for text in ('AI 공부 계획 승인 대기함', 'DisclosureGroup',
-                     'showPlanDecision = true', 'StudySyncClient.pendingPlans(',
-                     'StudySyncClient.decidePlan(', 'latest.tasks == selected.tasks'):
-            self.assertIn(text, ios_ui)
+        self.assertIn('StudyPlanInboxView(token: token, serverAddress: serverAddress)', ios_ui)
+        for text in ('AI 계획 승인 대기함', 'StudySyncClient.pendingPlans(',
+                     'StudySyncClient.decidePlan(', 'showConfirm = true',
+                     'original == recent', 'Button("취소", role: .cancel)'):
+            self.assertIn(text, inbox)
         for text in ('pendingPlans(token:', 'decidePlan(token:',
                      'prefix != "v2/"', 'URLSessionConfiguration.ephemeral'):
             self.assertIn(text, ios_api)
