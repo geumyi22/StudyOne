@@ -51,6 +51,26 @@ enum StudySyncClient {
         let records: [Record]
     }
 
+    struct PendingPlans: Decodable {
+        let schema: Int
+        let proposals: [PendingPlan]
+    }
+
+    struct PendingPlan: Decodable, Identifiable {
+        let id: String
+        let title: String
+        let state: String
+        let createdAt: Int64
+        let expiresAt: Int64
+        let taskCount: Int
+        let tasks: [StudyTask]
+    }
+
+    private struct Decision: Decodable {
+        let id: String
+        let state: String
+    }
+
     enum Payload: Encodable {
         case task(StudyTask)
         case progress(StudyProgressItem)
@@ -111,8 +131,17 @@ enum StudySyncClient {
                                 address: String = defaultAddress) async throws -> Data {
         let safeToken = try checkedToken(token)
         let (base, prefix) = try checkedAddress(address)
-        guard endpoint == "snapshot" || endpoint == "changes" else {
+        let normal = endpoint == "snapshot" || endpoint == "changes"
+        let inbox = endpoint == "proposals"
+        let actionParts = endpoint.split(separator: "/").map(String.init)
+        let decision = actionParts.count == 3 && actionParts[0] == "proposals"
+            && UUID(uuidString: actionParts[1]) != nil
+            && (actionParts[2] == "approve" || actionParts[2] == "reject")
+        guard normal || inbox || decision else {
             throw StudyError.message("지원되지 않는 동기화 경로입니다.")
+        }
+        if (inbox || decision) && prefix != "v2/" {
+            throw StudyError.message("AI 학습 계획 승인은 HTTPS 계정 서버에서만 지원됩니다.")
         }
         if let body, body.count > 262_144 {
             throw StudyError.message("전송 데이터 크기가 제한을 초과했습니다.")
@@ -147,7 +176,8 @@ enum StudySyncClient {
         switch http.statusCode {
         case 200: break
         case 401: throw StudyError.message("동기화 인증이 거절되었습니다.")
-        case 409: throw StudyError.message("다른 기기의 기록과 충돌했습니다. 다시 조회하세요.")
+        case 403: throw StudyError.message("읽기 전용 토큰은 계획 승인 권한이 없습니다.")
+        case 409: throw StudyError.message("계획이 이미 변경되었거나 서버 기록과 충돌했습니다. 다시 조회하세요.")
         default: throw StudyError.message("로컬 서버 오류: HTTP \(http.statusCode)")
         }
         guard responseBody.count <= maxResponse else {
@@ -242,6 +272,59 @@ enum StudySyncClient {
             }
         }
         return sent
+    }
+
+    /// Read-only preview of the authenticated account's proposals.
+    static func pendingPlans(token: String, address: String) async throws -> [PendingPlan] {
+        let bytes = try await request(token, endpoint: "proposals", address: address)
+        let box = try JSONDecoder().decode(PendingPlans.self, from: bytes)
+        guard box.schema == 1, box.proposals.count <= 20 else {
+            throw StudyError.message("서버 승인 대기 계획 응답을 확인할 수 없습니다.")
+        }
+        var ids = Set<String>()
+        for plan in box.proposals {
+            guard UUID(uuidString: plan.id) != nil,
+                  ids.insert(plan.id.lowercased()).inserted,
+                  plan.state == "pending",
+                  !plan.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  plan.title.count <= 100,
+                  plan.expiresAt > plan.createdAt,
+                  plan.taskCount == plan.tasks.count,
+                  (1...30).contains(plan.taskCount) else {
+                throw StudyError.message("승인 대기 공부 계획이 올바르지 않습니다.")
+            }
+            var taskIds = Set<Int64>()
+            for task in plan.tasks {
+                guard task.id > 0,
+                      taskIds.insert(task.id).inserted,
+                      !task.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      task.type.count <= 100,
+                      task.subject.count <= 60,
+                      !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      task.title.count <= 500,
+                      (1...3).contains(task.importance) else {
+                    throw StudyError.message("공부 계획의 항목이 손상되었습니다.")
+                }
+            }
+        }
+        return box.proposals
+    }
+
+    /// Must only be invoked from a direct device-user confirmation action.
+    static func decidePlan(token: String, address: String, id: String,
+                           approve: Bool) async throws -> String {
+        guard let parsed = UUID(uuidString: id), parsed.uuidString.lowercased() == id.lowercased() else {
+            throw StudyError.message("계획 ID를 확인하세요.")
+        }
+        let endpoint = "proposals/" + id + (approve ? "/approve" : "/reject")
+        let bytes = try await request(token, endpoint: endpoint,
+                                      body: Data("{}".utf8), address: address)
+        let response = try JSONDecoder().decode(Decision.self, from: bytes)
+        let state = approve ? "approved" : "rejected"
+        guard response.id.lowercased() == id.lowercased(), response.state == state else {
+            throw StudyError.message("계획 결정 결과를 확인하지 못했습니다.")
+        }
+        return state
     }
 
     /// Local-only deterministic test, no network and no user information.
