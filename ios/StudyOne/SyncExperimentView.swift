@@ -13,6 +13,11 @@ struct SyncExperimentView: View {
     @State private var busy = false
     @State private var pending: [StudySyncClient.Mutation] = []
     @State private var showApproval = false
+    @State private var incomingPreview: StudySyncClient.IncomingPlan?
+    @State private var incomingTasksBaseline: [StudyTask] = []
+    @State private var incomingProgressBaseline: [StudyProgressItem] = []
+    @State private var importTasks = true
+    @State private var showImportConfirmation = false
     @State private var pendingPlans: [StudySyncClient.PendingPlan] = []
     @State private var selectedPlan: StudySyncClient.PendingPlan?
     @State private var planActionApprove = false
@@ -30,6 +35,94 @@ struct SyncExperimentView: View {
         return try StudySyncClient.newOnly(
             tasks: tasks, progress: progress.items, snapshot: snapshot
         )
+    }
+
+    private func prepareIncoming(tasks: Bool) {
+        if busy { return }
+        busy = true
+        status = "서버에서 신규 \(tasks ? "일정" : "진도")을(를) 검증 중…"
+        Task {
+            defer { busy = false }
+            do {
+                let localTasks = try tasksStore.checkedTasksForSync()
+                let progressStore = StudyProgressStore()
+                if let problem = progressStore.loadError {
+                    throw StudyError.message(problem)
+                }
+                let localProgress = progressStore.items
+                let plan = try await StudySyncClient.previewIncoming(
+                    token: token, address: serverAddress,
+                    localTasks: localTasks, localProgress: localProgress)
+                let additions = tasks ? plan.newTasks.count : plan.newProgress.count
+                if additions == 0 {
+                    status = "서버에서 가져올 신규 ID가 없습니다. 기존 기록과 내용이 다른 항목 \(plan.conflicts)개는 건너뛰었습니다."
+                    return
+                }
+                incomingTasksBaseline = localTasks
+                incomingProgressBaseline = localProgress
+                incomingPreview = plan
+                importTasks = tasks
+                let names: [String] = tasks
+                    ? plan.newTasks.prefix(8).map { $0.subject + " · " + $0.title }
+                    : plan.newProgress.prefix(8).map { $0.subject + " · " + $0.unit }
+                status = "가져올 \(tasks ? "일정" : "진도") \(additions)개\n"
+                    + names.enumerated().map { "\($0.offset + 1). \($0.element)" }
+                        .joined(separator: "\n")
+                    + "\n기존 기록 충돌 \(plan.conflicts)개는 건너뜁니다."
+                showImportConfirmation = true
+            } catch {
+                incomingPreview = nil
+                status = "신규 기록 미리보기 실패 · 로컬 데이터 변경 없음: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func applyIncoming() {
+        guard let initial = incomingPreview, !busy else { return }
+        let selectedType = importTasks
+        busy = true
+        status = "승인 후 서버·기기 기록을 다시 검증 중…"
+        Task {
+            defer {
+                busy = false
+                incomingPreview = nil
+            }
+            do {
+                let localTasks = try tasksStore.checkedTasksForSync()
+                let progressStore = StudyProgressStore()
+                if let problem = progressStore.loadError {
+                    throw StudyError.message(problem)
+                }
+                guard localTasks == incomingTasksBaseline,
+                      progressStore.items == incomingProgressBaseline else {
+                    throw StudyError.message(
+                        "검토 도중 로컬 기록이 변경되어 가져오기를 차단했습니다.")
+                }
+                let verified = try await StudySyncClient.previewIncoming(
+                    token: token, address: serverAddress,
+                    localTasks: localTasks, localProgress: progressStore.items)
+                guard initial.matches(verified, importingTasks: selectedType) else {
+                    throw StudyError.message(
+                        "검토 도중 서버 기록이 변경되어 가져오기를 차단했습니다.")
+                }
+                let backup: URL
+                let count: Int
+                if selectedType {
+                    backup = try tasksStore.mergeNewTasksFromServer(
+                        verified.newTasks, original: localTasks)
+                    count = verified.newTasks.count
+                } else {
+                    backup = try progressStore.mergeNewProgressFromServer(
+                        verified.newProgress, original: incomingProgressBaseline)
+                    count = verified.newProgress.count
+                }
+                status = "서버 신규 \(selectedType ? "일정" : "진도") \(count)개를 추가했습니다.\n"
+                    + "기존 ID \(verified.conflicts)개는 변경하지 않았습니다.\n"
+                    + "원본 백업: \(backup.lastPathComponent)"
+            } catch {
+                status = "안전 검사 또는 로컬 저장 실패. 기존 데이터·백업을 확인하세요: \(error.localizedDescription)"
+            }
+        }
     }
 
     var body: some View {
@@ -106,6 +199,25 @@ struct SyncExperimentView: View {
                 .disabled(busy || token.count < 32)
 
                 if busy { ProgressView("확인 중…") }
+            }
+
+            Section("서버에서 신규 기록만 가져오기") {
+                Text("기존 ID는 덮어쓰지 않으며, 서버의 새 항목만 선택적으로 추가합니다. 승인 직전 데이터 재검증과 앱 내부 원본 백업을 수행합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+
+                Button {
+                    prepareIncoming(tasks: true)
+                } label: {
+                    Label("서버의 신규 일정만 가져오기", systemImage: "tray.and.arrow.down")
+                }
+                .disabled(busy || token.count < 32)
+
+                Button {
+                    prepareIncoming(tasks: false)
+                } label: {
+                    Label("서버의 신규 진도만 가져오기", systemImage: "square.and.arrow.down")
+                }
+                .disabled(busy || token.count < 32)
             }
 
             Section("AI 공부 계획 승인 대기함") {
@@ -272,9 +384,27 @@ struct SyncExperimentView: View {
         } message: {
             Text("이 기기의 계정 토큰으로 결정합니다. 승인하면 서버에 실제 숙제 항목이 생성됩니다.")
         }
+        .confirmationDialog(
+            "서버 신규 \(importTasks ? "일정" : "진도")을(를) 추가하시겠습니까?",
+            isPresented: $showImportConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("백업 후 신규 항목만 추가") {
+                applyIncoming()
+            }
+            Button("취소", role: .cancel) {
+                incomingPreview = nil
+                status = "가져오기를 취소했습니다. 기기의 기존 기록은 그대로입니다."
+            }
+        } message: {
+            Text("서버에서만 존재하는 항목만 추가합니다. 기존 ID의 기록은 변경하거나 삭제하지 않습니다.")
+        }
         .onDisappear {
             token = ""
             pending = []
+            incomingPreview = nil
+            incomingTasksBaseline = []
+            incomingProgressBaseline = []
             selectedPlan = nil
             pendingPlans = []
         }
