@@ -155,7 +155,7 @@ def verify_backup(folder):
         if not isinstance(metadata, dict) or set(metadata) != {"sha256", "bytes"}:
             raise ValueError("Invalid database metadata")
         candidate = source / relative
-        if candidate.is_symlink() or not candidate.is_file() or
+        if (candidate.is_symlink() or not candidate.is_file() or
                 candidate.resolve().parent not in (source, source / "accounts")):
             raise ValueError("Unsafe backup path")
         if (type(metadata["bytes"]) is not int or
