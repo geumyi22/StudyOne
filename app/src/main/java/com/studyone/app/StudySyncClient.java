@@ -472,8 +472,43 @@ public final class StudySyncClient {
                 return false;
             snap.getJSONArray("records").put(new JSONObject().put("kind","progress")
                     .put("id",item.id).put("revision",2).put("deleted",false));
-            return prepareNewOnly(java.util.Collections.singletonList(task),
-                    java.util.Collections.singletonList(item),snap).length()==0;
+            if(prepareNewOnly(java.util.Collections.singletonList(task),
+                    java.util.Collections.singletonList(item),snap).length()!=0)return false;
+            JSONObject inbound=new JSONObject().put("schema",1).put("cursor",2)
+                    .put("records",new JSONArray()
+                            .put(new JSONObject().put("kind","task").put("id",Long.toString(task.id))
+                                    .put("revision",1).put("deleted",false)
+                                    .put("payload",taskJson(task)))
+                            .put(new JSONObject().put("kind","progress").put("id",item.id)
+                                    .put("revision",item.revision).put("deleted",false)
+                                    .put("payload",progressJson(item))));
+            IncomingPlan newOnly=previewInbound(new ArrayList<>(),
+                    new ArrayList<>(),inbound);
+            if(newOnly.newTasks.size()!=1 || newOnly.newProgress.size()!=1 ||
+                    newOnly.conflicts!=0)return false;
+            IncomingPlan identical=previewInbound(
+                    java.util.Collections.singletonList(task),
+                    java.util.Collections.singletonList(item),inbound);
+            if(identical.newTasks.size()!=0 || identical.newProgress.size()!=0 ||
+                    identical.unchanged!=2 || identical.conflicts!=0)return false;
+            if(!sameInbound(newOnly,newOnly,true)||
+                    !sameInbound(newOnly,newOnly,false))return false;
+            JSONObject changed=new JSONObject(inbound.toString());
+            changed.getJSONArray("records").getJSONObject(0).getJSONObject("payload")
+                    .put("title","서버에서 변경된 별개 내용");
+            IncomingPlan conflicts=previewInbound(
+                    java.util.Collections.singletonList(task),
+                    java.util.Collections.singletonList(item),changed);
+            if(conflicts.conflicts!=1 || conflicts.unchanged!=1)return false;
+            if(sameInbound(newOnly,previewInbound(new ArrayList<>(),
+                    new ArrayList<>(),changed),true))return false;
+            changed.getJSONArray("records").getJSONObject(0).getJSONObject("payload")
+                    .put("apiKey","must-be-rejected");
+            try {
+                previewInbound(new ArrayList<>(),new ArrayList<>(),changed);
+                return false;
+            }catch(IllegalArgumentException expected){/* safe rejection */}
+            return true;
         }catch(Exception ignored){return false;}
     }
 }
