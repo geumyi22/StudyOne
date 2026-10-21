@@ -237,6 +237,145 @@ public final class StudySyncClient {
         return response.getString("state");
     }
 
+    /** New server IDs are isolated from existing local IDs; never overwrite. */
+    public static final class IncomingPlan {
+        public final List<Models.StudyTask> newTasks = new ArrayList<>();
+        public final List<StudyProgressItem> newProgress = new ArrayList<>();
+        public int unchanged, conflicts;
+        public long cursor;
+    }
+
+    private static void exactly(JSONObject data, String... names) throws JSONException {
+        Set<String> allowed = new HashSet<>(java.util.Arrays.asList(names));
+        if(data.length()!=allowed.size())
+            throw new IllegalArgumentException("서버에 예상하지 못한 필드가 있습니다.");
+        java.util.Iterator<String> keys=data.keys();
+        while(keys.hasNext()){
+            if(!allowed.remove(keys.next()))
+                throw new IllegalArgumentException("서버 기록 필드가 올바르지 않습니다.");
+        }
+        if(!allowed.isEmpty())
+            throw new IllegalArgumentException("서버 기록에 필요한 필드가 없습니다.");
+    }
+
+    private static Models.StudyTask checkedRemoteTask(JSONObject value, String id)
+            throws JSONException {
+        exactly(value,"id","type","subject","title","dueDate","importance","completed");
+        long numeric=value.getLong("id");
+        if(!Long.toString(numeric).equals(id) || numeric<=0)
+            throw new IllegalArgumentException("서버의 일정 ID가 불일치합니다.");
+        String type=value.getString("type"), subject=value.getString("subject"),
+                title=value.getString("title");
+        int importance=value.getInt("importance");
+        LocalDate due=LocalDate.parse(value.getString("dueDate"));
+        if(type.trim().isEmpty()||type.length()>100||subject.length()>60||
+                title.trim().isEmpty()||title.length()>500||
+                importance<1||importance>3)
+            throw new IllegalArgumentException("서버 일정 필드가 유효하지 않습니다.");
+        return new Models.StudyTask(numeric,type,subject,title,due,
+                importance,value.getBoolean("completed"));
+    }
+
+    private static StudyProgressItem checkedRemoteProgress(JSONObject value, String id,
+                                                           long revision) throws JSONException {
+        exactly(value,"id","subject","material","unit","status",
+                "inExamScope","revision","updatedAt");
+        if(!value.getString("id").equalsIgnoreCase(id) ||
+                value.getLong("revision")!=revision)
+            throw new IllegalArgumentException("서버 진도 ID 또는 수정 버전이 불일치합니다.");
+        return new StudyProgressItem(id,value.getString("subject"),
+                value.getString("material"),value.getString("unit"),
+                value.getString("status"),value.getBoolean("inExamScope"),
+                revision,value.getLong("updatedAt"));
+    }
+
+    private static boolean sameTask(Models.StudyTask a, Models.StudyTask b) {
+        return a.type.equals(b.type) && a.subject.equals(b.subject)
+                && a.title.equals(b.title) && a.dueDate.equals(b.dueDate)
+                && a.importance==b.importance && a.completed==b.completed;
+    }
+    private static boolean sameProgress(StudyProgressItem a, StudyProgressItem b) {
+        return a.subject.equals(b.subject) && a.material.equals(b.material)
+                && a.unit.equals(b.unit) && a.status.equals(b.status)
+                && a.inExamScope==b.inExamScope;
+    }
+
+    /**
+     * Pure preview; this method never writes any local or remote data.
+     * Existing IDs with divergent contents count as conflicts, not overwrites.
+     */
+    public static IncomingPlan previewInbound(List<Models.StudyTask> localTasks,
+                                               List<StudyProgressItem> localProgress,
+                                               JSONObject snapshot) throws JSONException {
+        if(localTasks==null||localProgress==null||localTasks.size()>5000||
+                localProgress.size()>2000||snapshot.getInt("schema")!=1 ||
+                snapshot.getLong("cursor")<0)
+            throw new IllegalArgumentException("동기화 미리보기에 유효하지 않은 데이터가 있습니다.");
+        JSONArray records=snapshot.getJSONArray("records");
+        if(records.length()>7000)
+            throw new IllegalArgumentException("서버 기록 수 제한을 초과했습니다.");
+        java.util.Map<Long,Models.StudyTask> localTaskIds=new java.util.HashMap<>();
+        java.util.Map<String,StudyProgressItem> localProgressIds=new java.util.HashMap<>();
+        for(Models.StudyTask task:localTasks)
+            if(localTaskIds.put(task.id,task)!=null)
+                throw new IllegalArgumentException("로컬 일정 ID 중복");
+        for(StudyProgressItem item:localProgress)
+            if(localProgressIds.put(item.id.toLowerCase(java.util.Locale.ROOT),item)!=null)
+                throw new IllegalArgumentException("로컬 진도 ID 중복");
+        IncomingPlan plan=new IncomingPlan();
+        plan.cursor=snapshot.getLong("cursor");
+        Set<String> seen=new HashSet<>();
+        for(int i=0;i<records.length();i++){
+            JSONObject row=records.getJSONObject(i);
+            String kind=row.getString("kind"), id=row.getString("id");
+            String marker=kind+"#"+id.toLowerCase(java.util.Locale.ROOT);
+            if((!"task".equals(kind)&&!"progress".equals(kind)) ||
+                    !seen.add(marker)||row.getBoolean("deleted")||
+                    row.getLong("revision")<1)
+                throw new IllegalArgumentException("서버 기록이 중복되거나 잘못됐습니다.");
+            JSONObject payload=row.getJSONObject("payload");
+            if("task".equals(kind)){
+                Models.StudyTask incoming=checkedRemoteTask(payload,id);
+                Models.StudyTask existing=localTaskIds.get(incoming.id);
+                if(existing==null)plan.newTasks.add(incoming);
+                else if(sameTask(existing,incoming))plan.unchanged++;
+                else plan.conflicts++;
+            }else{
+                StudyProgressItem incoming=checkedRemoteProgress(payload,id,row.getLong("revision"));
+                StudyProgressItem existing=localProgressIds.get(
+                        incoming.id.toLowerCase(java.util.Locale.ROOT));
+                if(existing==null)plan.newProgress.add(incoming);
+                else if(sameProgress(existing,incoming))plan.unchanged++;
+                else plan.conflicts++;
+            }
+        }
+        if(localTasks.size()+plan.newTasks.size()>5000 ||
+                localProgress.size()+plan.newProgress.size()>2000)
+            throw new IllegalArgumentException("가져온 뒤 로컬 저장 한도를 초과합니다.");
+        return plan;
+    }
+
+    /** Identical preview contents and IDs must be present after user consent. */
+    public static boolean sameInbound(IncomingPlan a, IncomingPlan b, boolean tasks)
+            throws JSONException {
+        if(a.cursor!=b.cursor||a.conflicts!=b.conflicts)return false;
+        if(tasks){
+            if(a.newTasks.size()!=b.newTasks.size())return false;
+            for(int i=0;i<a.newTasks.size();i++){
+                Models.StudyTask first=a.newTasks.get(i),second=b.newTasks.get(i);
+                if(first.id!=second.id || !sameTask(first,second))return false;
+            }
+        }else{
+            if(a.newProgress.size()!=b.newProgress.size())return false;
+            for(int i=0;i<a.newProgress.size();i++){
+                StudyProgressItem x=a.newProgress.get(i),y=b.newProgress.get(i);
+                if(!x.id.equals(y.id)||x.revision!=y.revision||
+                        x.updatedAt!=y.updatedAt||!sameProgress(x,y))return false;
+            }
+        }
+        return true;
+    }
+
     /** Derive new-ID-only upload from validated local collections. */
     public static JSONArray prepareNewOnly(List<Models.StudyTask> tasks,
                                            List<StudyProgressItem> progress,
