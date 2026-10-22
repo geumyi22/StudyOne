@@ -324,6 +324,11 @@ public class MainActivity extends Activity {
         });
         c.addView(copyToday);
 
+        // Put the live, directly tappable today's checklist before the broader progress tracker.
+        // This is a view of existing local records, not a new persisted or uploaded plan.
+        List<Models.StudyTask> tasks=storage.tasks();
+        appendTodayChecklist(c,tasks,LocalDate.now());
+
         c.addView(section("교재 · 시험범위 · 진도"));
         c.addView(cardText("교재 진도는 기존 일별 숙제와 별도로 관리합니다. 기존 전체 일정 JSON 백업에는 진도가 포함되지 않으므로 아래의 별도 진도 JSON 백업을 사용하세요.",12));
         Button addProgress=secondary("+ 시험범위 진도 추가");
@@ -390,7 +395,6 @@ public class MainActivity extends Activity {
             c.addView(cardText("진도 데이터 읽기 오류: "+e.getMessage(),13));
         }
 
-        List<Models.StudyTask> tasks=storage.tasks();
         if(tasks.isEmpty()){
             c.addView(spacer(12));
             c.addView(cardText("일별 일정은 아직 없습니다. 위에서 교재 진도를 별도로 관리할 수 있습니다.",14));
@@ -420,22 +424,61 @@ public class MainActivity extends Activity {
         if(count==0) rec.addView(tv("모든 일정을 완료했습니다.",14,MUTED,false));
         c.addView(rec);
 
-        c.addView(section("분류별 일정"));
+        // Retain every historical and future task, but don't duplicate all of them above the fold.
+        LinearLayout everyTask=column();
+        everyTask.setVisibility(View.GONE);
+        Button expandAll=secondary("과거·미래 포함 전체 일정 펼치기");
+        expandAll.setOnClickListener(v->{
+            boolean opening=everyTask.getVisibility()!=View.VISIBLE;
+            everyTask.setVisibility(opening?View.VISIBLE:View.GONE);
+            expandAll.setText(opening?"전체 일정 접기":"과거·미래 포함 전체 일정 펼치기");
+        });
+        c.addView(expandAll);
+        c.addView(everyTask);
+        everyTask.addView(section("분류별 전체 일정"));
         for(String role:StudyCategories.ROLE_TITLES) {
             boolean hasRole=false;
             for(Models.StudyTask t:tasks) {
                 if(!role.equals(t.type))continue;
-                if(!hasRole){c.addView(section(role));hasRole=true;}
-                c.addView(taskCard(t));
+                if(!hasRole){everyTask.addView(section(role));hasRole=true;}
+                everyTask.addView(taskCard(t));
             }
         }
         boolean hasLegacy=false;
         for(Models.StudyTask t:tasks) {
             if(StudyCategories.isRole(t.type))continue;
-            if(!hasLegacy){c.addView(section("기존 일정 (이전 분류)"));hasLegacy=true;}
-            c.addView(taskCard(t));
+            if(!hasLegacy){everyTask.addView(section("기존 일정 (이전 분류)"));hasLegacy=true;}
+            everyTask.addView(taskCard(t));
         }
         return s;
+    }
+
+    /** A live, clickable five-role snapshot; carryover is presentation only. */
+    private void appendTodayChecklist(LinearLayout root,List<Models.StudyTask> all,LocalDate today) {
+        List<Models.StudyTask> selected=StudyDailyChecklist.visible(all,today);
+        int complete=0;
+        for(Models.StudyTask task:selected)if(task.completed)complete++;
+        root.addView(section("오늘 할꺼 · 삼성 리마인더 체크리스트"));
+        root.addView(cardText(today+" · 오늘과 전날 미완료 항목 · 완료 "+complete+"/"+selected.size()
+                +"개\\n체크하면 기기 내 원래 일정의 완료 상태가 바뀝니다. 마감일·분류는 유지됩니다.",13));
+        for(int i=0;i<StudyCategories.ROLE_TITLES.length;i++) {
+            root.addView(section((i+1)+". "+StudyCategories.ROLE_TITLES[i]));
+            int count=0;
+            for(Models.StudyTask task:selected) {
+                if(StudyDailyChecklist.groupIndex(task,today)!=i)continue;
+                if(task.dueDate.isBefore(today))
+                    root.addView(cardText("전날 못 다 · 원래 마감 "+task.dueDate,12));
+                root.addView(taskCard(task));
+                count++;
+            }
+            if(count==0)root.addView(cardText("등록된 할 일이 없습니다.",12));
+        }
+        int legacy=0;
+        for(Models.StudyTask task:selected) {
+            if(StudyDailyChecklist.groupIndex(task,today)!=5)continue;
+            if(legacy++==0)root.addView(section("기존 분류 일정"));
+            root.addView(taskCard(task));
+        }
     }
 
     private View settings() {
