@@ -141,9 +141,9 @@ struct TasksView: View {
                 lines.append(line(task, carried: task.dueDate < today && !task.completed))
             }
         }
-        let prior = selected.filter {
-            $0.dueDate >= today &&
-            !StudyCategories.roles.contains(where: { role in role.title == $0.type })
+        let prior = selected.filter { task in
+            task.dueDate >= today &&
+            !StudyCategories.roles.contains(where: { role in role.title == task.type })
         }
         if !prior.isEmpty {
             lines.append("")
