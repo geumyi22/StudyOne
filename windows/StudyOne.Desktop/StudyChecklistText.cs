@@ -8,7 +8,8 @@ public static class StudyChecklistText
 {
     private static readonly string[] Roles = StudyData.Categories.Take(5).ToArray();
 
-    public static string Daily(IEnumerable<StudyTask> items, DateOnly today)
+    public static string Daily(IEnumerable<StudyTask> items, DateOnly today,
+                               IReadOnlyDictionary<long, StudyTaskDetail>? details = null)
     {
         string date = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var selected = items.Where(t => string.CompareOrdinal(t.DueDate, date) == 0 ||
@@ -26,7 +27,7 @@ public static class StudyChecklistText
                 bool selectedRole = i == 0
                     ? carried || task.Type == Roles[i] : !carried && task.Type == Roles[i];
                 if (!selectedRole) continue;
-                AppendTask(output, task, carried);
+                AppendTask(output, task, carried, details);
                 count++;
             }
             if (count == 0) output.Append("(없음)\n");
@@ -36,7 +37,7 @@ public static class StudyChecklistText
         if (legacy.Count > 0)
         {
             output.Append("\n기존 분류 일정\n");
-            foreach (var task in legacy) AppendTask(output, task, carried: false);
+            foreach (var task in legacy) AppendTask(output, task, carried: false, details);
         }
         return output.ToString().Trim();
     }
@@ -58,12 +59,19 @@ public static class StudyChecklistText
         return output.ToString().Trim();
     }
 
-    private static void AppendTask(StringBuilder output, StudyTask task, bool carried)
+    private static void AppendTask(StringBuilder output, StudyTask task, bool carried,
+                                   IReadOnlyDictionary<long, StudyTaskDetail>? details)
     {
         string subject = string.IsNullOrWhiteSpace(task.Subject) ? "기타" : task.Subject.Trim();
         output.Append(task.Completed ? "☑ " : "☐ ")
             .Append('[').Append(subject).Append("] ").Append(task.Title.Trim());
         if (carried) output.Append(" (전날 못 다 · 원래 마감 ").Append(task.DueDate).Append(')');
         output.Append('\n');
+        if (details != null && details.TryGetValue(task.Id, out var extra))
+        {
+            if (extra.TaskId != task.Id) throw new InvalidDataException("상세 정보 ID 불일치");
+            foreach (string line in extra.DisplayText().Split('\n'))
+                if (line.Length != 0) output.Append("    ").Append(line).Append('\n');
+        }
     }
 }
