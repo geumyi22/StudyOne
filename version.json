@@ -8,7 +8,7 @@
     "Android Canary: new six-icon navigation, active-tab color and highlight fixes on phone and tablet",
     "Better visual separation: dashboard hero, highlighted section headings, refined cards and toolbar",
     "Android emulator navigation regression covers six click routes and their selected state",
-    "Android Canary debug package remains separate from installed signed Beta/Stable",
+    "Android 3.1.0-canary.2 debug uses isolated com.studyone.app.canary2, avoiding signature conflicts with prior ephemeral-debug Canary",
     "Existing study data, backup schemas and connected accounts unchanged; iOS/Windows feature UI unchanged in this patch"
   ]
 }
