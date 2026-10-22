@@ -138,6 +138,12 @@ public class MainActivity extends Activity {
                 }
             });
         }
+        if ((getApplicationInfo().flags &
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+                getIntent()!=null && getIntent().getBooleanExtra("studyone_nav_self_test",false)) {
+            if (!navigationSelfTest()) throw new IllegalStateException("Nav tab state did not update");
+            android.util.Log.i("StudyOneNav","NAVIGATION_STATE_SYNC_PASSED");
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
             if(!StudyProgressStorage.selfTestBackup()) {
                 throw new IllegalStateException("Progress backup fixture round-trip failed");
@@ -267,6 +273,31 @@ public class MainActivity extends Activity {
         else if(tab==4){title.setText("공부 추천");content.addView(studyCoach());}
         else{title.setText("설정");content.addView(settings());}
         StudyWidget.refresh(this);
+    }
+
+    /** Emulator regression: click real navigation surfaces and assert state, labels and accessibility. */
+    private boolean navigationSelfTest() {
+        if (navCells.size()!=NAV_NAMES.length || navLabels.size()!=NAV_NAMES.length ||
+            navIcons.size()!=NAV_NAMES.length) return false;
+        int original=currentTab;
+        try {
+            for (int i=0;i<NAV_NAMES.length;i++) {
+                if (!navCells.get(i).performClick()) return false;
+                if (currentTab!=i || content.getChildCount()!=1) return false;
+                for (int j=0;j<NAV_NAMES.length;j++) {
+                    boolean expected=(j==i);
+                    if (navCells.get(j).isSelected()!=expected ||
+                        navCells.get(j).isActivated()!=expected ||
+                        navLabels.get(j).getCurrentTextColor()!=(expected?BLUE_DARK:MUTED) ||
+                        !navCells.get(j).getContentDescription().toString().contains(
+                            expected?"현재 선택됨":"탭")) return false;
+                }
+            }
+            navCells.get(original).performClick();
+            return currentTab==original && navCells.get(original).isSelected();
+        } catch(Exception e) {
+            return false;
+        }
     }
 
     private ScrollView page() {
