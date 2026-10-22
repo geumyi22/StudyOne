@@ -56,6 +56,17 @@ jobs:
             app/src/main/java/com/studyone/app/StudyProgressChecklist.java \
             scripts/tests/StudyProgressChecklistSmoke.java
           java -cp /tmp/studyone-progress-checklist-classes StudyProgressChecklistSmoke
+      - name: Verify Samsung Reminder daily-plan contract on Android and iOS
+        run: python3 scripts/tests/check_daily_reminder.py
+      - name: Compile and smoke-test read-only five-role daily checklist export
+        run: |
+          mkdir -p /tmp/studyone-daily-checklist-classes
+          javac -encoding UTF-8 -d /tmp/studyone-daily-checklist-classes \
+            app/src/main/java/com/studyone/app/Models.java \
+            app/src/main/java/com/studyone/app/StudyCategories.java \
+            app/src/main/java/com/studyone/app/StudyDailyChecklist.java \
+            scripts/tests/StudyDailyChecklistSmoke.java
+          java -cp /tmp/studyone-daily-checklist-classes StudyDailyChecklistSmoke
       - name: Audit mobile sync local-only transport and explicit-consent safeguards
         run: python3 scripts/tests/check_mobile_sync_guards.py
       - name: Compile and smoke-test standalone Java progress model
