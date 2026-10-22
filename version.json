@@ -1,14 +1,14 @@
 {
-  "versionCode": 30102,
-  "versionName": "3.1.0-canary.2",
+  "versionCode": 30103,
+  "versionName": "3.1.0-canary.3",
   "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Android Canary: new six-icon navigation, active-tab color and highlight fixes on phone and tablet",
-    "Better visual separation: dashboard hero, highlighted section headings, refined cards and toolbar",
-    "Android emulator navigation regression covers six click routes and their selected state",
-    "Android 3.1.0-canary.2 debug uses isolated com.studyone.app.canary2, avoiding signature conflicts with prior ephemeral-debug Canary",
-    "Existing study data, backup schemas and connected accounts unchanged; iOS/Windows feature UI unchanged in this patch"
+    "Android planner hub: Today, Tomorrow, All tasks, Progress, Wrong answers, Writing practice and Data management separated into horizontal tabs",
+    "Tomorrow homework appears as a clearly labeled early-work preview on Today page with original IDs and synchronized completion state",
+    "Empty task categories collapsed, calendar and full schedule retained, read-only selectors avoid duplicate task creation",
+    "Android Canary debug package com.studyone.app.canary3 isolated from signed Beta and earlier Canary builds",
+    "Android emulator seven-page navigation and data isolation regression tests; iOS and Windows feature UIs unchanged"
   ]
 }
