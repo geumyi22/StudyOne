@@ -51,6 +51,42 @@ Check(carryover.Type == "숙제 항목" && carryover.DueDate == "2026-10-21",
       "Read-only export never reassigns the original item");
 
 
+TaskDetailsBackup details = new() {
+    Items = {
+        new StudyTaskDetail {
+            TaskId = tasks.Tasks[0].Id, EstimatedMinutes = 35,
+            Steps = new() { "본문 가리고 쓰기", "정답 확인" },
+            CompletionCriteria = "틀린 문장 수정 완료"
+        }
+    }
+};
+byte[] detailBytes = StudyTaskDetailsData.Serialize(details);
+TaskDetailsBackup readDetails = StudyTaskDetailsData.Parse(detailBytes);
+Check(readDetails.Items.Count == 1 && readDetails.Items[0].Steps.Count == 2,
+      "Android/iOS-compatible task guidance JSON roundtrip");
+Check(Encoding.UTF8.GetString(detailBytes).Contains("\"estimatedMinutes\""),
+      "Android duration key retained in Windows backup");
+Check(!Encoding.UTF8.GetString(originalTask).Contains("estimatedMinutes"),
+      "Historical task schema unchanged");
+string withDetails = StudyChecklistText.Daily(
+    tasks.Tasks, new DateOnly(2026, 10, 22),
+    readDetails.Items.ToDictionary(x => x.TaskId));
+Check(withDetails.Contains("예상 35분") && withDetails.Contains("완료 기준: 틀린 문장 수정 완료"),
+      "Windows reminder copy includes optional study instructions");
+Check(!reminders.Contains("예상 35분"), "Legacy daily copy unchanged without details");
+ExpectInvalid(() => StudyTaskDetailsData.Parse(
+    StudyData.Serialize(new TaskDetailsBackup { Items = { details.Items[0], details.Items[0] } })),
+    "Duplicate detail IDs");
+ExpectInvalid(() => StudyTaskDetailsData.Parse(
+    StudyData.Serialize(new TaskDetailsBackup {
+        Items = { new StudyTaskDetail {
+            TaskId = 1, EstimatedMinutes = 601, Steps = new(), CompletionCriteria = ""
+        } }
+    })), "Study duration must be 1-600 minutes");
+ExpectInvalid(() => StudyTaskDetailsData.Parse(
+    Encoding.UTF8.GetBytes("{\"format\":\"studyone-task-details\",\"schema\":1,\"items\":[{\"taskId\":9,\"steps\":[],\"completionCriteria\":\"\"}]}")),
+    "Missing nullable minutes key rejected");
+
 Guid id = Guid.NewGuid();
 ProgressBackup progress = new()
 {
