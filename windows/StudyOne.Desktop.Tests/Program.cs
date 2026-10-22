@@ -29,6 +29,28 @@ Check(parsedTask.Tasks.Count == 1 && parsedTask.Tasks[0].Type == "숙제 항목"
       "Legacy task backup roundtrip");
 Check(!Encoding.UTF8.GetString(originalTask).Contains("apiKey"), "No API secret serialized");
 
+string reminders = StudyChecklistText.Daily(tasks.Tasks, new DateOnly(2026, 10, 22));
+Check(reminders.Contains("☐ [영어] 기출 복습"), "Daily copy includes subject prefix");
+for (int role = 0; role < 5; role++)
+    Check(reminders.Contains((role + 1) + ". " + StudyData.Categories[role]),
+          "All five roles retained in copy");
+var carryover = new StudyTask {
+    Id = 1700000000001, Type = "숙제 항목", Subject = "수학", Title = "내신 종이 숙제",
+    DueDate = "2026-10-21", Importance = 3, Completed = false
+};
+var future = new StudyTask {
+    Id = 1700000000002, Type = "숙제 항목", Subject = "역사", Title = "미래 숙제",
+    DueDate = "2026-10-25", Importance = 2, Completed = false
+};
+string withCarryover = StudyChecklistText.Daily(
+    new[] { carryover, future, tasks.Tasks[0] }, new DateOnly(2026, 10, 22));
+Check(withCarryover.Contains("☐ [수학] 내신 종이 숙제 (전날 못 다 · 원래 마감 2026-10-21)"),
+      "Overdue incomplete is shown without changing stored type or date");
+Check(!withCarryover.Contains("미래 숙제"), "Future tasks excluded from today copy");
+Check(carryover.Type == "숙제 항목" && carryover.DueDate == "2026-10-21",
+      "Read-only export never reassigns the original item");
+
+
 Guid id = Guid.NewGuid();
 ProgressBackup progress = new()
 {
@@ -45,6 +67,13 @@ Check(parsedProgress.Items.Count == 1 && parsedProgress.Items[0].Id == id.ToStri
       "Progress ID roundtrip");
 Check(parsedProgress.Items[0].Revision == 3 && parsedProgress.Items[0].UpdatedAt == 1790000000000,
       "Revision/timestamp roundtrip");
+string progressList = StudyChecklistText.Progress(progress.Items);
+Check(progressList.Contains("☐ [과학] 오투 · 7-2 — 진행 중 (시험범위 포함)"),
+      "Progress copy preserves four-state status and subject");
+Check(!Encoding.UTF8.GetString(StudyData.SerializeAndValidateProgress(progress))
+          .Contains("isDone", StringComparison.OrdinalIgnoreCase),
+      "UI-only IsDone projection excluded from JSON backup schema");
+
 Check(StudyData.Statuses.SequenceEqual(new[] { "확인 필요", "미완료", "진행 중", "완료" }),
       "Four status values");
 
