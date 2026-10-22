@@ -31,6 +31,11 @@ sleep 2
 adb logcat -d -s StudyOneNav:I | grep -q 'NAVIGATION_STATE_SYNC_PASSED'
 echo 'NAVIGATION_STATE_SYNC_PASSED'
 adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_planner_hub_self_test true
+sleep 2
+adb logcat -d -s StudyOnePlanner:I | grep -q 'PLANNER_HUB_SEVEN_PAGES_PASSED'
+echo 'PLANNER_HUB_SEVEN_PAGES_PASSED'
+adb shell am force-stop "$APP_PACKAGE"
 adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_sync_self_test true
 sleep 2
 adb logcat -d -s StudyOneSync:I | grep -q 'SYNC_CREATE_ONLY_GUARDS_PASSED'
