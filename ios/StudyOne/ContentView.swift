@@ -139,7 +139,7 @@ struct TasksView: View {
                 (carried ? " (전날 못 다 · 원래 마감 \(task.dueDate))" : "")
             guard let extra = detailStore.detail(for: task.id) else { return header }
             return header + "\n" + extra.displayText.split(separator: "\n")
-                .map { "    " + $0 }.joined(separator: "\n")
+                .map { "    " + String($0) }.joined(separator: "\n")
         }
         var lines = ["StudyOne 할꺼 · \(today)"]
         for (index, role) in StudyCategories.roles.enumerated() {
