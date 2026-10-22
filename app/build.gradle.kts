@@ -12,8 +12,8 @@ android {
         applicationId = "com.studyone.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 30101
-        versionName = "3.1.0-canary.1"
+        versionCode = 30102
+        versionName = "3.1.0-canary.2"
     }
 
     if (!studyOneKeyFile.isNullOrBlank()) {
