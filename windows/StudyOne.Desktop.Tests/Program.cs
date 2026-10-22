@@ -87,6 +87,37 @@ ExpectInvalid(() => StudyTaskDetailsData.Parse(
     Encoding.UTF8.GetBytes("{\"format\":\"studyone-task-details\",\"schema\":1,\"items\":[{\"taskId\":9,\"steps\":[],\"completionCriteria\":\"\"}]}")),
     "Missing nullable minutes key rejected");
 
+Guid wrongId = Guid.NewGuid();
+WrongAnswersBackup wrongBook = new() {
+    Items = { new StudyWrongAnswer {
+        Id = wrongId.ToString("D"), Subject = "과학", Material = "오투",
+        Topic = "7-2 성운 분류", Correction = "관측 특징과 정의를 혼동함",
+        NextReview = "2026-10-23", Retries = 1, Mastered = false
+    } }
+};
+byte[] wrongBytes = StudyWrongAnswersData.Serialize(wrongBook);
+WrongAnswersBackup checkedWrong = StudyWrongAnswersData.Parse(wrongBytes);
+Check(checkedWrong.Items.Count == 1 && checkedWrong.Items[0].Retries == 1,
+      "Wrong-answer Android/iOS/Windows JSON roundtrip");
+string wrongJson = Encoding.UTF8.GetString(wrongBytes);
+Check(wrongJson.Contains("\"nextReview\"") && wrongJson.Contains("\"correction\"") &&
+      !wrongJson.Contains("\"apiKey\""), "Portable wrong-answer field names; no API secrets");
+Check(!Encoding.UTF8.GetString(originalTask).Contains("nextReview"),
+      "Historical task schema unchanged by wrong answers");
+ExpectInvalid(() => StudyWrongAnswersData.Parse(
+    Encoding.UTF8.GetBytes("{\"format\":\"studyone-wrong-answers\",\"schema\":1,\"items\":[{}]}")),
+    "Invalid partial wrong-answer rejected");
+ExpectInvalid(() => StudyWrongAnswersData.Parse(
+    StudyData.Serialize(new WrongAnswersBackup {
+        Items = { wrongBook.Items[0], wrongBook.Items[0] }
+    })), "Duplicate wrong answer IDs");
+ExpectInvalid(() => StudyWrongAnswersData.Serialize(new WrongAnswersBackup {
+    Items = { new StudyWrongAnswer {
+        Id = Guid.NewGuid().ToString("D"), Subject = "사회", Material = "평가문제집",
+        Topic = "계산", Correction = "정답 근거", NextReview = "2026-10-23", Retries = 51
+    } }
+}), "Excessive retry count");
+
 Guid id = Guid.NewGuid();
 ProgressBackup progress = new()
 {
