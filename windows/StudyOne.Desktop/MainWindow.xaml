@@ -122,6 +122,26 @@
                                 <Button Content="새 항목" Click="ClearTask_Click"/>
                                 <Button Content="선택 항목 삭제" Click="DeleteTask_Click"/>
                             </StackPanel>
+                            <Separator Margin="0,12,0,10"/>
+                            <TextBlock Text="선택 일정의 학습 상세 · 별도 로컬 저장" FontWeight="SemiBold"
+                                       FontSize="14" Foreground="#243351"/>
+                            <TextBlock Text="기존 일정·진도 JSON과 서버 동기화에는 포함되지 않습니다."
+                                       Foreground="#64748B" FontSize="12" Margin="0,4,0,7"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="예상 시간(분)" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBox x:Name="TaskDetailMinutesInput" Width="90" MaxLength="3"
+                                         ToolTip="1~600, 비워둘 수 있음"/>
+                            </StackPanel>
+                            <TextBlock Text="공부 단계 · 한 줄에 하나씩 (최대 20개 / 각 200자)"
+                                       FontSize="12" Foreground="#51627C"/>
+                            <TextBox x:Name="TaskDetailStepsInput" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
+                                     Height="65" MaxLength="4200" Margin="0,3,0,7"/>
+                            <TextBlock Text="완료 기준 (최대 500자)" FontSize="12" Foreground="#51627C"/>
+                            <TextBox x:Name="TaskDetailCriteriaInput" TextWrapping="Wrap"
+                                     AcceptsReturn="True" MaxLength="500" Height="48" Margin="0,3,0,7"/>
+                            <Button Content="선택 일정의 학습 상세 저장" Click="SaveTaskDetail_Click"
+                                    HorizontalAlignment="Left"/>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -213,6 +233,14 @@
                         <WrapPanel>
                             <Button Content="진도 JSON 내보내기" Click="ExportProgress_Click"/>
                             <Button Content="진도 JSON 가져오기" Click="ImportProgress_Click"/>
+                        </WrapPanel>
+                        <Separator Margin="0,24,0,24"/>
+                        <TextBlock Text="일정별 학습 상세 정보" FontWeight="SemiBold" FontSize="16"/>
+                        <TextBlock Text="Android·iOS와 호환되는 별도 studyone-task-details JSON입니다. 가져오기는 현재 Windows 학습 상세만 교체하고 이전 파일은 앱 내부에 백업합니다."
+                                   FontSize="12" Foreground="#64748B" TextWrapping="Wrap" Margin="0,4,0,8"/>
+                        <WrapPanel>
+                            <Button Content="학습 상세 JSON 내보내기" Click="ExportTaskDetails_Click"/>
+                            <Button Content="학습 상세 JSON 가져오기" Click="ImportTaskDetails_Click"/>
                         </WrapPanel>
                         <Separator Margin="0,24,0,24"/>
                         <TextBlock Text="보안 · 데이터 보존" FontSize="16" FontWeight="SemiBold"/>
