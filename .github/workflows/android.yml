@@ -102,4 +102,4 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: STUDYONE_TEST_PACKAGE=com.studyone.app.canary5 bash scripts/emulator-smoke.sh
+          script: STUDYONE_TEST_PACKAGE=com.studyone.app.canary6 bash scripts/emulator-smoke.sh
