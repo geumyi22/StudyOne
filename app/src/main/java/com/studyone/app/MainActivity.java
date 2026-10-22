@@ -1533,6 +1533,59 @@ public class MainActivity extends Activity {
                 }).setNegativeButton("취소",null).show();
     }
 
+    private void detailDialog(Models.StudyTask task) {
+        final StudyTaskDetail old;
+        try { old=detailStorage.get(task.id); }
+        catch(Exception e) { toast("상세 정보를 안전하게 읽지 못했습니다. 기존 데이터는 유지합니다."); return; }
+        LinearLayout fields=column();
+        fields.setPadding(dp(18),dp(6),dp(18),dp(2));
+        EditText minutes=input("예상 공부 시간 (분, 미입력 가능)",
+                old==null||old.estimatedMinutes==null?"":String.valueOf(old.estimatedMinutes));
+        minutes.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText steps=input("공부 단계 · 한 줄에 하나씩",
+                old==null?"":android.text.TextUtils.join("\\n",old.steps));
+        steps.setSingleLine(false);
+        steps.setMinLines(3);
+        steps.setMaxLines(8);
+        steps.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        EditText criteria=input("완료 기준",old==null?"":old.completionCriteria);
+        criteria.setSingleLine(false);
+        criteria.setMinLines(2);
+        criteria.setMaxLines(4);
+        fields.addView(tv("["+task.subject+"] "+task.title,15,TEXT,true));
+        fields.addView(cardText("시간은 1~600분, 공부 단계는 최대 20개(각 200자), 완료 기준은 500자까지. 모두 비우면 상세 정보만 지웁니다.",12));
+        fields.addView(minutes);
+        fields.addView(steps);
+        fields.addView(criteria);
+        android.widget.ScrollView scrolling=new android.widget.ScrollView(this);
+        scrolling.addView(fields);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("학습 상세 · 단계·시간·완료 기준")
+                .setView(scrolling)
+                .setNegativeButton("취소",null)
+                .setPositiveButton("저장",null)
+                .create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
+            try {
+                String duration=minutes.getText().toString().trim();
+                Integer value=duration.isEmpty()?null:Integer.parseInt(duration);
+                List<String> ordered=new ArrayList<>();
+                for(String line:steps.getText().toString().split("\\r?\\n")) {
+                    if(!line.trim().isEmpty())ordered.add(line.trim());
+                }
+                StudyTaskDetail detail=new StudyTaskDetail(task.id,value,ordered,
+                        criteria.getText().toString());
+                detailStorage.save(detail);
+                dialog.dismiss();
+                showTab(3);
+                toast("학습 상세 정보를 저장했습니다.");
+            } catch(Exception e) {
+                toast(e.getMessage()==null?"상세 정보가 올바르지 않습니다.":e.getMessage());
+            }
+        }));
+        dialog.show();
+    }
+
     private View taskCard(Models.StudyTask t) {
         LinearLayout box=card(),row=new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1546,10 +1599,22 @@ public class MainActivity extends Activity {
         texts.addView(tv(label(t),15,t.completed?MUTED:TEXT,true));
         texts.addView(tv(t.type+" · "+t.dueDate+" · "+dDay(t.dueDate)
                 +" · 중요도 "+t.importance,12,MUTED,false));
+        try {
+            StudyTaskDetail detail=detailStorage.get(t.id);
+            if(detail!=null&&!detail.isEmpty()) {
+                texts.addView(spacer(6));
+                texts.addView(tv(detail.displayText(),12,MUTED,false));
+            }
+        } catch(IllegalStateException e) {
+            texts.addView(tv("학습 상세 정보 확인 필요 · 원본 보존",12,MUTED,false));
+        }
         row.addView(check);
         row.addView(texts,new LinearLayout.LayoutParams(0,-2,1f));
         box.addView(row);
         LinearLayout controls=new LinearLayout(this);
+        Button guidance=secondary("상세");
+        controls.addView(guidance,new LinearLayout.LayoutParams(0,dp(46),1f));
+        guidance.setOnClickListener(v->detailDialog(t));
         Button edit=secondary("수정");
         controls.addView(edit,new LinearLayout.LayoutParams(0,dp(46),1f));
         edit.setOnClickListener(v->taskDialog(t));
