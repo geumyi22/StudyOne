@@ -27,6 +27,6 @@
 
 ## 출시 안전
 - Canary는 기존 Beta/Stable 및 main을 변경하지 않는 Draft 개발 PR.
-- Android debug ID: com.studyone.app.canary. 기존 정상 앱과 별도 저장 데이터 사용.
+- Android debug ID: com.studyone.app.canary2. 기존 정상 앱과 별도 저장 데이터 사용.
 - 이번 디자인은 Android 중심. iOS와 Windows UI는 동일하게 재설계하지 않음.
 - 물리 Android 테스트 전에는 정식 업데이트나 Stable로 표기하지 않음.
