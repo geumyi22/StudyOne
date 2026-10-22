@@ -29,6 +29,35 @@ Check(parsedTask.Tasks.Count == 1 && parsedTask.Tasks[0].Type == "숙제 항목"
       "Legacy task backup roundtrip");
 Check(!Encoding.UTF8.GetString(originalTask).Contains("apiKey"), "No API secret serialized");
 
+// Same persisted task objects/IDs feed all date screens. Never change original due date.
+var dueTomorrow = new StudyTask { Id = 1700000000091, Type = "숙제 항목",
+    Subject = "수학", Title = "백발백중", DueDate = "2026-10-23",
+    Importance = 3, Completed = false };
+var tomorrowExam = new StudyTask { Id = 1700000000092, Type = "시험",
+    Subject = "과학", Title = "시험", DueDate = "2026-10-23",
+    Importance = 2, Completed = false };
+var oldUnfinished = new StudyTask { Id = 1700000000093, Type = "기타 항목",
+    Subject = "국어", Title = "지난 숙제", DueDate = "2026-10-21",
+    Importance = 1, Completed = false };
+var records = new[] { dueTomorrow, tomorrowExam, oldUnfinished, tasks.Tasks[0] };
+var day = new DateOnly(2026, 10, 22);
+var todayPreview = StudyTaskViews.Select(records, day, 0);
+var nextDay = StudyTaskViews.Select(records, day, 1);
+var everyDay = StudyTaskViews.Select(records, day, 2);
+Check(todayPreview.Select(x => x.Id).OrderBy(x => x).SequenceEqual(
+    new long[] { oldUnfinished.Id, tasks.Tasks[0].Id, dueTomorrow.Id }.OrderBy(x => x)),
+    "Today shows due-now, overdue unfinished, and tomorrow homework only");
+Check(nextDay.Count == 2 && nextDay.Any(x => x.Id == dueTomorrow.Id)
+      && nextDay.Any(x => x.Id == tomorrowExam.Id),
+    "Tomorrow shows homework and assessments");
+Check(everyDay.Count == 4 && records.Length == 4,
+    "All view retains four original records without duplication");
+Check(ReferenceEquals(todayPreview.Single(x => x.Id == dueTomorrow.Id),
+    nextDay.Single(x => x.Id == dueTomorrow.Id)),
+    "Today preview and Tomorrow page share original object identity");
+Check(dueTomorrow.DueDate == "2026-10-23" && !dueTomorrow.Completed,
+    "Read-only filtering never rewrites homework status or date");
+
 string reminders = StudyChecklistText.Daily(tasks.Tasks, new DateOnly(2026, 10, 22));
 Check(reminders.Contains("☐ [영어] 기출 복습"), "Daily copy includes subject prefix");
 for (int role = 0; role < 5; role++)
