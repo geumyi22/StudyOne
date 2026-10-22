@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
 
     private Storage storage;
     private StudyProgressStorage progressStorage;
+    private StudyTaskDetailStorage detailStorage;
     private final NeisClient neis = new NeisClient();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private FrameLayout content;
@@ -56,11 +57,14 @@ public class MainActivity extends Activity {
     private static final int BACKUP_IMPORT = 4802;
     private static final int PROGRESS_EXPORT = 4803;
     private static final int PROGRESS_IMPORT = 4804;
+    private static final int DETAILS_EXPORT = 4805;
+    private static final int DETAILS_IMPORT = 4806;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         storage = new Storage(this);
         progressStorage = new StudyProgressStorage(this);
+        detailStorage = new StudyTaskDetailStorage(this);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
 
@@ -312,7 +316,14 @@ public class MainActivity extends Activity {
         Button copyToday=secondary("오늘 할꺼 · 과목별 리마인더 목록 복사");
         copyToday.setOnClickListener(v->{
             try {
-                String content=StudyDailyChecklist.format(storage.tasks(),LocalDate.now());
+                List<Models.StudyTask> current=storage.tasks();
+                LocalDate today=LocalDate.now();
+                java.util.Map<Long,StudyTaskDetail> details=new java.util.HashMap<>();
+                for(Models.StudyTask item:StudyDailyChecklist.visible(current,today)) {
+                    StudyTaskDetail extra=detailStorage.get(item.id);
+                    if(extra!=null)details.put(item.id,extra);
+                }
+                String content=StudyDailyChecklist.format(current,today,details);
                 android.content.ClipboardManager clipboard=(android.content.ClipboardManager)
                         getSystemService(CLIPBOARD_SERVICE);
                 if(clipboard==null)throw new IllegalStateException("클립보드에 접근할 수 없습니다.");
@@ -323,6 +334,25 @@ public class MainActivity extends Activity {
             }
         });
         c.addView(copyToday);
+
+        c.addView(cardText("예상 시간·공부 단계·완료 기준은 기존 일정·동기화 JSON과 별도로 저장합니다. 다른 기기에는 전용 JSON 백업을 직접 가져와야 합니다.",12));
+        Button detailExport=secondary("학습 상세 정보 JSON 백업");
+        detailExport.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-task-details.json");
+            startActivityForResult(intent,DETAILS_EXPORT);
+        });
+        c.addView(detailExport);
+        Button detailImport=secondary("학습 상세 정보 JSON 가져오기");
+        detailImport.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent,DETAILS_IMPORT);
+        });
+        c.addView(detailImport);
 
         // Put the live, directly tappable today's checklist before the broader progress tracker.
         // This is a view of existing local records, not a new persisted or uploaded plan.
@@ -1255,6 +1285,36 @@ public class MainActivity extends Activity {
                 os.flush();
                 toast("StudyOne 백업을 저장했습니다.");
             }catch(Exception e){showBackupError(e);}
+        }else if(request==DETAILS_EXPORT) {
+            try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
+                if(os==null)throw new IllegalStateException("학습 상세 백업 파일을 열 수 없습니다.");
+                os.write(detailStorage.exportBackup().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                os.flush();
+                toast("학습 상세 JSON 백업을 저장했습니다.");
+            } catch(Exception error) { showBackupError(error); }
+        }else if(request==DETAILS_IMPORT) {
+            try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IllegalStateException("학습 상세 파일을 열 수 없습니다.");
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+                byte[] buffer=new byte[8192];
+                int n;
+                while((n=in.read(buffer))!=-1) {
+                    if(bytes.size()+n>2_000_000)
+                        throw new IllegalArgumentException("학습 상세 백업은 최대 2MB입니다.");
+                    bytes.write(buffer,0,n);
+                }
+                List<StudyTaskDetail> parsed=StudyTaskDetailStorage.parseBackup(bytes.toString("UTF-8"));
+                new AlertDialog.Builder(this)
+                        .setTitle("학습 상세 정보 가져오기")
+                        .setMessage("상세 정보 "+parsed.size()+"개를 검증했습니다. 현재 이 기기의 상세 정보만 교체합니다. 기존 내용을 앱 내부 백업으로 보존한 후 복원합니다. 일정·진도·계정 연결은 변경하지 않습니다. 계속할까요?")
+                        .setPositiveButton("상세 정보 교체",(dialog,which)->{
+                            try {
+                                detailStorage.restoreBackup(parsed);
+                                showTab(3);
+                                toast("상세 정보 백업을 복원했습니다.");
+                            } catch(Exception error) { showBackupError(error); }
+                        }).setNegativeButton("취소",null).show();
+            } catch(Exception error) { showBackupError(error); }
         }else if(request==PROGRESS_EXPORT) {
             try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
                 if(os==null)throw new IllegalStateException("진도 백업 파일을 열 수 없습니다.");
