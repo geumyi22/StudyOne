@@ -1571,9 +1571,9 @@ public class MainActivity extends Activity {
         if(request==BUNDLE_EXPORT) {
             try(java.io.OutputStream out=getContentResolver().openOutputStream(uri,"w")) {
                 if(out==null)throw new IllegalStateException("백업 파일을 만들 수 없습니다.");
-                String result=StudyPortableBundle.encode(StudyPortableBundle.capture(
+                String bundleText=StudyPortableBundle.encode(StudyPortableBundle.capture(
                         storage,progressStorage,detailStorage,wrongAnswers));
-                out.write(result.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.write(bundleText.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 out.flush();
                 toast("4종 학습 데이터 통합 백업을 저장했습니다.");
             } catch(Exception e) {showBackupError(e);}
