@@ -215,6 +215,38 @@ public final class Storage {
         return name;
     }
 
+    /**
+     * Import-only fail-closed synchronous task replacement; never used to prepare
+     * a backup from tolerant tasks(). Preserve all IDs and reject null/duplicates.
+     */
+    public synchronized void replaceTasksChecked(List<Models.StudyTask> replacement) {
+        if(replacement==null || replacement.size()>5000)
+            throw new IllegalArgumentException("일정 수가 올바르지 않습니다.");
+        JSONArray result=new JSONArray();
+        java.util.Set<Long> ids=new java.util.HashSet<>();
+        try {
+            for(Models.StudyTask item:replacement) {
+                if(item==null || item.id<=0 || !ids.add(item.id) ||
+                    item.type==null || item.type.trim().isEmpty() || item.type.length()>100 ||
+                    item.subject==null || item.subject.length()>60 ||
+                    item.title==null || item.title.trim().isEmpty() || item.title.length()>500 ||
+                    item.dueDate==null || item.importance<1 || item.importance>3)
+                    throw new IllegalArgumentException("일정 값이 잘못되거나 ID가 중복되었습니다.");
+                JSONObject row=new JSONObject();
+                row.put("id",item.id);row.put("type",item.type);
+                row.put("subject",item.subject);row.put("title",item.title);
+                row.put("due",item.dueDate.toString());
+                row.put("importance",item.importance);
+                row.put("completed",item.completed);
+                result.put(row);
+            }
+        }catch(org.json.JSONException e){
+            throw new IllegalStateException("복원 일정 직렬화 실패",e);
+        }
+        if(!p.edit().putString("tasks",result.toString()).commit())
+            throw new IllegalStateException("일정 파일 저장에 실패했습니다. 기존 원본 백업을 보존하세요.");
+    }
+
     public void saveTasks(List<Models.StudyTask> tasks) {
         JSONArray a = new JSONArray();
         for (Models.StudyTask t : tasks) {
