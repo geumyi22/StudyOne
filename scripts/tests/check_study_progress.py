@@ -47,7 +47,11 @@ class ProgressContract(unittest.TestCase):
         self.assertIn('progressStorage = new StudyProgressStorage(this)', android)
         self.assertIn('c.addView(section("교재 · 시험범위 · 진도"))', android)
         self.assertIn('StudyProgressView().tabItem', ios)
-        self.assertIn('String[] n={"홈","시간표","급식","플래너","추천","설정"}', android)
+        self.assertTrue(
+            'String[] n={"홈","시간표","급식","플래너","추천","설정"}' in android or
+            'NAV_NAMES = {"홈", "시간표", "급식", "플래너", "추천", "설정"}' in android
+        )
+        self.assertIn("showTab(3)", android)
 
 if __name__ == "__main__":
     unittest.main()
