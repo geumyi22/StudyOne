@@ -46,6 +46,16 @@ jobs:
             app/src/main/java/com/studyone/app/StudyCategories.java \
             scripts/tests/StudyCategoriesSmoke.java
           java -cp /tmp/studyone-contract-classes StudyCategoriesSmoke
+      - name: Verify one-tap progress controls and subject-prefixed clipboard parity
+        run: python3 scripts/tests/check_progress_one_tap.py
+      - name: Compile and exercise the standalone Java progress checklist formatter
+        run: |
+          mkdir -p /tmp/studyone-progress-checklist-classes
+          javac -encoding UTF-8 -d /tmp/studyone-progress-checklist-classes \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            app/src/main/java/com/studyone/app/StudyProgressChecklist.java \
+            scripts/tests/StudyProgressChecklistSmoke.java
+          java -cp /tmp/studyone-progress-checklist-classes StudyProgressChecklistSmoke
       - name: Audit mobile sync local-only transport and explicit-consent safeguards
         run: python3 scripts/tests/check_mobile_sync_guards.py
       - name: Compile and smoke-test standalone Java progress model
