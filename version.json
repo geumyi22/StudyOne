@@ -1,13 +1,14 @@
 {
-  "versionCode": 30101,
-  "versionName": "3.1.0-canary.1",
+  "versionCode": 30102,
+  "versionName": "3.1.0-canary.2",
   "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Canary experimental: local wrong-answer journal, review scheduling, correction notes on Android/iOS/Windows",
-    "Portable separate studyone-wrong-answers JSON backup (manual, no automatic sync)",
-    "Existing beta/stable tags, settings, task and progress schema are unchanged",
-    "Debug APK and unsigned IPA are test builds, not Stable installers"
+    "Android Canary: new six-icon navigation, active-tab color and highlight fixes on phone and tablet",
+    "Better visual separation: dashboard hero, highlighted section headings, refined cards and toolbar",
+    "Android emulator navigation regression covers six click routes and their selected state",
+    "Android Canary debug package remains separate from installed signed Beta/Stable",
+    "Existing study data, backup schemas and connected accounts unchanged; iOS/Windows feature UI unchanged in this patch"
   ]
 }
