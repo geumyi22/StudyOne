@@ -158,6 +158,12 @@ public class MainActivity extends Activity {
             if(!plannerHubSelfTest())throw new IllegalStateException("Planner hub regression failed");
             android.util.Log.i("StudyOnePlanner","PLANNER_HUB_SEVEN_PAGES_PASSED");
         }
+        if (isDeveloperBuild() && getIntent()!=null &&
+                getIntent().getBooleanExtra("studyone_bundle_self_test",false)) {
+            if(!StudyPortableBundle.selfTest())
+                throw new IllegalStateException("Portable backup bundle validation failed");
+            android.util.Log.i("StudyOneBundle","TRANSFER_BUNDLE_VALIDATION_PASSED");
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
             if(!StudyProgressStorage.selfTestBackup()) {
                 throw new IllegalStateException("Progress backup fixture round-trip failed");
