@@ -1543,7 +1543,7 @@ public class MainActivity extends Activity {
                 old==null||old.estimatedMinutes==null?"":String.valueOf(old.estimatedMinutes));
         minutes.setInputType(InputType.TYPE_CLASS_NUMBER);
         EditText steps=input("공부 단계 · 한 줄에 하나씩",
-                old==null?"":android.text.TextUtils.join("\\n",old.steps));
+                old==null?"":android.text.TextUtils.join("\n",old.steps));
         steps.setSingleLine(false);
         steps.setMinLines(3);
         steps.setMaxLines(8);
