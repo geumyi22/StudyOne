@@ -1,14 +1,13 @@
 {
-  "versionCode": 30103,
-  "versionName": "3.1.0-canary.3",
+  "versionCode": 30104,
+  "versionName": "3.1.0-canary.4",
   "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Android planner hub: Today, Tomorrow, All tasks, Progress, Wrong answers, Writing practice and Data management separated into horizontal tabs",
-    "Tomorrow homework appears as a clearly labeled early-work preview on Today page with original IDs and synchronized completion state",
-    "Empty task categories collapsed, calendar and full schedule retained, read-only selectors avoid duplicate task creation",
-    "Android Canary debug package com.studyone.app.canary3 isolated from signed Beta and earlier Canary builds",
-    "Android emulator seven-page navigation and data isolation regression tests; iOS and Windows feature UIs unchanged"
+    "Android developer-only localhost sync controls moved behind an explicit developer entry in Settings",
+    "Regular Settings shows clear not-yet-connected account sync status rather than action buttons",
+    "Existing seven-page planner, calendar, progress, wrong answers, writing practice and backup unchanged",
+    "Debug-only Canary applicationId com.studyone.app.canary4 isolated from Beta and previous Canary instances"
   ]
 }
