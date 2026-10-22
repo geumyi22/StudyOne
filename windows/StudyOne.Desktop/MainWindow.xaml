@@ -206,6 +206,30 @@
                     </Border>
                 </Grid>
             </TabItem>
+            <TabItem Header="쓰기 수행 연습">
+                <ScrollViewer>
+                    <StackPanel Margin="28" MaxWidth="800" HorizontalAlignment="Left">
+                        <TextBlock Text="영어 쓰기 수행평가 · 문장 암기 테스트"
+                                   FontSize="22" FontWeight="Bold" Foreground="#243351"/>
+                        <TextBlock Text="문장을 입력하고 가린 후 기억나는 문장을 써보세요. 문장은 저장하거나 AI·서버에 전송하지 않습니다."
+                                   TextWrapping="Wrap" Foreground="#64748B" Margin="0,8,0,18"/>
+                        <TextBlock Text="암기할 문장" FontWeight="SemiBold"/>
+                        <TextBox x:Name="WritingTargetInput" Height="88" AcceptsReturn="True"
+                                 MaxLength="1500" TextWrapping="Wrap"/>
+                        <Button Content="정답 가리고 시작" Click="WritingStart_Click" Width="175"
+                                HorizontalAlignment="Left" Margin="0,10,0,14"/>
+                        <TextBlock Text="암기한 문장 입력" FontWeight="SemiBold"/>
+                        <TextBox x:Name="WritingAttemptInput" Height="105" AcceptsReturn="True"
+                                 TextWrapping="Wrap" MaxLength="1500"/>
+                        <WrapPanel Margin="0,12,0,12">
+                            <Button Content="채점하기" Click="WritingCheck_Click"/>
+                            <Button Content="다음 문장" Click="WritingReset_Click"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="WritingResultText" TextWrapping="Wrap" FontSize="14"
+                                   Foreground="#243351"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
             <TabItem Header="교재 · 진도">
                 <Grid Margin="16">
                     <Grid.RowDefinitions>
