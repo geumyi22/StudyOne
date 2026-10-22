@@ -71,6 +71,9 @@ public class MainActivity extends Activity {
     private static final int DETAILS_IMPORT = 4806;
     private static final int WRONG_EXPORT = 4807;
     private static final int WRONG_IMPORT = 4808;
+    private static final int BUNDLE_EXPORT = 4809;
+    private static final int BUNDLE_IMPORT = 4810;
+    private static final int BUNDLE_RECOVERY_EXPORT = 4811;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -649,6 +652,43 @@ public class MainActivity extends Activity {
 
     private void appendPlannerManagement(LinearLayout c) {
         c.addView(section("분류·복사·백업 관리"));
+        c.addView(section("기기 이전 · 전체 안전 백업"));
+        c.addView(cardText("일정·진도·학습 상세·오답을 하나의 JSON으로 묶어 백업합니다. "
+                +"기존 앱과 이 Canary는 서로 다른 설치 앱이므로 자동으로 기록을 읽어오지 못합니다. "
+                +"기존 앱에서 별도 백업을 보존한 후 가져오세요. NEIS 인증키와 Bearer 토큰은 포함되지 않습니다.",12));
+        Button bundleSave=primary("4종 학습 데이터 통합 백업 저장");
+        bundleSave.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-transfer-bundle.json");
+            startActivityForResult(intent,BUNDLE_EXPORT);
+        });
+        c.addView(bundleSave);
+        Button bundleOpen=secondary("통합 백업 가져오기 · 기존 기록 교체");
+        bundleOpen.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent,BUNDLE_IMPORT);
+        });
+        c.addView(bundleOpen);
+        Button recovery=secondary("가져오기 전 원본 복구 파일 내보내기");
+        recovery.setOnClickListener(v->{
+            if(latestTransferRecovery()==null) {
+                toast("내부에 저장된 이전 원본 복구 파일이 없습니다.");return;
+            }
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-transfer-recovery.json");
+            startActivityForResult(intent,BUNDLE_RECOVERY_EXPORT);
+        });
+        c.addView(recovery);
+        c.addView(cardText("주의: 통합 가져오기는 4종 기록을 모두 교체합니다. 각 저장소 작업은 "
+                +"단일 트랜잭션이 아니므로 오류 시 일부만 적용될 수 있습니다. "
+                +"이 경우 내보낼 수 있는 이전 원본 복구 파일을 확인하세요.",12));
+
         Button roles=secondary("5개 학습 분류의 역할 보기");
         roles.setOnClickListener(v->new AlertDialog.Builder(this)
                 .setTitle("학습 분류 안내")
@@ -815,6 +855,13 @@ public class MainActivity extends Activity {
             c.addView(time);
         }
 
+        c.addView(section("앱 이전 / 데이터 보존"));
+        c.addView(cardText("Canary 앱 ID와 서명이 바뀌면 자동 업데이트·기록 이전이 되지 않을 수 있습니다. "
+                +"플래너 → 관리에서 4종 학습 데이터 통합 백업을 만들거나 가져오세요.",12));
+        Button migration=secondary("플래너 관리에서 통합 백업하기");
+        migration.setOnClickListener(v->openPlannerPage(6));
+        c.addView(migration);
+
         c.addView(section("백업 / 복원"));
         c.addView(cardText("과제·학교·학년·반 정보만 JSON 파일로 내보냅니다. NEIS 인증키는 절대 포함하지 않습니다. Google Drive나 Dropbox는 기기의 파일 선택기에서 저장 위치로 고를 수 있습니다.",12));
         Button export=secondary("내 데이터 백업 저장");
@@ -848,7 +895,7 @@ public class MainActivity extends Activity {
         c.addView(retryUpdate);
 
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne 3.0.0-beta.1\nAndroid 네이티브 재설계\nAPI 37 / Android 17 대응",13));
+        c.addView(cardText("StudyOne "+getPackageManagerVersion()+"\nCanary 실험판 · 데이터는 기기에 저장\n기존 Stable/Beta와 별도 개발 빌드",13));
         return s;
     }
 
@@ -1515,7 +1562,69 @@ public class MainActivity extends Activity {
         super.onActivityResult(request,result,data);
         if(result!=RESULT_OK || data==null || data.getData()==null)return;
         final android.net.Uri uri=data.getData();
-        if(request==BACKUP_EXPORT) {
+        if(request==BUNDLE_EXPORT) {
+            try(java.io.OutputStream out=getContentResolver().openOutputStream(uri,"w")) {
+                if(out==null)throw new IllegalStateException("백업 파일을 만들 수 없습니다.");
+                String result=StudyPortableBundle.encode(StudyPortableBundle.capture(
+                        storage,progressStorage,detailStorage,wrongAnswers));
+                out.write(result.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.flush();
+                toast("4종 학습 데이터 통합 백업을 저장했습니다.");
+            } catch(Exception e) {showBackupError(e);}
+        }else if(request==BUNDLE_IMPORT) {
+            try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IllegalStateException("통합 백업 파일을 읽지 못했습니다.");
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+                byte[] buffer=new byte[8192];int n;
+                while((n=in.read(buffer))!=-1) {
+                    if(bytes.size()+n>8_200_000)throw new IllegalArgumentException("통합 백업 최대 8.2MB");
+                    bytes.write(buffer,0,n);
+                }
+                StudyPortableBundle.Checked verified=StudyPortableBundle.parse(bytes.toString("UTF-8"));
+                StudyPortableBundle.Snapshot original=StudyPortableBundle.capture(
+                        storage,progressStorage,detailStorage,wrongAnswers);
+                // Also validate current records now, before displaying the destructive consent.
+                StudyPortableBundle.validate(original);
+                new AlertDialog.Builder(this)
+                    .setTitle("4종 기록을 전부 교체하시겠습니까?")
+                    .setMessage("가져올 내용: "+verified.summary()+"\n\n"
+                        +"현재 이 앱의 네 종류 기록을 전부 교체합니다. 기존 원본은 변경 직전 "
+                        +"앱 내부에 백업하고 별도로 내보낼 수 있습니다.\n"
+                        +"4종 저장은 원자적이지 않아 실패 시 일부만 교체될 수 있습니다. "
+                        +"복구 파일을 삭제하지 마세요.\n"
+                        +"NEIS 인증키·계정 및 서버 정보는 변경하지 않습니다.")
+                    .setPositiveButton("검증한 기록 4종 교체",(d,w)->{
+                        try {
+                            String recoveryFile=StudyPortableBundle.restoreWithRecovery(this,
+                                storage,progressStorage,detailStorage,wrongAnswers,
+                                verified,original);
+                            openPlannerPage(6);
+                            new AlertDialog.Builder(this).setTitle("기록 이전 완료")
+                                .setMessage("네 종류의 기록을 복원했습니다.\n이전 원본 파일: "
+                                    +recoveryFile+"\n필요하면 관리에서 원본 복구 파일을 내보내세요.")
+                                .setPositiveButton("확인",null).show();
+                        }catch(Exception error){
+                            new AlertDialog.Builder(this).setTitle("일부 기록이 적용되었을 수 있습니다")
+                                .setMessage("원인: "+error.getMessage()
+                                   +"\n\n기존 원본이 앱 내부에 저장됐을 수 있습니다. "
+                                   +"관리 → '가져오기 전 원본 복구 파일 내보내기'로 먼저 "
+                                   +"원본을 보존하고, 작업별 상태를 확인하세요.")
+                                .setPositiveButton("확인",null).show();
+                        }
+                    })
+                    .setNegativeButton("취소",null).show();
+            }catch(Exception e){showBackupError(e);}
+        }else if(request==BUNDLE_RECOVERY_EXPORT) {
+            String name=latestTransferRecovery();
+            if(name==null){toast("복구 파일이 없습니다.");return;}
+            try(java.io.InputStream in=openFileInput(name);
+                java.io.OutputStream out=getContentResolver().openOutputStream(uri,"w")) {
+                if(out==null)throw new IllegalStateException("원본 백업을 저장할 수 없습니다.");
+                byte[] buffer=new byte[8192];int n;
+                while((n=in.read(buffer))!=-1)out.write(buffer,0,n);
+                out.flush(); toast("가져오기 전 원본 복구 파일을 내보냈습니다.");
+            }catch(Exception e){showBackupError(e);}
+        }else if(request==BACKUP_EXPORT) {
             try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
                 if(os==null)throw new IllegalStateException("파일을 열 수 없습니다.");
                 os.write(BackupIo.exportData(storage).getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -1632,6 +1741,23 @@ public class MainActivity extends Activity {
                         .setNegativeButton("취소",null).show();
             }catch(Exception e){showBackupError(e);}
         }
+    }
+
+
+    private String latestTransferRecovery() {
+        String latest=null;
+        for(String name:fileList()) {
+            if(!name.startsWith("StudyOne-transfer-before-import-") || !name.endsWith(".json"))continue;
+            if(latest==null || name.compareTo(latest)>0)latest=name;
+        }
+        return latest;
+    }
+
+    private String getPackageManagerVersion() {
+        try {
+            android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);
+            return info.versionName==null?"Canary":info.versionName;
+        }catch(Exception e){return "Canary";}
     }
 
     private void showBackupError(Exception e) {
