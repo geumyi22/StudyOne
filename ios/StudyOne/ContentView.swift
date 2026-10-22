@@ -81,6 +81,17 @@ struct TasksView: View {
     @State private var filter = "전체"
     @State private var todayOnly = true
     @State private var copiedNotice = false
+    @StateObject private var detailStore = StudyTaskDetailStore()
+    @State private var editingDetail: StudyTask?
+    @State private var detailExportURL: URL?
+    @State private var detailImportPicker = false
+    @State private var pendingDetailImport: Data?
+    @State private var detailOriginal: Data?
+    @State private var detailImportCount = 0
+    @State private var detailNotice = ""
+    @State private var detailError = ""
+    @State private var showDetailError = false
+    @State private var confirmDetailImport = false
     private let filters = StudyCategories.filters
 
     private var today: String { Date().studyString() }
@@ -124,8 +135,11 @@ struct TasksView: View {
             let subject = task.subject.trimmingCharacters(in: .whitespacesAndNewlines)
             let marker = task.completed ? "☑" : "☐"
             let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(marker) [\(subject.isEmpty ? "기타" : subject)] \(title)" +
+            let header = "\(marker) [\(subject.isEmpty ? "기타" : subject)] \(title)" +
                 (carried ? " (전날 못 다 · 원래 마감 \(task.dueDate))" : "")
+            guard let extra = detailStore.detail(for: task.id) else { return header }
+            return header + "\n" + extra.displayText.split(separator: "\n")
+                .map { "    " + $0 }.joined(separator: "\n")
         }
         var lines = ["StudyOne 할꺼 · \(today)"]
         for (index, role) in StudyCategories.roles.enumerated() {
@@ -168,8 +182,18 @@ struct TasksView: View {
                 Text("\(item.dueDate) · 중요도 \(item.importance)" +
                      ((todayOnly && item.dueDate < today && !item.completed) ? " · 전날 못 다" : ""))
                     .font(.caption).foregroundStyle(.secondary)
+                if let guidance = detailStore.detail(for: item.id) {
+                    Text(guidance.displayText)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                }
             }
             Spacer(minLength: 0)
+            Button {
+                editingDetail = item
+            } label: { Image(systemName: "list.bullet.rectangle").foregroundStyle(.secondary) }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("[\(item.subject)] \(item.title) 학습 상세 편집")
+                .disabled(detailStore.loadError != nil)
             Button {
                 editing = item
                 showingEditor = true
@@ -198,6 +222,32 @@ struct TasksView: View {
                     }
                     Text("현재 표시 \(filtered.filter(\.completed).count)/\(filtered.count)개 완료")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("학습 상세 · 별도 로컬 저장") {
+                    Text("예상 시간·공부 단계·완료 기준은 기존 일정/진도 JSON 및 서버 동기화와 별도로 저장합니다. 다른 기기에는 전용 JSON을 직접 가져와야 합니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let issue = detailStore.loadError {
+                        Text(issue).foregroundStyle(.red).font(.caption)
+                    }
+                    Button("학습 상세 JSON 백업 파일 준비") {
+                        do {
+                            detailExportURL = try detailStore.exportBackup()
+                            detailNotice = "학습 상세 백업 파일을 준비했습니다."
+                        } catch {
+                            detailError = error.localizedDescription
+                            showDetailError = true
+                        }
+                    }.disabled(detailStore.loadError != nil)
+                    if let detailExportURL {
+                        ShareLink(item: detailExportURL) {
+                            Label("학습 상세 JSON 공유·저장", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Button("학습 상세 JSON 백업 불러오기") { detailImportPicker = true }
+                        .disabled(detailStore.loadError != nil)
+                    if !detailNotice.isEmpty {
+                        Text(detailNotice).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section {
                     DisclosureGroup("5개 학습 분류 역할") {
@@ -243,6 +293,56 @@ struct TasksView: View {
                     } else { store.add(newTask) }
                 }
             }
+            .sheet(item: $editingDetail) { item in
+                StudyTaskDetailEditor(task: item, existing: detailStore.detail(for: item.id)) {
+                    minutes, steps, criteria in
+                    try detailStore.save(taskId: item.id, minutes: minutes,
+                                         steps: steps, criteria: criteria)
+                }
+            }
+            .fileImporter(isPresented: $detailImportPicker, allowedContentTypes: [.json]) { result in
+                do {
+                    let file = try result.get()
+                    guard file.startAccessingSecurityScopedResource() else {
+                        throw StudyError.message("학습 상세 백업 파일 접근 권한이 없습니다.")
+                    }
+                    defer { file.stopAccessingSecurityScopedResource() }
+                    let data = try Data(contentsOf: file)
+                    let checked = try StudyTaskDetailStore.parseBackup(data)
+                    detailOriginal = try detailStore.currentData()
+                    pendingDetailImport = data
+                    detailImportCount = checked.count
+                    confirmDetailImport = true
+                } catch {
+                    detailError = error.localizedDescription
+                    showDetailError = true
+                }
+            }
+            .confirmationDialog("학습 상세 백업으로 교체할까요?",
+                                isPresented: $confirmDetailImport, titleVisibility: .visible) {
+                if let data = pendingDetailImport {
+                    Button("상세 정보 \(detailImportCount)개로 교체", role: .destructive) {
+                        do {
+                            try detailStore.importBackup(data, expectedOriginal: detailOriginal)
+                            detailNotice = "상세 정보 백업을 복원했습니다."
+                        } catch {
+                            detailError = error.localizedDescription
+                            showDetailError = true
+                        }
+                        pendingDetailImport = nil
+                        detailOriginal = nil
+                    }
+                }
+                Button("취소", role: .cancel) {
+                    pendingDetailImport = nil
+                    detailOriginal = nil
+                }
+            } message: {
+                Text("현재 이 iPhone의 학습 상세 정보만 교체합니다. 기존 원본을 앱 내부에 먼저 백업합니다. 학교·일정·진도·계정·API 키는 변경하지 않습니다.")
+            }
+            .alert("학습 상세 오류", isPresented: $showDetailError) {
+                Button("확인", role: .cancel) {}
+            } message: { Text(detailError) }
         }
     }
 }
