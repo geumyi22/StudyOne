@@ -1,14 +1,13 @@
 {
-  "versionCode": 30001,
-  "versionName": "3.0.0-beta.2",
-  "channel": "beta",
+  "versionCode": 30101,
+  "versionName": "3.1.0-canary.1",
+  "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Android and iOS beta 2 release alignment",
-    "Signed Android APK with preserved package and certificate",
-    "SwiftUI iOS unsigned IPA for separate sideload signing",
-    "NEIS timetable/meals, local tasks and optional OpenAI tutor",
-    "No automatic Android/iOS sync; no physical-device iOS E2E claim"
+    "Canary experimental: local wrong-answer journal, review scheduling, correction notes on Android/iOS/Windows",
+    "Portable separate studyone-wrong-answers JSON backup (manual, no automatic sync)",
+    "Existing beta/stable tags, settings, task and progress schema are unchanged",
+    "Debug APK and unsigned IPA are test builds, not Stable installers"
   ]
 }
