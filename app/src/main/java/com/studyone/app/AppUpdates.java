@@ -99,14 +99,16 @@ public final class AppUpdates {
         int current = installedVersion(ctx);
         String installedVersionName = ctx.getPackageManager()
                 .getPackageInfo(ctx.getPackageName(), 0).versionName;
-        boolean betaAllowed = installedVersionName != null
-                && (installedVersionName.contains("beta") || installedVersionName.contains("rc"));
+        boolean prereleaseAllowed = installedVersionName != null
+                && (installedVersionName.contains("beta")
+                    || installedVersionName.contains("rc")
+                    || installedVersionName.contains("canary"));
         JSONArray releases = new JSONArray(getText(RELEASES, 2_000_000));
         ReleaseInfo best = null;
         for (int i = 0; i < releases.length(); i++) {
             JSONObject release = releases.getJSONObject(i);
             if (release.optBoolean("draft", true)) continue;
-            if (release.optBoolean("prerelease", false) && !betaAllowed) continue;
+            if (release.optBoolean("prerelease", false) && !prereleaseAllowed) continue;
             JSONArray assets = release.optJSONArray("assets");
             if (assets == null) continue;
 
