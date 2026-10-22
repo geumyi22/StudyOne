@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private Storage storage;
     private StudyProgressStorage progressStorage;
     private StudyTaskDetailStorage detailStorage;
+    private StudyWrongAnswers wrongAnswers;
     private final NeisClient neis = new NeisClient();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private FrameLayout content;
@@ -59,12 +60,15 @@ public class MainActivity extends Activity {
     private static final int PROGRESS_IMPORT = 4804;
     private static final int DETAILS_EXPORT = 4805;
     private static final int DETAILS_IMPORT = 4806;
+    private static final int WRONG_EXPORT = 4807;
+    private static final int WRONG_IMPORT = 4808;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         storage = new Storage(this);
         progressStorage = new StudyProgressStorage(this);
         detailStorage = new StudyTaskDetailStorage(this);
+        wrongAnswers = new StudyWrongAnswers(this);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.WHITE);
 
@@ -353,6 +357,8 @@ public class MainActivity extends Activity {
             startActivityForResult(intent,DETAILS_IMPORT);
         });
         c.addView(detailImport);
+
+        appendWrongAnswerNotebook(c);
 
         // Put the live, directly tappable today's checklist before the broader progress tracker.
         // This is a view of existing local records, not a new persisted or uploaded plan.
@@ -1285,6 +1291,31 @@ public class MainActivity extends Activity {
                 os.flush();
                 toast("StudyOne 백업을 저장했습니다.");
             }catch(Exception e){showBackupError(e);}
+        }else if(request==WRONG_EXPORT) {
+            try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
+                if(os==null)throw new IllegalStateException("오답 백업 파일 접근 실패");
+                os.write(wrongAnswers.exportJson().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                os.flush();
+                toast("오답 JSON 백업을 저장했습니다.");
+            }catch(Exception e){showBackupError(e);}
+        }else if(request==WRONG_IMPORT) {
+            try(java.io.InputStream in=getContentResolver().openInputStream(uri)) {
+                if(in==null)throw new IllegalStateException("오답 백업 파일 접근 실패");
+                java.io.ByteArrayOutputStream buffer=new java.io.ByteArrayOutputStream();
+                byte[] chunk=new byte[8192]; int n;
+                while((n=in.read(chunk))!=-1) {
+                    if(buffer.size()+n>2_000_000)throw new IllegalArgumentException("최대 2MB");
+                    buffer.write(chunk,0,n);
+                }
+                List<StudyWrongAnswers.Entry> incoming=StudyWrongAnswers.parseBackup(
+                        buffer.toString("UTF-8"));
+                new AlertDialog.Builder(this).setTitle("오답 백업 가져오기")
+                    .setMessage("오답 "+incoming.size()+"개로 현재 이 기기의 오답 목록만 교체합니다. 기존 오답 원본을 앱 내부에 백업한 후 적용합니다. 계속할까요?")
+                    .setPositiveButton("오답 교체",(d,w)->{
+                        try { wrongAnswers.restore(incoming);showTab(3);toast("오답 백업 복원 완료"); }
+                        catch(Exception e){showBackupError(e);}
+                    }).setNegativeButton("취소",null).show();
+            }catch(Exception e){showBackupError(e);}
         }else if(request==DETAILS_EXPORT) {
             try(java.io.OutputStream os=getContentResolver().openOutputStream(uri,"w")) {
                 if(os==null)throw new IllegalStateException("학습 상세 백업 파일을 열 수 없습니다.");
@@ -1582,6 +1613,107 @@ public class MainActivity extends Activity {
             } catch(Exception e) {
                 toast(e.getMessage()==null?"상세 정보가 올바르지 않습니다.":e.getMessage());
             }
+        }));
+        dialog.show();
+    }
+
+
+    private void appendWrongAnswerNotebook(LinearLayout parent) {
+        parent.addView(section("오답 관리 · 복습일"));
+        parent.addView(cardText("틀린 문제·정답 근거·복습 날짜를 기기에만 저장합니다. 다른 기기와 자동 동기화되지 않습니다.",12));
+        Button add = secondary("+ 오답 기록 추가");
+        add.setOnClickListener(v->wrongAnswerDialog(null));
+        parent.addView(add);
+        Button backup=secondary("오답 JSON 백업 내보내기");
+        backup.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-wrong-answers.json");
+            startActivityForResult(intent,WRONG_EXPORT);
+        });
+        parent.addView(backup);
+        Button restore=secondary("오답 JSON 가져오기");
+        restore.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent,WRONG_IMPORT);
+        });
+        parent.addView(restore);
+        try {
+            List<StudyWrongAnswers.Entry> all=wrongAnswers.list();
+            int waiting=0;
+            String today=LocalDate.now().toString();
+            for(StudyWrongAnswers.Entry e:all)
+                if(!e.mastered && e.nextReview.compareTo(today)<=0)waiting++;
+            parent.addView(cardText("오답 "+all.size()+"개 · 오늘까지 복습 대상 "+waiting+"개",13));
+            for(StudyWrongAnswers.Entry item:all) {
+                LinearLayout card=card();
+                card.addView(tv("["+item.subject+"] "+item.material+" · "+item.topic,14,TEXT,true));
+                card.addView(tv("원인·정답 근거: "+item.correction,12,MUTED,false));
+                card.addView(tv("재풀이 "+item.retries+"회 · 복습일 "+item.nextReview+
+                    (item.mastered?" · 숙달":" · 복습 필요"),12,MUTED,false));
+                Button review=secondary(item.mastered?"다시 복습 대상으로 전환":"재풀이 성공 (+1회, 내일 복습)");
+                review.setOnClickListener(v->{
+                    try {
+                        boolean mastered=item.mastered;
+                        StudyWrongAnswers.Entry updated=new StudyWrongAnswers.Entry(
+                            item.id,item.subject,item.material,item.topic,item.correction,
+                            mastered?LocalDate.now().toString():LocalDate.now().plusDays(1).toString(),
+                            mastered?item.retries:Math.min(50,item.retries+1),false);
+                        wrongAnswers.save(updated);
+                        showTab(3);
+                    }catch(Exception err){toast(err.getMessage()==null?"오답 수정 실패":err.getMessage());}
+                });
+                card.addView(review);
+                Button mastered=secondary(item.mastered?"완료 취소":"완전히 숙달 처리");
+                mastered.setOnClickListener(v->{
+                    try {
+                        wrongAnswers.save(new StudyWrongAnswers.Entry(item.id,item.subject,item.material,
+                            item.topic,item.correction,item.nextReview,item.retries,!item.mastered));
+                        showTab(3);
+                    }catch(Exception e){toast("오답 저장 실패");}
+                });
+                card.addView(mastered);
+                Button edit=secondary("오답 수정");
+                edit.setOnClickListener(v->wrongAnswerDialog(item));
+                card.addView(edit);
+                parent.addView(card);
+            }
+        } catch(Exception e) {
+            parent.addView(cardText("오답 원본 검증 오류: 기존 데이터를 보존하고 수정을 차단합니다.",13));
+        }
+    }
+
+    private void wrongAnswerDialog(StudyWrongAnswers.Entry original) {
+        LinearLayout fields=column();
+        fields.setPadding(dp(18),dp(6),dp(18),dp(2));
+        EditText subject=input("과목",original==null?"":original.subject);
+        EditText material=input("교재·출처",original==null?"":original.material);
+        EditText topic=input("틀린 문제·개념",original==null?"":original.topic);
+        EditText correction=input("틀린 이유·정답 근거",original==null?"":original.correction);
+        EditText day=input("복습 날짜 (YYYY-MM-DD)",
+                original==null?LocalDate.now().plusDays(1).toString():original.nextReview);
+        fields.addView(subject);fields.addView(material);fields.addView(topic);
+        fields.addView(correction);fields.addView(day);
+        ScrollView scroll=new ScrollView(this);
+        scroll.addView(fields);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle(original==null?"오답 기록 추가":"오답 기록 수정")
+            .setView(scroll).setNegativeButton("취소",null)
+            .setPositiveButton("저장",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{
+            try {
+                StudyWrongAnswers.Entry entry=new StudyWrongAnswers.Entry(
+                    original==null?java.util.UUID.randomUUID().toString():original.id,
+                    subject.getText().toString().trim(),material.getText().toString().trim(),
+                    topic.getText().toString().trim(),correction.getText().toString().trim(),
+                    day.getText().toString().trim(),original==null?0:original.retries,
+                    original!=null&&original.mastered);
+                wrongAnswers.save(entry);
+                dialog.dismiss();showTab(3);
+            } catch(Exception e){toast(e.getMessage()==null?"오답 입력 오류":e.getMessage());}
         }));
         dialog.show();
     }
