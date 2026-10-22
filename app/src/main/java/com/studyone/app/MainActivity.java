@@ -54,6 +54,13 @@ public class MainActivity extends Activity {
     private FrameLayout content;
     private TextView title;
     private int currentTab;
+    private static final String[] NAV_NAMES = {"홈", "시간표", "급식", "플래너", "추천", "설정"};
+    private static final int[] NAV_ICONS = {R.drawable.ic_nav_home, R.drawable.ic_nav_timetable,
+            R.drawable.ic_nav_meals, R.drawable.ic_nav_planner,
+            R.drawable.ic_nav_coach, R.drawable.ic_nav_settings};
+    private final List<LinearLayout> navCells = new ArrayList<>();
+    private final List<ImageView> navIcons = new ArrayList<>();
+    private final List<TextView> navLabels = new ArrayList<>();
     private static final int BACKUP_EXPORT = 4801;
     private static final int BACKUP_IMPORT = 4802;
     private static final int PROGRESS_EXPORT = 4803;
@@ -90,7 +97,8 @@ public class MainActivity extends Activity {
         }
         setContentView(root);
         Reminders.schedule(this);
-        showTab(0);
+        showTab(b == null ? 0 : Math.max(0, Math.min(NAV_NAMES.length - 1,
+                b.getInt("studyone_active_tab", 0))));
         AppUpdates.check(this, false);
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_ai_self_test",false)){
             if(!AiClient.selfTest())throw new IllegalStateException("AI fixture parser test failed");
@@ -138,6 +146,11 @@ public class MainActivity extends Activity {
         }
     }
 
+    @Override protected void onSaveInstanceState(Bundle out) {
+        out.putInt("studyone_active_tab", currentTab);
+        super.onSaveInstanceState(out);
+    }
+
     @Override protected void onResume() {
         super.onResume();
         StudyWidget.refresh(this);
@@ -151,7 +164,9 @@ public class MainActivity extends Activity {
     private View toolbar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(18),dp(12),dp(18),dp(10));
+        bar.setPadding(dp(18),dp(12),dp(18),dp(12));
+        bar.setBackgroundColor(Color.WHITE);
+        bar.setElevation(dp(2));
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.ic_book_check);
         bar.addView(logo,new LinearLayout.LayoutParams(dp(38),dp(38)));
@@ -169,16 +184,12 @@ public class MainActivity extends Activity {
     private View bottomNav() {
         LinearLayout nav = new LinearLayout(this);
         nav.setGravity(Gravity.CENTER);
-        nav.setPadding(dp(4),dp(6),dp(4),dp(8));
+        nav.setPadding(dp(5),dp(7),dp(5),dp(8));
         nav.setBackgroundColor(Color.WHITE);
-        String[] n={"홈","시간표","급식","플래너","추천","설정"};
-        for(int i=0;i<n.length;i++){
-            final int x=i;
-            Button b=new Button(this);
-            b.setText(n[i]); b.setTextSize(12); b.setAllCaps(false);
-            b.setTextColor(i==0?BLUE:MUTED); b.setBackgroundColor(Color.TRANSPARENT);
-            b.setOnClickListener(v->showTab(x));
-            nav.addView(b,new LinearLayout.LayoutParams(0,dp(52),1f));
+        nav.setElevation(dp(7));
+        for (int i=0;i<NAV_NAMES.length;i++) {
+            LinearLayout item=navigationItem(i,false);
+            nav.addView(item,new LinearLayout.LayoutParams(0,dp(69),1f));
         }
         return nav;
     }
@@ -186,24 +197,68 @@ public class MainActivity extends Activity {
     private View tabletNavigation() {
         LinearLayout rail=column();
         rail.setBackgroundColor(Color.WHITE);
-        rail.setPadding(dp(8),dp(50),dp(8),dp(12));
-        String[] tabs={"홈","시간표","급식","플래너","추천","설정"};
-        for(int i=0;i<tabs.length;i++){
-            final int index=i;
-            Button b=new Button(this);
-            b.setAllCaps(false);
-            b.setText(tabs[i]);
-            b.setTextSize(14);
-            b.setTextColor(BLUE_DARK);
-            b.setBackgroundColor(Color.TRANSPARENT);
-            b.setOnClickListener(v->showTab(index));
-            rail.addView(b,new LinearLayout.LayoutParams(dp(122),dp(58)));
+        rail.setElevation(dp(5));
+        rail.setPadding(dp(9),dp(48),dp(9),dp(12));
+        for (int i=0;i<NAV_NAMES.length;i++) {
+            LinearLayout item=navigationItem(i,true);
+            LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(dp(124),dp(76));
+            params.setMargins(0,dp(3),0,dp(3));
+            rail.addView(item,params);
         }
         return rail;
     }
 
+    /** Keeps visible icons and labels tied to one source of truth: currentTab. */
+    private LinearLayout navigationItem(int index, boolean rail) {
+        LinearLayout cell=column();
+        cell.setGravity(Gravity.CENTER);
+        cell.setPadding(dp(2),dp(5),dp(2),dp(4));
+        cell.setClickable(true);
+        cell.setFocusable(true);
+        cell.setOnClickListener(v->showTab(index));
+
+        ImageView icon=new ImageView(this);
+        icon.setImageResource(NAV_ICONS[index]);
+        icon.setContentDescription(null);
+        LinearLayout.LayoutParams iconParams=new LinearLayout.LayoutParams(dp(24),dp(24));
+        iconParams.gravity=Gravity.CENTER_HORIZONTAL;
+        cell.addView(icon,iconParams);
+        TextView label=tv(NAV_NAMES[index],rail?13:11,MUTED,false);
+        label.setGravity(Gravity.CENTER);
+        label.setSingleLine(true);
+        label.setPadding(0,dp(5),0,0);
+        cell.addView(label,new LinearLayout.LayoutParams(-1,-2));
+
+        navCells.add(cell);
+        navIcons.add(icon);
+        navLabels.add(label);
+        return cell;
+    }
+
+    private void updateNavigationSelection() {
+        for (int i=0;i<navCells.size();i++) {
+            boolean active=i==currentTab;
+            LinearLayout cell=navCells.get(i);
+            cell.setSelected(active);
+            cell.setActivated(active);
+            cell.setContentDescription(NAV_NAMES[i]+(active?" · 현재 선택됨":"")+" 탭");
+            navIcons.get(i).setColorFilter(active?BLUE_DARK:MUTED,
+                    android.graphics.PorterDuff.Mode.SRC_IN);
+            TextView label=navLabels.get(i);
+            label.setTextColor(active?BLUE_DARK:MUTED);
+            label.setTypeface(Typeface.DEFAULT,active?Typeface.BOLD:Typeface.NORMAL);
+            GradientDrawable surface=new GradientDrawable();
+            surface.setColor(active?Color.rgb(234,239,255):Color.TRANSPARENT);
+            surface.setCornerRadius(dp(16));
+            if (active) surface.setStroke(dp(1),Color.rgb(204,216,255));
+            cell.setBackground(surface);
+        }
+    }
+
     private void showTab(int tab) {
+        if(tab<0 || tab>=NAV_NAMES.length) return;
         currentTab=tab;
+        updateNavigationSelection();
         content.removeAllViews();
         if(tab==0){title.setText("오늘");content.addView(home());}
         else if(tab==1){title.setText("주간 시간표");content.addView(timetable());}
@@ -224,7 +279,14 @@ public class MainActivity extends Activity {
     private View home() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
         LocalDate today=LocalDate.now();
-        c.addView(tv(today.format(KO),24,TEXT,true));
+        LinearLayout welcome=card();
+        welcome.setPadding(dp(18),dp(19),dp(18),dp(19));
+        welcome.addView(tv("오늘의 학습",13,BLUE_DARK,true));
+        welcome.addView(spacer(6));
+        welcome.addView(tv(today.format(KO),24,TEXT,true));
+        welcome.addView(spacer(5));
+        welcome.addView(tv("오늘 필요한 공부와 학교 일정을 한눈에",13,MUTED,false));
+        c.addView(welcome);
 
         Models.School school=storage.school();
         if(school==null){
@@ -1873,9 +1935,23 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(heading).setMessage(detail+"\n\n가짜 데이터로 대체하지 않았습니다. 기존 정상 캐시는 유지됩니다.").setPositiveButton("확인",null).show();
     }
 
-    private TextView section(String x){TextView t=tv(x,17,TEXT,true);t.setPadding(dp(2),dp(18),dp(2),dp(8));return t;}
+    private View section(String x){
+        LinearLayout row=new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(3),dp(17),dp(2),dp(9));
+        View marker=new View(this);
+        GradientDrawable accent=new GradientDrawable();
+        accent.setColor(BLUE);
+        accent.setCornerRadius(dp(8));
+        marker.setBackground(accent);
+        LinearLayout.LayoutParams markerParams=new LinearLayout.LayoutParams(dp(4),dp(18));
+        markerParams.setMargins(0,0,dp(11),0);
+        row.addView(marker,markerParams);
+        row.addView(tv(x,17,TEXT,true));
+        return row;
+    }
     private LinearLayout card(){
-        LinearLayout l=column();l.setPadding(dp(16),dp(14),dp(16),dp(14));GradientDrawable g=new GradientDrawable();g.setColor(Color.WHITE);g.setCornerRadius(dp(18));g.setStroke(dp(1),BORDER);l.setBackground(g);
+        LinearLayout l=column();l.setPadding(dp(16),dp(14),dp(16),dp(14));GradientDrawable g=new GradientDrawable();g.setColor(Color.WHITE);g.setCornerRadius(dp(18));g.setStroke(dp(1),Color.rgb(224,230,242));l.setBackground(g);l.setElevation(dp(1));
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(8));l.setLayoutParams(p);return l;
     }
     private View cardText(String x,int size){LinearLayout c=card();c.addView(tv(x,size,TEXT,false));return c;}
