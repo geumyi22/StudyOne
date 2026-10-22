@@ -1,13 +1,16 @@
 {
-  "versionCode": 30104,
-  "versionName": "3.1.0-canary.4",
+  "versionCode": 30105,
+  "versionName": "3.1.0-canary.5",
   "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Android developer-only localhost sync controls moved behind an explicit developer entry in Settings",
-    "Regular Settings shows clear not-yet-connected account sync status rather than action buttons",
-    "Existing seven-page planner, calendar, progress, wrong answers, writing practice and backup unchanged",
-    "Debug-only Canary applicationId com.studyone.app.canary4 isolated from Beta and previous Canary instances"
+    "Android: four-section portable JSON migration backup (tasks, progress, task details, wrong answers) with per-section SHA-256 validation and import preview",
+    "Original full bundle preserved in private app storage before any four-section replacement; recovery file can be exported manually; partial failures are NOT atomic",
+    "Strict legacy task parsing now rejects corrupt/duplicate records and import commits synchronously",
+    "Normal Settings clearly labels account sync as unconnected; developer-only transport remains explicitly gated",
+    "Existing Android 7-tab planner, reminders, grades, wrong answers and writing practice are preserved",
+    "Debug APK package com.studyone.app.canary5; signed Stable/Beta and older Canary records are not auto-migrated",
+    "iOS/Windows account sync and production signing remain unverified/not included in this Android-only migration update"
   ]
 }
