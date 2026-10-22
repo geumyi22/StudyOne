@@ -19,6 +19,17 @@ class DailyReminderChecks(unittest.TestCase):
         self.assertNotIn("storage.", java)
         self.assertNotIn("http", java.lower())
 
+    def test_android_live_today_group_and_one_tap(self):
+        self.assertIn("appendTodayChecklist(c,tasks,LocalDate.now())", android)
+        self.assertIn("StudyDailyChecklist.visible(all,today)", android)
+        self.assertIn("StudyDailyChecklist.groupIndex(task,today)", android)
+        self.assertIn("root.addView(taskCard(task))", android)
+        self.assertIn("전날 못 다 · 원래 마감", android)
+        self.assertIn("과거·미래 포함 전체 일정 펼치기", android)
+        self.assertIn("public static int groupIndex(", java)
+        self.assertIn("return 5; // preserve legacy", java)
+        self.assertNotIn("saveTasks", java)
+
     def test_ios_grouped_roles_and_single_tap(self):
         self.assertIn("ForEach(StudyCategories.roles, id:", swift)
         self.assertIn("Section(role.title)", swift)
