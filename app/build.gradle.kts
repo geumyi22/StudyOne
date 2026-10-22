@@ -34,7 +34,7 @@ android {
     buildTypes {
         debug {
             // Canary debug builds are isolated from the installed signed Beta/Stable app.
-            applicationIdSuffix = ".canary"
+            applicationIdSuffix = ".canary2"
             versionNameSuffix = "-debug"
         }
         release {
