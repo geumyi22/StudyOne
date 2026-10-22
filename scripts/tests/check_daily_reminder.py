@@ -41,7 +41,10 @@ class DailyReminderChecks(unittest.TestCase):
 
     def test_subject_prefix_and_safe_legacy(self):
         self.assertIn("append('[').append(subject)", java)
-        self.assertIn('return "\\(marker) [\\(subject.isEmpty ? "기타" : subject)]', swift)
+        self.assertTrue(
+            'return "\\(marker) [\\(subject.isEmpty ? "기타" : subject)]' in swift or
+            'let header = "\\(marker) [\\(subject.isEmpty ? "기타" : subject)]' in swift
+        )
         self.assertIn("StudyCategories.ROLE_TITLES.length", java)
         self.assertIn("StudyCategories.roles.enumerated()", swift)
         self.assertIn("기존 분류 일정", swift)
