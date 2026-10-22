@@ -309,6 +309,21 @@ public class MainActivity extends Activity {
                 .setPositiveButton("확인",null).show());
         c.addView(roles);
 
+        Button copyToday=secondary("오늘 할꺼 · 과목별 리마인더 목록 복사");
+        copyToday.setOnClickListener(v->{
+            try {
+                String content=StudyDailyChecklist.format(storage.tasks(),LocalDate.now());
+                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)
+                        getSystemService(CLIPBOARD_SERVICE);
+                if(clipboard==null)throw new IllegalStateException("클립보드에 접근할 수 없습니다.");
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("StudyOne 오늘 할꺼",content));
+                toast("오늘·미완료 이월 과목별 체크리스트를 복사했습니다.");
+            } catch (RuntimeException error) {
+                toast(error.getMessage()==null?"일별 계획 복사 실패":error.getMessage());
+            }
+        });
+        c.addView(copyToday);
+
         c.addView(section("교재 · 시험범위 · 진도"));
         c.addView(cardText("교재 진도는 기존 일별 숙제와 별도로 관리합니다. 기존 전체 일정 JSON 백업에는 진도가 포함되지 않으므로 아래의 별도 진도 JSON 백업을 사용하세요.",12));
         Button addProgress=secondary("+ 시험범위 진도 추가");
