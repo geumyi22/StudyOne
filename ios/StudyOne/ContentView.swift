@@ -81,6 +81,8 @@ struct TasksView: View {
     @State private var editing: StudyTask?
     @State private var filter = "전체"
     @State private var todayOnly = true
+    @State private var scheduleMode = "오늘"
+    private let scheduleModes = ["오늘", "내일", "전체"]
     @State private var copiedNotice = false
     @StateObject private var detailStore = StudyTaskDetailStore()
     @State private var editingDetail: StudyTask?
@@ -96,11 +98,23 @@ struct TasksView: View {
     private let filters = StudyCategories.filters
 
     private var today: String { Date().studyString() }
+    private var tomorrow: String {
+        Calendar.current.date(byAdding: .day, value: 1, to: Date())?.studyString() ?? today
+    }
+    private var tomorrowHomework: [StudyTask] {
+        store.tasks.filter { item in
+            item.dueDate == tomorrow &&
+            (item.type == "숙제 항목" || item.type == "과제" || item.title.contains("숙제"))
+        }.sorted { $0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance }
+    }
     private var filtered: [StudyTask] {
         store.tasks.filter { item in
             (filter == "전체" || item.type == filter) &&
-            (!todayOnly || item.dueDate == today ||
-             (item.dueDate < today && !item.completed))
+            (scheduleMode == "전체" ||
+             (scheduleMode == "내일" && item.dueDate == tomorrow) ||
+             (scheduleMode == "오늘" &&
+                (!todayOnly || item.dueDate == today ||
+                 (item.dueDate < today && !item.completed))))
         }.sorted {
             $0.dueDate == $1.dueDate
                 ? ($0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance)
@@ -110,7 +124,7 @@ struct TasksView: View {
 
     private func byRole(_ role: String) -> [StudyTask] {
         filtered.filter { item in
-            let carried = todayOnly && item.dueDate < today && !item.completed
+            let carried = scheduleMode == "오늘" && todayOnly && item.dueDate < today && !item.completed
             if role == StudyCategories.roles[0].title { return carried || item.type == role }
             return !carried && item.type == role
         }
@@ -118,7 +132,7 @@ struct TasksView: View {
 
     private var legacy: [StudyTask] {
         filtered.filter { item in
-            !(todayOnly && item.dueDate < today && !item.completed)
+            !(scheduleMode == "오늘" && todayOnly && item.dueDate < today && !item.completed)
                 && !StudyCategories.roles.contains(where: { $0.title == item.type })
         }
     }
@@ -181,7 +195,7 @@ struct TasksView: View {
                 Text("[\(item.subject.isEmpty ? "기타" : item.subject)] \(item.title)")
                     .fontWeight(.semibold).strikethrough(item.completed)
                 Text("\(item.dueDate) · 중요도 \(item.importance)" +
-                     ((todayOnly && item.dueDate < today && !item.completed) ? " · 전날 못 다" : ""))
+                     ((scheduleMode == "오늘" && todayOnly && item.dueDate < today && !item.completed) ? " · 전날 못 다" : ""))
                     .font(.caption).foregroundStyle(.secondary)
                 if let guidance = detailStore.detail(for: item.id) {
                     Text(guidance.displayText)
@@ -207,10 +221,17 @@ struct TasksView: View {
         NavigationStack {
             List {
                 Section {
+                    Picker("일정 날짜", selection: $scheduleMode) {
+                        ForEach(scheduleModes, id: \.self) { Text($0).tag($0) }
+                    }.pickerStyle(.segmented)
+                    Text("오늘은 이전 날짜의 미완료 항목을 포함하며, 내일 숙제는 아래 미리 하기에서도 체크할 수 있습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Picker("구분", selection: $filter) {
                         ForEach(filters, id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.menu)
-                    Toggle("오늘 할꺼 + 밀린 일정만 표시", isOn: $todayOnly)
+                    if scheduleMode == "오늘" {
+                        Toggle("오늘 할꺼 + 밀린 일정만 표시", isOn: $todayOnly)
+                    }
                     Button {
                         UIPasteboard.general.string = reminderText
                         copiedNotice = true
@@ -223,6 +244,19 @@ struct TasksView: View {
                     }
                     Text("현재 표시 \(filtered.filter(\.completed).count)/\(filtered.count)개 완료")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if scheduleMode == "오늘" {
+                    Section("내일 숙제 · 미리 하기") {
+                        Text("내일 마감일은 유지하면서 오늘부터 완료 체크할 수 있습니다. 모든 화면은 같은 일정의 완료 상태를 공유합니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if tomorrowHomework.isEmpty {
+                            Text("내일 마감인 숙제가 없습니다.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(tomorrowHomework) { item in taskRow(item) }
+                                .onDelete { store.delete(at: $0, from: tomorrowHomework) }
+                        }
+                    }
                 }
                 Section("학습 상세 · 별도 로컬 저장") {
                     Text("예상 시간·공부 단계·완료 기준은 기존 일정/진도 JSON 및 서버 동기화와 별도로 저장합니다. 다른 기기에는 전용 JSON을 직접 가져와야 합니다.")
@@ -265,12 +299,11 @@ struct TasksView: View {
                     Section("일정") { Text("해당 날짜의 일정이 없습니다.").foregroundStyle(.secondary) }
                 }
                 ForEach(StudyCategories.roles, id: \.title) { role in
-                    Section(role.title) {
-                        if byRole(role.title).isEmpty {
-                            Text("등록된 일정이 없습니다.").font(.caption).foregroundStyle(.secondary)
+                    if !byRole(role.title).isEmpty {
+                        Section(role.title) {
+                            ForEach(byRole(role.title)) { item in taskRow(item) }
+                                .onDelete { store.delete(at: $0, from: byRole(role.title)) }
                         }
-                        ForEach(byRole(role.title)) { item in taskRow(item) }
-                            .onDelete { store.delete(at: $0, from: byRole(role.title)) }
                     }
                 }
                 if !legacy.isEmpty {
