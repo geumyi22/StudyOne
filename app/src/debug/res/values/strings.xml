@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug APKs are separate applications; clearly identify them to avoid confusion. -->
+    <string name="app_name">StudyOne 개발판</string>
+</resources>
