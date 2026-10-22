@@ -460,7 +460,7 @@ public class MainActivity extends Activity {
         for(Models.StudyTask task:selected)if(task.completed)complete++;
         root.addView(section("오늘 할꺼 · 삼성 리마인더 체크리스트"));
         root.addView(cardText(today+" · 오늘과 전날 미완료 항목 · 완료 "+complete+"/"+selected.size()
-                +"개\\n체크하면 기기 내 원래 일정의 완료 상태가 바뀝니다. 마감일·분류는 유지됩니다.",13));
+                +"개\n체크하면 기기 내 원래 일정의 완료 상태가 바뀝니다. 마감일·분류는 유지됩니다.",13));
         for(int i=0;i<StudyCategories.ROLE_TITLES.length;i++) {
             root.addView(section((i+1)+". "+StudyCategories.ROLE_TITLES[i]));
             int count=0;
