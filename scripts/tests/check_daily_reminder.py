@@ -11,7 +11,7 @@ categories = (root / "ios/StudyOne/StudyCategories.swift").read_text(encoding="u
 
 class DailyReminderChecks(unittest.TestCase):
     def test_android_copy_without_persisting_or_uploading(self):
-        self.assertIn("StudyDailyChecklist.format(storage.tasks(),LocalDate.now())", android)
+        self.assertIn("StudyDailyChecklist.format(current,today,details)", android)
         self.assertIn("clipboard.setPrimaryClip", android)
         self.assertIn("StudyCategories.ROLE_TITLES", java)
         self.assertIn("task.dueDate.isBefore(date) && !task.completed", java)
