@@ -78,11 +78,105 @@ struct TasksView: View {
     @State private var showingEditor = false
     @State private var editing: StudyTask?
     @State private var filter = "전체"
+    @State private var todayOnly = true
+    @State private var copiedNotice = false
     private let filters = StudyCategories.filters
+
+    private var today: String { Date().studyString() }
     private var filtered: [StudyTask] {
-        store.tasks.filter { filter == "전체" || $0.type == filter }
-            .sorted { $0.dueDate == $1.dueDate ? $0.importance > $1.importance : $0.dueDate < $1.dueDate }
+        store.tasks.filter { item in
+            (filter == "전체" || item.type == filter) &&
+            (!todayOnly || item.dueDate == today ||
+             (item.dueDate < today && !item.completed))
+        }.sorted {
+            $0.dueDate == $1.dueDate
+                ? ($0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance)
+                : $0.dueDate < $1.dueDate
+        }
     }
+
+    private func byRole(_ role: String) -> [StudyTask] {
+        filtered.filter { item in
+            let carried = todayOnly && item.dueDate < today && !item.completed
+            if role == StudyCategories.roles[0].title { return carried || item.type == role }
+            return !carried && item.type == role
+        }
+    }
+
+    private var legacy: [StudyTask] {
+        filtered.filter { item in
+            !(todayOnly && item.dueDate < today && !item.completed)
+                && !StudyCategories.roles.contains(where: { $0.title == item.type })
+        }
+    }
+
+    /// Explicit clipboard export: today plus overdue incomplete items, regardless of UI filter.
+    private var reminderText: String {
+        let selected = store.tasks.filter {
+            $0.dueDate == today || ($0.dueDate < today && !$0.completed)
+        }.sorted {
+            $0.dueDate == $1.dueDate
+                ? ($0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance)
+                : $0.dueDate < $1.dueDate
+        }
+        func line(_ task: StudyTask, carried: Bool) -> String {
+            let subject = task.subject.trimmingCharacters(in: .whitespacesAndNewlines)
+            let marker = task.completed ? "☑" : "☐"
+            let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(marker) [\(subject.isEmpty ? "기타" : subject)] \(title)" +
+                (carried ? " (전날 못 다 · 원래 마감 \(task.dueDate))" : "")
+        }
+        var lines = ["StudyOne 할꺼 · \(today)"]
+        for (index, role) in StudyCategories.roles.enumerated() {
+            lines.append("")
+            lines.append("\(index + 1). \(role.title)")
+            let subset = selected.filter { task in
+                let carried = task.dueDate < today && !task.completed
+                return index == 0 ? carried || task.type == role.title
+                    : !carried && task.type == role.title
+            }
+            if subset.isEmpty { lines.append("(없음)") }
+            for task in subset {
+                lines.append(line(task, carried: task.dueDate < today && !task.completed))
+            }
+        }
+        let prior = selected.filter {
+            $0.dueDate >= today &&
+            !StudyCategories.roles.contains(where: { role in role.title == $0.type })
+        }
+        if !prior.isEmpty {
+            lines.append("")
+            lines.append("기존 분류 일정")
+            for task in prior { lines.append(line(task, carried: false)) }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    @ViewBuilder
+    private func taskRow(_ item: StudyTask) -> some View {
+        HStack(spacing: 12) {
+            Button { store.toggle(item) } label: {
+                Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("[\(item.subject)] \(item.title) 완료 체크")
+            VStack(alignment: .leading, spacing: 5) {
+                Text("[\(item.subject.isEmpty ? "기타" : item.subject)] \(item.title)")
+                    .fontWeight(.semibold).strikethrough(item.completed)
+                Text("\(item.dueDate) · 중요도 \(item.importance)" +
+                     ((todayOnly && item.dueDate < today && !item.completed) ? " · 전날 못 다" : ""))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button {
+                editing = item
+                showingEditor = true
+            } label: { Image(systemName: "pencil").foregroundStyle(.secondary) }
+                .buttonStyle(.borderless)
+        }.padding(.vertical, 4)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -90,6 +184,19 @@ struct TasksView: View {
                     Picker("구분", selection: $filter) {
                         ForEach(filters, id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.menu)
+                    Toggle("오늘 할꺼 + 밀린 일정만 표시", isOn: $todayOnly)
+                    Button {
+                        UIPasteboard.general.string = reminderText
+                        copiedNotice = true
+                    } label: {
+                        Label("과목명 포함 삼성 리마인더 목록 복사", systemImage: "doc.on.doc")
+                    }
+                    if copiedNotice {
+                        Text("오늘과 미완료 이월 항목을 5개 분류로 복사했습니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("현재 표시 \(filtered.filter(\.completed).count)/\(filtered.count)개 완료")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     DisclosureGroup("5개 학습 분류 역할") {
@@ -102,27 +209,23 @@ struct TasksView: View {
                         }
                     }
                 }
-                Section("일정 \(filtered.count)개") {
-                    if filtered.isEmpty { Text("등록된 일정이 없습니다.").foregroundStyle(.secondary) }
-                    ForEach(filtered) { item in
-                        HStack(spacing: 12) {
-                            Button { store.toggle(item) } label: {
-                                Image(systemName: item.completed ? "checkmark.circle.fill" : "circle").font(.title2)
-                            }.buttonStyle(.borderless)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(item.title).fontWeight(.semibold).strikethrough(item.completed)
-                                Text("\(item.type) · \(item.subject) · \(item.dueDate) · 중요도 \(item.importance)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                            Button {
-                                editing = item
-                                showingEditor = true
-                            } label: { Image(systemName: "pencil").foregroundStyle(.secondary) }
-                                .buttonStyle(.borderless)
-                        }.padding(.vertical, 4)
+                if filtered.isEmpty {
+                    Section("일정") { Text("해당 날짜의 일정이 없습니다.").foregroundStyle(.secondary) }
+                }
+                ForEach(StudyCategories.roles, id: \.title) { role in
+                    Section(role.title) {
+                        if byRole(role.title).isEmpty {
+                            Text("등록된 일정이 없습니다.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        ForEach(byRole(role.title)) { item in taskRow(item) }
+                            .onDelete { store.delete(at: $0, from: byRole(role.title)) }
                     }
-                    .onDelete { store.delete(at: $0, from: filtered) }
+                }
+                if !legacy.isEmpty {
+                    Section("기존 분류 일정") {
+                        ForEach(legacy) { item in taskRow(item) }
+                            .onDelete { store.delete(at: $0, from: legacy) }
+                    }
                 }
             }
             .navigationTitle("학습 일정")
