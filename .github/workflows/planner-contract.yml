@@ -95,6 +95,8 @@ jobs:
         run: python3 scripts/tests/check_planner_hub.py
       - name: Audit debug-only local-sync experiment gating
         run: python3 scripts/tests/check_developer_sync_ui.py
+      - name: Audit main-only signed single-app Canary update policy
+        run: python3 scripts/tests/check_signed_update_policy.py
       - name: Audit portable migration backup and recovery safeguards
         run: python3 scripts/tests/check_safe_migration.py
       - name: Audit Android iOS Windows Today Tomorrow All schedule parity
