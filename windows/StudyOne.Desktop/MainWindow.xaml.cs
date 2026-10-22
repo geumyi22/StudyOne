@@ -14,6 +14,8 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> taskCategories = new(StudyData.Categories);
     private TaskBackup taskBackup = new();
     private ProgressBackup progressBackup = new();
+    private TaskDetailsBackup detailBackup = new();
+    private bool detailsLocked;
     private bool tasksLocked;
     private bool progressLocked;
     private bool syncBusy;
@@ -41,11 +43,17 @@ public partial class MainWindow : Window
             progressLocked = true;
             ShowError("기존 진도 데이터를 읽을 수 없습니다. 원본 파일은 보존됩니다.\n" + error.Message);
         }
+        try { detailBackup = StudyTaskDetailsData.Load(); }
+        catch (Exception error)
+        {
+            detailsLocked = true;
+            ShowError("기존 학습 상세 정보를 읽지 못했습니다. 원본은 보존하며 변경을 차단합니다.\n" + error.Message);
+        }
         RefreshTasks();
         RefreshProgress();
         ClearTaskForm();
         ClearProgressForm();
-        HeaderStatus.Text = tasksLocked || progressLocked
+        HeaderStatus.Text = tasksLocked || progressLocked || detailsLocked
             ? "로컬 데이터 확인 필요 · 오류 항목 저장 차단"
             : "로컬 저장 · 자동 기기 동기화 없음";
     }
@@ -104,6 +112,17 @@ public partial class MainWindow : Window
         TaskDuePicker.SelectedDate = DateTime.Today.AddDays(1);
         TaskImportanceCombo.SelectedItem = 2;
         TaskCompletedCheck.IsChecked = false;
+        TaskDetailMinutesInput.Text = "";
+        TaskDetailStepsInput.Text = "";
+        TaskDetailCriteriaInput.Text = "";
+    }
+
+    private void LoadTaskDetailFields(long taskId)
+    {
+        StudyTaskDetail? detail = detailBackup.Items.FirstOrDefault(x => x.TaskId == taskId);
+        TaskDetailMinutesInput.Text = detail?.EstimatedMinutes?.ToString(CultureInfo.InvariantCulture) ?? "";
+        TaskDetailStepsInput.Text = detail is null ? "" : string.Join(Environment.NewLine, detail.Steps);
+        TaskDetailCriteriaInput.Text = detail?.CompletionCriteria ?? "";
     }
 
     private void ClearProgressForm()
@@ -130,6 +149,7 @@ public partial class MainWindow : Window
             DateTimeStyles.None, out DateTime due) ? due : DateTime.Today;
         TaskImportanceCombo.SelectedItem = item.Importance;
         TaskCompletedCheck.IsChecked = item.Completed;
+        LoadTaskDetailFields(item.Id);
     }
 
     private void ProgressGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -145,11 +165,14 @@ public partial class MainWindow : Window
 
     private void CopyToday_Click(object sender, RoutedEventArgs e)
     {
-        if (tasksLocked) { ShowError("일정 데이터를 읽지 못해 복사를 차단했습니다."); return; }
+        if (tasksLocked || detailsLocked) {
+            ShowError("일정 또는 상세 정보를 읽지 못해 복사를 차단했습니다."); return;
+        }
         try
         {
             Clipboard.SetText(StudyChecklistText.Daily(
-                taskBackup.Tasks, DateOnly.FromDateTime(DateTime.Today)));
+                taskBackup.Tasks, DateOnly.FromDateTime(DateTime.Today),
+                detailBackup.Items.ToDictionary(x => x.TaskId)));
             HeaderStatus.Text = "오늘 할꺼를 클립보드로 복사했습니다 · 로컬 작업";
         }
         catch (Exception error) { ShowError(error.Message); }
@@ -408,6 +431,79 @@ public partial class MainWindow : Window
             RefreshTasks();
             ClearTaskForm();
             HeaderStatus.Text = "로컬 저장 · 자동 기기 동기화 없음";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void SaveTaskDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (tasksLocked || detailsLocked) {
+            ShowError("일정 또는 상세 저장소가 손상되어 수정을 차단했습니다."); return;
+        }
+        if (selectedTask is not long id || !taskBackup.Tasks.Any(t => t.Id == id)) {
+            ShowError("먼저 기존 일정을 한 개 선택하세요."); return;
+        }
+        try
+        {
+            string raw = TaskDetailMinutesInput.Text.Trim();
+            int? minutes = null;
+            if (raw.Length != 0)
+            {
+                if (!int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out int value))
+                    throw new InvalidDataException("예상 시간은 1~600분 정수여야 합니다.");
+                minutes = value;
+            }
+            var steps = TaskDetailStepsInput.Text.Replace("\r\n", "\n").Replace('\r', '\n')
+                .Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+            var entry = StudyTaskDetailsData.Validate(new StudyTaskDetail {
+                TaskId = id, EstimatedMinutes = minutes, Steps = steps,
+                CompletionCriteria = TaskDetailCriteriaInput.Text.Trim()
+            });
+            var proposed = new TaskDetailsBackup {
+                Items = detailBackup.Items.Where(t => t.TaskId != id).ToList()
+            };
+            if (!entry.IsEmpty) proposed.Items.Add(entry);
+            StudyTaskDetailsData.Save(proposed);
+            detailBackup = proposed;
+            HeaderStatus.Text = "선택한 일정의 학습 상세를 로컬에 저장했습니다.";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void ExportTaskDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if (detailsLocked) { ShowError("상세 원본 오류로 내보내기를 차단했습니다."); return; }
+        string? path = ChooseSave("StudyOne-task-details.json");
+        if (path == null) return;
+        try
+        {
+            File.WriteAllBytes(path, StudyTaskDetailsData.Serialize(detailBackup));
+            HeaderStatus.Text = "학습 상세 JSON 백업을 저장했습니다.";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void ImportTaskDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if (detailsLocked) { ShowError("기존 상세 원본에 오류가 있습니다. 원본을 보존한 채 복구 절차를 확인하세요."); return; }
+        string? path = ChooseOpen();
+        if (path == null) return;
+        try
+        {
+            byte[] incoming = StudyData.ReadLimited(path);
+            TaskDetailsBackup parsed = StudyTaskDetailsData.Parse(incoming);
+            byte[]? original = File.Exists(StudyTaskDetailsData.PathName)
+                ? StudyData.ReadLimited(StudyTaskDetailsData.PathName) : null;
+            if (original is not null) StudyTaskDetailsData.Parse(original);
+            if (MessageBox.Show(this,
+                    $"학습 상세 {parsed.Items.Count}개를 가져옵니다. 기존 학습 상세만 교체하며 " +
+                    "현재 원본 바이트를 앱 내부에 백업합니다.\n학교·일정·진도·서버 계정은 변경하지 않습니다. 계속할까요?",
+                    "학습 상세 교체 확인", MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            StudyTaskDetailsData.ImportWithBackup(incoming, original);
+            detailBackup = parsed;
+            if (selectedTask is long id) LoadTaskDetailFields(id);
+            HeaderStatus.Text = "학습 상세 JSON 복원 완료 · 기존 원본 백업 보존";
         }
         catch (Exception error) { ShowError(error.Message); }
     }
