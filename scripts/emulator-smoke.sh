@@ -26,6 +26,11 @@ sleep 2
 adb logcat -d -s StudyOneProgress:I | grep -q 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
 echo 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
 adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_nav_self_test true
+sleep 2
+adb logcat -d -s StudyOneNav:I | grep -q 'NAVIGATION_STATE_SYNC_PASSED'
+echo 'NAVIGATION_STATE_SYNC_PASSED'
+adb shell am force-stop "$APP_PACKAGE"
 adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_sync_self_test true
 sleep 2
 adb logcat -d -s StudyOneSync:I | grep -q 'SYNC_CREATE_ONLY_GUARDS_PASSED'
