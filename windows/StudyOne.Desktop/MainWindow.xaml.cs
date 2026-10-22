@@ -11,10 +11,14 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<StudyTask> tasks = new();
     private readonly ObservableCollection<StudyProgressItem> progress = new();
+    private readonly ObservableCollection<StudyWrongAnswer> wrongAnswers = new();
     private readonly ObservableCollection<string> taskCategories = new(StudyData.Categories);
     private TaskBackup taskBackup = new();
     private ProgressBackup progressBackup = new();
     private TaskDetailsBackup detailBackup = new();
+    private WrongAnswersBackup wrongBackup = new();
+    private bool wrongLocked;
+    private string? selectedWrong;
     private bool detailsLocked;
     private bool tasksLocked;
     private bool progressLocked;
@@ -27,6 +31,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         TasksGrid.ItemsSource = tasks;
         ProgressGrid.ItemsSource = progress;
+        WrongGrid.ItemsSource = wrongAnswers;
         TaskTypeCombo.ItemsSource = taskCategories;
         TaskImportanceCombo.ItemsSource = new[] { 1, 2, 3 };
         ProgressStatusCombo.ItemsSource = StudyData.Statuses;
@@ -49,8 +54,16 @@ public partial class MainWindow : Window
             detailsLocked = true;
             ShowError("기존 학습 상세 정보를 읽지 못했습니다. 원본은 보존하며 변경을 차단합니다.\n" + error.Message);
         }
+        try { wrongBackup = StudyWrongAnswersData.Load(); }
+        catch (Exception error)
+        {
+            wrongLocked = true;
+            ShowError("오답 원본을 읽지 못했습니다. 기존 원본을 보존합니다.\n" + error.Message);
+        }
         RefreshTasks();
         RefreshProgress();
+        RefreshWrong();
+        ClearWrongForm();
         ClearTaskForm();
         ClearProgressForm();
         HeaderStatus.Text = tasksLocked || progressLocked || detailsLocked
@@ -123,6 +136,40 @@ public partial class MainWindow : Window
         TaskDetailMinutesInput.Text = detail?.EstimatedMinutes?.ToString(CultureInfo.InvariantCulture) ?? "";
         TaskDetailStepsInput.Text = detail is null ? "" : string.Join(Environment.NewLine, detail.Steps);
         TaskDetailCriteriaInput.Text = detail?.CompletionCriteria ?? "";
+    }
+
+    private void RefreshWrong()
+    {
+        wrongAnswers.Clear();
+        foreach (var record in wrongBackup.Items.OrderBy(x => x.NextReview).ThenBy(x => x.Subject))
+            wrongAnswers.Add(record);
+        int due = wrongAnswers.Count(x => !x.Mastered && string.CompareOrdinal(x.NextReview,
+            DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) <= 0);
+        WrongSummary.Text = wrongLocked ? "오답 저장소 확인 오류 · 데이터 보존 중" :
+            $"등록된 오답 {wrongAnswers.Count}개 · 오늘까지 복습 대상 {due}개";
+    }
+
+    private void ClearWrongForm()
+    {
+        selectedWrong = null;
+        WrongGrid.SelectedItem = null;
+        WrongSubjectInput.Text = "";
+        WrongMaterialInput.Text = "";
+        WrongTopicInput.Text = "";
+        WrongCorrectionInput.Text = "";
+        WrongReviewPicker.SelectedDate = DateTime.Today.AddDays(1);
+    }
+
+    private void WrongGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (WrongGrid.SelectedItem is not StudyWrongAnswer item) return;
+        selectedWrong = item.Id;
+        WrongSubjectInput.Text = item.Subject;
+        WrongMaterialInput.Text = item.Material;
+        WrongTopicInput.Text = item.Topic;
+        WrongCorrectionInput.Text = item.Correction;
+        WrongReviewPicker.SelectedDate = DateTime.TryParseExact(item.NextReview,"yyyy-MM-dd",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime d) ? d : DateTime.Today;
     }
 
     private void ClearProgressForm()
@@ -506,6 +553,93 @@ public partial class MainWindow : Window
             HeaderStatus.Text = "학습 상세 JSON 복원 완료 · 기존 원본 백업 보존";
         }
         catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void SaveWrong_Click(object sender, RoutedEventArgs e)
+    {
+        if (wrongLocked) { ShowError("오답 원본이 손상되어 수정을 차단했습니다."); return; }
+        try
+        {
+            string id = selectedWrong ?? Guid.NewGuid().ToString("D");
+            StudyWrongAnswer? previous = wrongBackup.Items.FirstOrDefault(x => x.Id == id);
+            var item = StudyWrongAnswersData.Validate(new StudyWrongAnswer {
+                Id = id,
+                Subject = WrongSubjectInput.Text.Trim(),
+                Material = WrongMaterialInput.Text.Trim(),
+                Topic = WrongTopicInput.Text.Trim(),
+                Correction = WrongCorrectionInput.Text.Trim(),
+                NextReview = (WrongReviewPicker.SelectedDate ?? DateTime.Today.AddDays(1))
+                    .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Retries = previous?.Retries ?? 0,
+                Mastered = previous?.Mastered ?? false
+            });
+            var next = new WrongAnswersBackup {
+                Items = wrongBackup.Items.Where(x => x.Id != id).ToList()
+            };
+            next.Items.Add(item);
+            StudyWrongAnswersData.Save(next);
+            wrongBackup = next; RefreshWrong(); ClearWrongForm();
+            HeaderStatus.Text = "오답을 기기에 저장했습니다.";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void ClearWrong_Click(object sender, RoutedEventArgs e) => ClearWrongForm();
+
+    private void UpdateWrong(string action)
+    {
+        if (wrongLocked || selectedWrong is null) { ShowError("기존 오답을 선택하세요."); return; }
+        try
+        {
+            var next = new WrongAnswersBackup { Items = wrongBackup.Items.Select(x => {
+                if (x.Id != selectedWrong) return x;
+                return StudyWrongAnswersData.Validate(new StudyWrongAnswer {
+                    Id = x.Id, Subject = x.Subject, Material = x.Material,
+                    Topic = x.Topic, Correction = x.Correction,
+                    NextReview = action == "retry"
+                        ? DateOnly.FromDateTime(DateTime.Today.AddDays(1)).ToString("yyyy-MM-dd")
+                        : x.NextReview,
+                    Retries = action == "retry" ? Math.Min(50,x.Retries + 1) : x.Retries,
+                    Mastered = action == "retry" ? false : !x.Mastered
+                });
+            }).ToList() };
+            StudyWrongAnswersData.Save(next);
+            wrongBackup = next;
+            RefreshWrong(); ClearWrongForm();
+        } catch (Exception error) { ShowError(error.Message); }
+    }
+    private void RetryWrong_Click(object sender, RoutedEventArgs e) => UpdateWrong("retry");
+    private void MasterWrong_Click(object sender, RoutedEventArgs e) => UpdateWrong("master");
+
+    private void ExportWrong_Click(object sender, RoutedEventArgs e)
+    {
+        if (wrongLocked) { ShowError("손상된 오답은 백업할 수 없습니다."); return; }
+        string? file = ChooseSave("StudyOne-wrong-answers.json");
+        if (file is null) return;
+        try {
+            File.WriteAllBytes(file, StudyWrongAnswersData.Serialize(wrongBackup));
+            HeaderStatus.Text = "오답 JSON 백업을 저장했습니다.";
+        } catch(Exception error) { ShowError(error.Message); }
+    }
+    private void ImportWrong_Click(object sender, RoutedEventArgs e)
+    {
+        if (wrongLocked) { ShowError("손상된 오답 원본을 덮어쓸 수 없습니다."); return; }
+        string? file = ChooseOpen();
+        if (file is null) return;
+        try {
+            byte[] raw = StudyData.ReadLimited(file);
+            WrongAnswersBackup incoming = StudyWrongAnswersData.Parse(raw);
+            byte[]? current = File.Exists(StudyWrongAnswersData.PathName)
+                ? StudyData.ReadLimited(StudyWrongAnswersData.PathName) : null;
+            if (current is not null) StudyWrongAnswersData.Parse(current);
+            if (MessageBox.Show(this,
+                $"오답 {incoming.Items.Count}개로 기존 오답을 교체합니다. 이전 원본은 앱 내부 백업을 생성합니다.\n기존 일정·진도·계정 설정은 변경하지 않습니다.",
+                "오답 데이터 교체",MessageBoxButton.YesNo,MessageBoxImage.Warning)
+                != MessageBoxResult.Yes) return;
+            StudyWrongAnswersData.ImportWithBackup(raw,current);
+            wrongBackup = incoming; RefreshWrong(); ClearWrongForm();
+            HeaderStatus.Text = "오답 JSON 가져오기 완료 · 이전 원본 백업 보존";
+        } catch(Exception error) { ShowError(error.Message); }
     }
 
     private void ExportProgress_Click(object sender, RoutedEventArgs e)
