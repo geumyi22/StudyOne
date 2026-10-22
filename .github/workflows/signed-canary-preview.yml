@@ -1,0 +1,194 @@
+name: StudyOne Signed Single-App Canary Preview
+
+# Explicit main-only preview. No PR signing, tags, publishing or background deployment.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type SIGNED_PREVIEW to build but NOT publish a signed one-app update"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  signed-preview:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'SIGNED_PREVIEW' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout the approved main commit
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Refuse stale source or mismatched version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          MAIN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          test "$MAIN_SHA" = "$GITHUB_SHA" || { echo "Main advanced; block stale candidate"; exit 1; }
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          meta=json.loads(Path("version.json").read_text())
+          app=Path("app/build.gradle.kts").read_text()
+          assert meta["channel"]=="canary"
+          assert re.fullmatch(r"3\.1\.0-canary\.\d+",meta["versionName"])
+          assert type(meta["versionCode"]) is int and meta["versionCode"] > 30001
+          assert f'versionCode = {meta["versionCode"]}' in app
+          assert f'versionName = "{meta["versionName"]}"' in app
+          assert 'applicationId = "com.studyone.app"' in app
+          assert 'signingConfig = signingConfigs.getByName("studyoneProduction")' in app
+          print("Checked stable release package and monotonic Canary code")
+          PY
+
+      - name: JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Android 17 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/15859902/bin/android" --sdk="$ANDROID_HOME" sdk install --canary \
+            platforms/android-37 build-tools/37.0.0 platform-tools
+
+      - name: Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Load EXISTING protected production signing certificate
+        shell: bash
+        env:
+          KEY_BASE64: ${{ secrets.STUDYONE_KEYSTORE_BASE64 }}
+          STUDYONE_STORE_PASSWORD: ${{ secrets.STUDYONE_STORE_PASSWORD }}
+          STUDYONE_KEY_PASSWORD: ${{ secrets.STUDYONE_KEY_PASSWORD }}
+          STUDYONE_KEY_ALIAS: ${{ secrets.STUDYONE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$KEY_BASE64"
+          test -n "$STUDYONE_STORE_PASSWORD"
+          test -n "$STUDYONE_KEY_PASSWORD"
+          test -n "$STUDYONE_KEY_ALIAS"
+          umask 077
+          printf '%s' "$KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/studyone-preview.jks"
+          echo "STUDYONE_KEYSTORE_FILE=$RUNNER_TEMP/studyone-preview.jks" >> "$GITHUB_ENV"
+          echo "STUDYONE_STORE_PASSWORD=$STUDYONE_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "STUDYONE_KEY_PASSWORD=$STUDYONE_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "STUDYONE_KEY_ALIAS=$STUDYONE_KEY_ALIAS" >> "$GITHUB_ENV"
+
+      - name: Build and lint signed release APK (no publishing)
+        run: gradle :app:assembleRelease :app:lintRelease --stacktrace --no-daemon
+
+      - name: Verify package, incremented build number and pinned release signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          BT="$ANDROID_HOME/build-tools/37.0.0"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" >/dev/null
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/signing-check.txt"
+          grep -Eq 'Verified using v[23] scheme.*true' "$RUNNER_TEMP/signing-check.txt"
+          PIN=3f95e9aaecb32ae66c86dbd6795b0a49118f8dacf515f7fbe31795970b1681ed
+          grep -qi "$PIN" "$RUNNER_TEMP/signing-check.txt" || { echo "Incorrect StudyOne production certificate"; exit 1; }
+          VERSION=$(python3 -c 'import json;print(json.load(open("version.json"))["versionName"])')
+          CODE=$(python3 -c 'import json;print(json.load(open("version.json"))["versionCode"])')
+          BADGING=$("$BT/aapt2" dump badging "$APK" | head -n1)
+          grep -Fq "name='com.studyone.app'" <<<"$BADGING"
+          grep -Fq "versionCode='$CODE'" <<<"$BADGING"
+          grep -Fq "versionName='$VERSION'" <<<"$BADGING"
+          sha256sum "$APK"
+
+      - name: Stage opt-in single-app preview (NEVER publish)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          NAME=$(python3 -c 'import json;print(json.load(open("version.json"))["versionName"])')
+          cp app/build/outputs/apk/release/app-release.apk "output/StudyOne-v$NAME-signed-update.apk"
+          (cd output && sha256sum *.apk > SHA256SUMS.txt)
+          cat > output/READ-ME.txt <<'TXT'
+          Signed one-app Canary preview. No release/tag was published.
+          Package: com.studyone.app, existing official Beta certificate.
+          Upgrades com.studyone.app when versionCode increases; retains its app data.
+          DOES NOT update com.studyone.app.canary5 or com.studyone.app.canary6.
+          Previous one-off CI debug keys cannot sign in-place updates to those.
+          Export all learning data to external files before any first-time migration.
+          Old debug Canary MUST NOT be uninstalled until external backups are verified.
+          TXT
+
+      - name: Upload signed candidate as private Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-One-App-Signed-Preview
+          path: output/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/studyone-preview.jks"
+
+  signed-upgrade-test:
+    needs: signed-preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: StudyOne-One-App-Signed-Preview
+          path: candidate
+      - name: Fetch previously signed official Beta
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p baseline
+          gh release download v3.0.0-beta.2 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'StudyOne-v3.0.0-beta.2.apk' --dir baseline
+          test -s baseline/StudyOne-v3.0.0-beta.2.apk
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          test -e /dev/kvm
+      - name: Upgrade existing Beta in place, preserving package installation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            set -euo pipefail
+            adb install baseline/StudyOne-v3.0.0-beta.2.apk
+            BEFORE=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+            test -n "$BEFORE"
+            adb install -r candidate/*.apk
+            AFTER=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+            test "$BEFORE" = "$AFTER" || { echo "Reinstalled instead of updated"; exit 1; }
+            adb shell pm path com.studyone.app | grep -F package:
+            adb shell am start -W -n com.studyone.app/com.studyone.app.MainActivity
+            adb shell pidof com.studyone.app | grep -E '[0-9]+'
+            echo SIGNED_SINGLE_APP_IN_PLACE_UPGRADE_PASSED
