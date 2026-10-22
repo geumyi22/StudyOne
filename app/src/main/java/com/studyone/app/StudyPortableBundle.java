@@ -136,7 +136,7 @@ public final class StudyPortableBundle {
         if(!original.identical(approvedCurrent))
             throw new IllegalStateException("확인하는 동안 학습 데이터가 변경됐습니다. 다시 시작하세요.");
         validate(original);
-        String name="StudyOne-transfer-before-import-"+UUID.randomUUID()+".json";
+        String name="StudyOne-transfer-before-import-"+System.currentTimeMillis()+"-"+UUID.randomUUID()+".json";
         String backup=encode(original);
         try(FileOutputStream out=context.openFileOutput(name,Context.MODE_PRIVATE)) {
             out.write(backup.getBytes(StandardCharsets.UTF_8));
