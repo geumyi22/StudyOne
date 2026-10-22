@@ -96,8 +96,11 @@ public final class BackupIo {
             if(id <= 0 || !ids.add(id)) throw new IllegalArgumentException("일정 ID가 잘못되거나 중복되었습니다.");
             int imp = o.getInt("importance");
             if (imp < 1 || imp > 3) throw new IllegalArgumentException("중요도 값이 올바르지 않습니다.");
-            tasks.add(new Models.StudyTask(id, o.getString("type"),
-                    o.getString("subject"), title, LocalDate.parse(o.getString("dueDate")),
+            String type=o.getString("type"),subject=o.getString("subject");
+            if(type.trim().isEmpty() || type.length()>100 || subject.length()>60)
+                throw new IllegalArgumentException("일정 유형·과목 필드가 올바르지 않습니다.");
+            tasks.add(new Models.StudyTask(id, type,
+                    subject, title, LocalDate.parse(o.getString("dueDate")),
                     imp, o.getBoolean("completed")));
         }
         return new ParsedBackup(tasks, school, grade, className);
