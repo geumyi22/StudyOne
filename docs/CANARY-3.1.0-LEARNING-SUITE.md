@@ -29,5 +29,5 @@
 - `main`과 공개 Beta/Stable 릴리즈는 그대로 유지합니다. Canary는 별도 Draft PR로 검증합니다.
 - unsigned iOS IPA는 별도 서명 없이는 설치할 수 없습니다.
 - Android CI debug APK는 `com.studyone.app.canary` 별도 패키지입니다. 기존 정식 서명 Beta(`com.studyone.app`)를 삭제하거나 덮어쓰지 않으며, 기록도 자동 이관되지 않습니다.
-- Windows EXE는 미서명 프리뷰입니다. 실제 사용자 기록이 없는 별도 테스트 계정에서 우선 확인합니다.
+- Windows EXE는 미서명 프리뷰이며 기본 저장소를 `%LOCALAPPDATA%\\StudyOneCanary`로 분리합니다. 기존 `%LOCALAPPDATA%\\StudyOne`에는 쓰지 않도록 설계했지만 실기기 테스트는 별도로 필요합니다.
 - 오답 JSON에는 민감한 학습 내용이 포함될 수 있으므로 공개 업로드를 피하세요.
