@@ -736,6 +736,11 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean isDeveloperBuild() {
+        return (getApplicationInfo().flags &
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
     private View settings() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
         c.addView(section("NEIS 연결"));
@@ -770,11 +775,18 @@ public class MainActivity extends Activity {
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
 
-        c.addView(section("보안 HTTPS 동기화 실험 · Canary"));
-        c.addView(cardText("승인된 HTTPS 계정 서버가 있어야 작동합니다. 실제 계정·인증서·도메인이 아직 없다면 연결되지 않습니다. Debug 에뮬레이터만 localhost HTTP 테스트를 이용할 수 있습니다. 기존 데이터의 자동 수정/삭제 기능은 없습니다.",12));
-        Button sync=secondary("계정 서버 수동 연결·신규 항목 전송");
-        sync.setOnClickListener(v->syncExperimentDialog());
-        c.addView(sync);
+        c.addView(section("계정 동기화"));
+        c.addView(cardText("정식 계정 동기화는 아직 준비 중입니다. 현재 학습 기록은 이 기기에 저장되며, 백업은 관리 메뉴에서 직접 진행할 수 있습니다.",12));
+        // Debug-only transport experiments must not be presented as production sync.
+        if (isDeveloperBuild()) {
+            Button developer=secondary("개발자 도구 · 로컬 동기화 실험");
+            developer.setOnClickListener(v->new AlertDialog.Builder(this)
+                    .setTitle("개발자 테스트 전용")
+                    .setMessage("이 기능은 로컬 개발 서버를 별도로 실행한 경우에만 사용합니다. 학습 기록은 자동으로 동기화되지 않으며, 서버 전송은 별도의 명시적 작업입니다.")
+                    .setPositiveButton("실험 도구 열기",(d,w)->syncExperimentDialog())
+                    .setNegativeButton("취소",null).show());
+            c.addView(developer);
+        }
 
         c.addView(section("학습 알림"));
         c.addView(cardText("알림은 사용자가 직접 켠 경우에만 작동합니다. 배터리 정책에 따라 설정 시각보다 늦게 도착할 수 있습니다.",12));
