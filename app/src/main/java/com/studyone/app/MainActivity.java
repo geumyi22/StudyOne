@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
         title = tv("오늘",12,MUTED,false);
         names.addView(title);
         bar.addView(names,new LinearLayout.LayoutParams(0,-2,1f));
-        bar.addView(pill("v2",BLUE,Color.WHITE));
+        bar.addView(pill("Canary 3.1",BLUE,Color.WHITE));
         return bar;
     }
 
