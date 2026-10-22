@@ -31,7 +31,6 @@ class ProgressOneTapContract(unittest.TestCase):
         self.assertIn('append(\'[\').append(item.subject)', JAVA_EXPORT)
         self.assertIn('"☑ " : "☐ "', JAVA_EXPORT)
         self.assertIn('let mark = item.status == .done ? "☑" : "☐"', IOS)
-        self.assertIn("return \\(mark) [", IOS) if False else None
         self.assertIn('[\\(item.subject)]', IOS)
 
     def test_separate_backups_and_revision_guards_kept(self):
