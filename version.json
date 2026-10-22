@@ -1,16 +1,15 @@
 {
-  "versionCode": 30105,
-  "versionName": "3.1.0-canary.5",
+  "versionCode": 30106,
+  "versionName": "3.1.0-canary.6",
   "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "Android: four-section portable JSON migration backup (tasks, progress, task details, wrong answers) with per-section SHA-256 validation and import preview",
-    "Original full bundle preserved in private app storage before any four-section replacement; recovery file can be exported manually; partial failures are NOT atomic",
-    "Strict legacy task parsing now rejects corrupt/duplicate records and import commits synchronously",
-    "Normal Settings clearly labels account sync as unconnected; developer-only transport remains explicitly gated",
-    "Existing Android 7-tab planner, reminders, grades, wrong answers and writing practice are preserved",
-    "Debug APK package com.studyone.app.canary5; signed Stable/Beta and older Canary records are not auto-migrated",
-    "iOS/Windows account sync and production signing remain unverified/not included in this Android-only migration update"
+    "iOS study tasks now have Today/Tomorrow/All segmented date views, tomorrow homework early-completion preview, and hidden empty categories, without duplicating or changing original records",
+    "Windows task grid supports Today (including overdue and tomorrow homework), Tomorrow, and All date filters with pure selector regression tests",
+    "Android four-section portable backup, 7-page planner, developer-only sync controls, strict import and recovery are retained from Canary.5",
+    "iOS unsigned IPA is a build artifact requiring separate signing; Windows self-contained EXE is an unsigned preview",
+    "No automatic cloud synchronization, production ChatGPT account linkage, or guaranteed in-place Android debug update; all remain gated",
+    "Android Canary debug package com.studyone.app.canary6 installs separately; previously installed app data is not auto-transferred"
   ]
 }
