@@ -1,31 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
+APP_PACKAGE="${STUDYONE_TEST_PACKAGE:-com.studyone.app}"
 if [[ -n "${UPGRADE_BASE_APK:-}" ]]; then
   test -f "$UPGRADE_BASE_APK"
   adb install -r "$UPGRADE_BASE_APK"
-  PREVIOUS=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d "\r")
+  PREVIOUS=$(adb shell dumpsys package "$APP_PACKAGE" | grep -m1 firstInstallTime | tr -d "\r")
 fi
 adb install -r "${1:-apk/app-debug.apk}"
 if [[ -n "${UPGRADE_BASE_APK:-}" ]]; then
-  CURRENT=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d "\r")
+  CURRENT=$(adb shell dumpsys package "$APP_PACKAGE" | grep -m1 firstInstallTime | tr -d "\r")
   test "$PREVIOUS" = "$CURRENT" || { echo "Package was reinstalled instead of updated"; exit 1; }
   echo "SIGNED_IN_PLACE_UPGRADE_PASSED"
 fi
 adb logcat -c
-adb shell am start -W -n com.studyone.app/.MainActivity
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity"
 sleep 4
-adb shell am force-stop com.studyone.app
-adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_ai_self_test true
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_ai_self_test true
 sleep 2
 adb logcat -d -s StudyOneAI:I | grep -q 'AI_OFFLINE_FIXTURE_TEST_PASSED'
 echo 'AI_OFFLINE_FIXTURE_TEST_PASSED'
-adb shell am force-stop com.studyone.app
-adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_progress_self_test true
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_progress_self_test true
 sleep 2
 adb logcat -d -s StudyOneProgress:I | grep -q 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
 echo 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
-adb shell am force-stop com.studyone.app
-adb shell am start -W -n com.studyone.app/.MainActivity --ez studyone_sync_self_test true
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_sync_self_test true
 sleep 2
 adb logcat -d -s StudyOneSync:I | grep -q 'SYNC_CREATE_ONLY_GUARDS_PASSED'
 echo 'SYNC_CREATE_ONLY_GUARDS_PASSED'
@@ -49,8 +50,8 @@ for attempt in $(seq 1 15); do
 done
 test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/v1/snapshot)" = '401'
 adb reverse tcp:8765 tcp:8765
-adb shell am force-stop com.studyone.app
-adb shell am start -W -n com.studyone.app/.MainActivity \
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" \
   --ez studyone_sync_network_self_test true \
   --es studyone_sync_test_token "$STUDYONE_SYNC_TOKEN"
 for attempt in $(seq 1 16); do
@@ -65,9 +66,9 @@ for attempt in $(seq 1 16); do
 done
 adb logcat -d -s StudyOneSync:I | grep -q 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
 echo 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
-adb shell am force-stop com.studyone.app
-adb shell am start -W -n com.studyone.app/.MainActivity
-adb shell pidof com.studyone.app | grep -E '[0-9]+'
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity"
+adb shell pidof "$APP_PACKAGE" | grep -E '[0-9]+'
 SIZE="$(adb shell wm size | sed -n 's/.*: //p' | tr -d '\r' | head -n1)"
 WIDTH="${SIZE%x*}"
 HEIGHT="${SIZE#*x}"
@@ -77,13 +78,13 @@ if [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]]; then
     X=$((WIDTH*(2*INDEX+1)/12))
     adb shell input tap "$X" "$Y"
     sleep 1
-    adb shell pidof com.studyone.app | grep -E '[0-9]+'
-    adb shell dumpsys activity activities | grep -q 'com.studyone.app/.MainActivity'
+    adb shell pidof "$APP_PACKAGE" | grep -E '[0-9]+'
+    adb shell dumpsys activity activities | grep -Fq "$APP_PACKAGE/com.studyone.app.MainActivity"
   done
 else
   echo "Cannot parse emulator screen size"; exit 1
 fi
-if adb logcat -d -b crash | grep -q 'com.studyone.app'; then
+if adb logcat -d -b crash | grep -Fq "$APP_PACKAGE"; then
   adb logcat -d -b crash; exit 1
 fi
 echo 'StudyOne startup and six-tab smoke passed'
