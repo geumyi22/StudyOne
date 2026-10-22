@@ -12,6 +12,7 @@ public sealed class StudyTaskDetail
     public List<string> Steps { get; set; } = new();
     public string CompletionCriteria { get; set; } = "";
 
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool IsEmpty => EstimatedMinutes is null && Steps.Count == 0 && CompletionCriteria.Length == 0;
 
     public string DisplayText()
