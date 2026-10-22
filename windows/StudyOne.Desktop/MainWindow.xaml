@@ -1,7 +1,7 @@
 <Window x:Class="StudyOne.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="StudyOne 3.1.0 · Canary Preview" Width="1200" Height="820"
+        Title="StudyOne 3.1.0-canary.6 · Windows Preview" Width="1200" Height="820"
         MinWidth="920" MinHeight="660" WindowStartupLocation="CenterScreen"
         FontFamily="Segoe UI" Background="#F3F6FC">
     <Window.Resources>
