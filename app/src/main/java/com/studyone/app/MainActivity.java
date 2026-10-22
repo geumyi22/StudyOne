@@ -359,6 +359,7 @@ public class MainActivity extends Activity {
         c.addView(detailImport);
 
         appendWrongAnswerNotebook(c);
+        appendWritingPractice(c);
 
         // Put the live, directly tappable today's checklist before the broader progress tracker.
         // This is a view of existing local records, not a new persisted or uploaded plan.
@@ -1617,6 +1618,48 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
+
+
+    /** Privacy-preserving handwritten-style practice: target exists only in this dialog. */
+    private void appendWritingPractice(LinearLayout parent) {
+        parent.addView(section("영어 쓰기 수행 연습"));
+        parent.addView(cardText("외울 문장을 직접 입력한 뒤 가리고, 정답을 써서 비교합니다. 문장은 기기·AI·서버에 저장하거나 전송하지 않습니다.",12));
+        Button open=secondary("쓰기 암기 테스트 시작");
+        open.setOnClickListener(v->{
+            EditText original=input("암기할 영어 문장", "");
+            AlertDialog setup=new AlertDialog.Builder(this)
+                    .setTitle("영어 쓰기 · 정답 입력")
+                    .setView(original).setPositiveButton("가리고 시작",null)
+                    .setNegativeButton("취소",null).create();
+            setup.setOnShowListener(w->setup.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{
+                String target=original.getText().toString().trim();
+                if(target.isEmpty() || target.length()>1500) {
+                    toast("영어 문장을 1~1500자로 입력하세요."); return;
+                }
+                setup.dismiss();
+                EditText answer=input("정답을 보지 않고 입력하세요", "");
+                answer.setSingleLine(false);
+                answer.setMinLines(3);
+                AlertDialog practice=new AlertDialog.Builder(this).setTitle("문장을 가리고 쓰기")
+                    .setView(answer).setPositiveButton("채점",null)
+                    .setNegativeButton("취소",null).create();
+                practice.setOnShowListener(z->practice.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(y->{
+                    String entered=answer.getText().toString().trim();
+                    if(entered.isEmpty()){toast("문장을 입력하세요.");return;}
+                    // Whitespace-normalized only; punctuation and capitalization still matter.
+                    boolean exact=target.replaceAll("\\s+"," ").equals(entered.replaceAll("\\s+"," "));
+                    practice.dismiss();
+                    new AlertDialog.Builder(this).setTitle(exact?"정확하게 작성했습니다.":"다른 부분이 있습니다.")
+                        .setMessage("정답: "+target+"\n\n내가 쓴 문장: "+entered+
+                            "\n\n공백만 정리해서 비교했습니다. 대문자·구두점은 구분합니다.")
+                        .setPositiveButton("확인",null).show();
+                }));
+                practice.show();
+            }));
+            setup.show();
+        });
+        parent.addView(open);
+    }
 
     private void appendWrongAnswerNotebook(LinearLayout parent) {
         parent.addView(section("오답 관리 · 복습일"));
