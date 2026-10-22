@@ -148,6 +148,13 @@ public class MainActivity extends Activity {
             if (!navigationSelfTest()) throw new IllegalStateException("Nav tab state did not update");
             android.util.Log.i("StudyOneNav","NAVIGATION_STATE_SYNC_PASSED");
         }
+        if ((getApplicationInfo().flags &
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+                getIntent()!=null &&
+                getIntent().getBooleanExtra("studyone_planner_hub_self_test",false)) {
+            if(!plannerHubSelfTest())throw new IllegalStateException("Planner hub regression failed");
+            android.util.Log.i("StudyOnePlanner","PLANNER_HUB_SEVEN_PAGES_PASSED");
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
             if(!StudyProgressStorage.selfTestBackup()) {
                 throw new IllegalStateException("Progress backup fixture round-trip failed");
@@ -421,6 +428,7 @@ public class MainActivity extends Activity {
                 +tomorrowHomeworks.size()+"개",12,MUTED,false));
         c.addView(headline);
         c.addView(plannerPageNavigation());
+        c.addView(tv("메뉴를 좌우로 밀어 확인하세요",11,MUTED,false));
         c.addView(spacer(7));
 
         if(plannerPage==0) {
@@ -495,6 +503,36 @@ public class MainActivity extends Activity {
             appendPlannerManagement(c);
         }
         return s;
+    }
+
+    /** Debug-only, no test writes: visit all sections and check tomorrow preview shares task IDs. */
+    private boolean plannerHubSelfTest() {
+        int previousTab=currentTab,previousPage=plannerPage;
+        try {
+            LocalDate date=LocalDate.of(2026,10,23);
+            Models.StudyTask next=new Models.StudyTask(172000001L,"숙제 항목","수학",
+                    "종이 숙제",date.plusDays(1),2,false);
+            Models.StudyTask distant=new Models.StudyTask(172000002L,"기타 항목","사회",
+                    "나중 일정",date.plusDays(5),1,false);
+            List<Models.StudyTask> synthetic=new ArrayList<>();
+            synthetic.add(next);synthetic.add(distant);
+            List<Models.StudyTask> tomorrow=StudyPlannerSections.tomorrow(synthetic,date);
+            List<Models.StudyTask> homework=StudyPlannerSections.tomorrowHomework(synthetic,date);
+            if(tomorrow.size()!=1 || homework.size()!=1 ||
+                tomorrow.get(0).id!=next.id || homework.get(0).id!=next.id ||
+                synthetic.size()!=2 ||
+                StudyPlannerSections.allSorted(synthetic).size()!=2) return false;
+            for(int i=0;i<PLANNER_PAGES.length;i++) {
+                openPlannerPage(i);
+                if(currentTab!=3 || plannerPage!=i || content.getChildCount()!=1) return false;
+            }
+            return true;
+        } catch(Exception error) {
+            return false;
+        } finally {
+            plannerPage=previousPage;
+            showTab(previousTab);
+        }
     }
 
     private View plannerPageNavigation() {
