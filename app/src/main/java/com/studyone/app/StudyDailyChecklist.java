@@ -5,11 +5,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Read-only, local Samsung Reminder-style daily checklist. */
+/** Read-only local Samsung Reminder-style daily checklist; never changes stored dates or categories. */
 public final class StudyDailyChecklist {
     private StudyDailyChecklist() {}
 
-    public static String format(List<Models.StudyTask> all, LocalDate date) {
+    /** Sorted snapshot of today's tasks and unfinished past tasks. */
+    public static List<Models.StudyTask> visible(List<Models.StudyTask> all, LocalDate date) {
         if (all == null || date == null) throw new IllegalArgumentException("날짜 또는 일정이 없습니다.");
         List<Models.StudyTask> selected = new ArrayList<>();
         for (Models.StudyTask task : all) {
@@ -21,29 +22,40 @@ public final class StudyDailyChecklist {
         selected.sort(Comparator.comparing((Models.StudyTask x) -> x.dueDate)
                 .thenComparing((x) -> -x.importance)
                 .thenComparingLong(x -> x.id));
+        return selected;
+    }
+
+    /** 0–4: permanent study roles; 5: legacy today; -1: not on today's checklist. */
+    public static int groupIndex(Models.StudyTask task, LocalDate date) {
+        if (task == null || date == null || task.dueDate == null)
+            throw new IllegalArgumentException("날짜 또는 일정 항목이 없습니다.");
+        if (task.dueDate.isAfter(date) || (task.dueDate.isBefore(date) && task.completed))
+            return -1;
+        if (task.dueDate.isBefore(date)) return 0; // carry over, without changing the stored role
+        for (int i = 0; i < StudyCategories.ROLE_TITLES.length; i++)
+            if (StudyCategories.ROLE_TITLES[i].equals(task.type)) return i;
+        return 5; // preserve legacy / unfamiliar classifications
+    }
+
+    public static String format(List<Models.StudyTask> all, LocalDate date) {
+        List<Models.StudyTask> selected = visible(all, date);
         StringBuilder out = new StringBuilder("StudyOne 할꺼 · ").append(date).append("\n");
         for (int index = 0; index < StudyCategories.ROLE_TITLES.length; index++) {
-            String role = StudyCategories.ROLE_TITLES[index];
-            out.append("\n").append(index + 1).append(". ").append(role).append("\n");
+            out.append("\n").append(index + 1).append(". ")
+                    .append(StudyCategories.ROLE_TITLES[index]).append("\n");
             int count = 0;
             for (Models.StudyTask item : selected) {
-                // Unfinished past tasks are temporarily shown as carried over,
-                // without changing their stored category or due date.
-                boolean carried = item.dueDate.isBefore(date) && !item.completed;
-                if (index == 0 ? carried || role.equals(item.type)
-                        : !carried && role.equals(item.type)) {
-                    appendItem(out, item, carried);
-                    count++;
-                }
+                if (groupIndex(item, date) != index) continue;
+                appendItem(out, item, item.dueDate.isBefore(date));
+                count++;
             }
             if (count == 0) out.append("(없음)\n");
         }
         int legacyCount = 0;
         for (Models.StudyTask item : selected) {
-            if (!item.dueDate.isBefore(date) && !StudyCategories.isRole(item.type)) {
-                if (legacyCount++ == 0) out.append("\n기존 분류 일정\n");
-                appendItem(out, item, false);
-            }
+            if (groupIndex(item, date) != 5) continue;
+            if (legacyCount++ == 0) out.append("\n기존 분류 일정\n");
+            appendItem(out, item, false);
         }
         return out.toString().trim();
     }
