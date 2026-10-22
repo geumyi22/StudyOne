@@ -303,6 +303,14 @@
                             <Button Content="학습 상세 JSON 가져오기" Click="ImportTaskDetails_Click"/>
                         </WrapPanel>
                         <Separator Margin="0,24,0,24"/>
+                        <TextBlock Text="오답 관리 · 복습 기록" FontWeight="SemiBold" FontSize="16"/>
+                        <TextBlock Text="Android·iOS 호환 studyone-wrong-answers JSON입니다. 수동 가져오기 전 기존 오답 원본을 별도 백업합니다."
+                                   FontSize="12" Foreground="#64748B" TextWrapping="Wrap" Margin="0,4,0,8"/>
+                        <WrapPanel>
+                            <Button Content="오답 JSON 내보내기" Click="ExportWrong_Click"/>
+                            <Button Content="오답 JSON 가져오기" Click="ImportWrong_Click"/>
+                        </WrapPanel>
+                        <Separator Margin="0,24,0,24"/>
                         <TextBlock Text="보안 · 데이터 보존" FontSize="16" FontWeight="SemiBold"/>
                         <TextBlock Text="현재 버전은 개발 프리뷰입니다. OpenAI·NEIS 키는 사용하거나 저장하지 않습니다. JSON 백업에는 개인 학습 기록이 있으므로 외부에 공유하지 마세요. 기기를 초기화하기 전 일정·진도 파일을 둘 다 보관하세요."
                                    FontSize="12" Foreground="#64748B" TextWrapping="Wrap" Margin="0,8,0,15"/>
