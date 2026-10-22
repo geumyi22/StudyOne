@@ -146,6 +146,66 @@
                     </Border>
                 </Grid>
             </TabItem>
+            <TabItem Header="오답 · 복습">
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="틀린 문제 · 정답 근거 · 복습 일정" FontSize="22"
+                                   FontWeight="Bold" Foreground="#243351"/>
+                        <TextBlock x:Name="WrongSummary" Text="오답 기록은 기기 로컬에만 저장됩니다."
+                                   FontSize="13" Foreground="#53617B" Margin="0,8,0,5"/>
+                        <TextBlock Text="기존 일정, 진도, AI 서버와 분리 · 자동 동기화되지 않습니다."
+                                   Foreground="#64748B" FontSize="12" Margin="0,0,0,8"/>
+                    </StackPanel>
+                    <DataGrid x:Name="WrongGrid" Grid.Row="1" SelectionChanged="WrongGrid_SelectionChanged">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="과목" Binding="{Binding Subject}" Width="110"/>
+                            <DataGridTextColumn Header="교재" Binding="{Binding Material}" Width="140"/>
+                            <DataGridTextColumn Header="틀린 문제·개념" Binding="{Binding Topic}" Width="*"/>
+                            <DataGridTextColumn Header="복습일" Binding="{Binding NextReview}" Width="110"/>
+                            <DataGridTextColumn Header="재풀이" Binding="{Binding Retries}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="숙달" Binding="{Binding Mastered}" Width="65"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Border Grid.Row="2" Background="#F5F7FC" CornerRadius="12" Padding="15">
+                        <StackPanel>
+                            <TextBlock Text="오답 추가 · 수정" FontWeight="SemiBold" FontSize="15"/>
+                            <WrapPanel Margin="0,8,0,8">
+                                <StackPanel Width="120">
+                                    <TextBlock Text="과목" FontSize="12"/>
+                                    <TextBox x:Name="WrongSubjectInput" MaxLength="60"/>
+                                </StackPanel>
+                                <StackPanel Width="170">
+                                    <TextBlock Text="교재" FontSize="12"/>
+                                    <TextBox x:Name="WrongMaterialInput" MaxLength="120"/>
+                                </StackPanel>
+                                <StackPanel Width="245">
+                                    <TextBlock Text="틀린 문제·개념" FontSize="12"/>
+                                    <TextBox x:Name="WrongTopicInput" MaxLength="500"/>
+                                </StackPanel>
+                                <StackPanel Width="235">
+                                    <TextBlock Text="틀린 이유·정답 근거" FontSize="12"/>
+                                    <TextBox x:Name="WrongCorrectionInput" MaxLength="1000"/>
+                                </StackPanel>
+                                <StackPanel Width="145">
+                                    <TextBlock Text="다음 복습일" FontSize="12"/>
+                                    <DatePicker x:Name="WrongReviewPicker" Margin="0,5,10,3"/>
+                                </StackPanel>
+                            </WrapPanel>
+                            <WrapPanel>
+                                <Button Content="오답 저장" Click="SaveWrong_Click"/>
+                                <Button Content="새 오답" Click="ClearWrong_Click"/>
+                                <Button Content="재풀이 성공 (+1)" Click="RetryWrong_Click"/>
+                                <Button Content="숙달 상태 전환" Click="MasterWrong_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
             <TabItem Header="교재 · 진도">
                 <Grid Margin="16">
                     <Grid.RowDefinitions>
