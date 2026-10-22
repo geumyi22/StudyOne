@@ -21,11 +21,12 @@ class MobileGuardTests(unittest.TestCase):
     def test_android_user_consent_and_strict_endpoint(self):
         ui = read("app/src/main/java/com/studyone/app/MainActivity.java")
         client = read("app/src/main/java/com/studyone/app/StudySyncClient.java")
-        for text in ('보안 HTTPS 동기화 실험', 'setPositiveButton("새 기록 전송"',
+        for text in ('개발자 도구 · 로컬 동기화 실험', 'setPositiveButton("새 기록 전송"',
                      'storage.checkedTasksForSync()', 'progressStorage.list()',
                      'prepared.toString().equals(confirmed.toString())',
                      'token.setText("")', 'StudySyncClient.snapshot(secret,endpoint)'):
             self.assertIn(text, ui)
+        self.assertIn('if (isDeveloperBuild()) {', ui)
         for text in ('Proxy.NO_PROXY', 'setInstanceFollowRedirects(false)',
                      'http://127.0.0.1:8765/', 'checkedAddress', 'apiPrefix',
                      'uri.getUserInfo()', 'uri.getRawFragment()', 'v2/',
