@@ -98,22 +98,12 @@ public partial class MainWindow : Window
         RefreshTasks();
     }
 
-    private static bool IsHomework(StudyTask task) =>
-        task.Type is "숙제 항목" or "과제" || task.Title.Contains("숙제", StringComparison.Ordinal);
-
     private void RefreshTasks()
     {
-        string today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        string tomorrow = DateTime.Today.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        IEnumerable<StudyTask> visible = taskBackup.Tasks;
-        if (taskDisplayMode == 0)
-            visible = visible.Where(item => item.DueDate == today
-                || (string.CompareOrdinal(item.DueDate, today) < 0 && !item.Completed)
-                || (item.DueDate == tomorrow && IsHomework(item)));
-        else if (taskDisplayMode == 1)
-            visible = visible.Where(item => item.DueDate == tomorrow);
+        IReadOnlyList<StudyTask> visible = StudyTaskViews.Select(
+            taskBackup.Tasks, DateOnly.FromDateTime(DateTime.Today), taskDisplayMode);
         tasks.Clear();
-        foreach (StudyTask item in visible.OrderBy(t => t.DueDate).ThenBy(t => t.Completed))
+        foreach (StudyTask item in visible)
             tasks.Add(item);
         string scope = taskDisplayMode == 0 ? "오늘·이월·내일 숙제 미리 하기"
                      : taskDisplayMode == 1 ? "내일 마감" : "전체 날짜";
