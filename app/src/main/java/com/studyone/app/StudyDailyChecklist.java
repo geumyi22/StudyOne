@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Collections;
 
 /** Read-only local Samsung Reminder-style daily checklist; never changes stored dates or categories. */
 public final class StudyDailyChecklist {
@@ -38,6 +40,13 @@ public final class StudyDailyChecklist {
     }
 
     public static String format(List<Models.StudyTask> all, LocalDate date) {
+        return format(all, date, Collections.emptyMap());
+    }
+
+    /** Portable copy optionally includes local-only duration, steps and completion criteria. */
+    public static String format(List<Models.StudyTask> all, LocalDate date,
+                                Map<Long, StudyTaskDetail> details) {
+        if (details == null) throw new IllegalArgumentException("상세 정보가 없습니다.");
         List<Models.StudyTask> selected = visible(all, date);
         StringBuilder out = new StringBuilder("StudyOne 할꺼 · ").append(date).append("\n");
         for (int index = 0; index < StudyCategories.ROLE_TITLES.length; index++) {
@@ -46,7 +55,7 @@ public final class StudyDailyChecklist {
             int count = 0;
             for (Models.StudyTask item : selected) {
                 if (groupIndex(item, date) != index) continue;
-                appendItem(out, item, item.dueDate.isBefore(date));
+                appendItem(out, item, item.dueDate.isBefore(date), details.get(item.id));
                 count++;
             }
             if (count == 0) out.append("(없음)\n");
@@ -55,12 +64,13 @@ public final class StudyDailyChecklist {
         for (Models.StudyTask item : selected) {
             if (groupIndex(item, date) != 5) continue;
             if (legacyCount++ == 0) out.append("\n기존 분류 일정\n");
-            appendItem(out, item, false);
+            appendItem(out, item, false, details.get(item.id));
         }
         return out.toString().trim();
     }
 
-    private static void appendItem(StringBuilder out, Models.StudyTask item, boolean carried) {
+    private static void appendItem(StringBuilder out, Models.StudyTask item,
+                                   boolean carried, StudyTaskDetail detail) {
         String subject = item.subject == null || item.subject.trim().isEmpty()
                 ? "기타" : item.subject.trim();
         out.append(item.completed ? "☑ " : "☐ ")
@@ -68,5 +78,11 @@ public final class StudyDailyChecklist {
                 .append(item.title == null ? "" : item.title.trim());
         if (carried) out.append(" (전날 못 다 · 원래 마감 ").append(item.dueDate).append(')');
         out.append('\n');
+        if (detail != null && !detail.isEmpty()) {
+            if (detail.taskId != item.id)
+                throw new IllegalArgumentException("상세 정보와 일정 ID가 다릅니다.");
+            String[] detailLines = detail.displayText().split("\\n");
+            for (String line : detailLines) out.append("    ").append(line).append('\n');
+        }
     }
 }
