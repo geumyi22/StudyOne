@@ -66,6 +66,20 @@
                     <StackPanel>
                         <TextBlock x:Name="TasksSummary" Text="학교·학원 숙제와 날짜별 공부 계획"
                                    FontSize="14" Foreground="#53617B" Margin="0,8,0,5"/>
+                        <WrapPanel Margin="0,3,0,9" VerticalAlignment="Center">
+                            <TextBlock Text="일정 표시" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <ComboBox x:Name="TaskDateFilterCombo" Width="210" Margin="0,0,12,0"
+                                      SelectionChanged="TaskDateFilter_SelectionChanged"
+                                      ToolTip="오늘·이월, 내일 마감, 전체 일정 중 선택">
+                                <ComboBoxItem Content="오늘 + 미완료 이월"/>
+                                <ComboBoxItem Content="내일 마감"/>
+                                <ComboBoxItem Content="전체 일정"/>
+                            </ComboBox>
+                            <TextBlock Text="내일 숙제도 오늘부터 미리 완료할 수 있습니다."
+                                       FontSize="12" Foreground="#596B8B"
+                                       VerticalAlignment="Center"/>
+                        </WrapPanel>
                         <Button Content="오늘 할꺼 · 과목명 포함 목록 복사" Click="CopyToday_Click"
                                 HorizontalAlignment="Left" Margin="0,0,0,7"/>
                     </StackPanel>
