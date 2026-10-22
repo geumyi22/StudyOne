@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private WrongAnswersBackup wrongBackup = new();
     private bool wrongLocked;
     private string? selectedWrong;
+    private string? writingTarget;
     private bool detailsLocked;
     private bool tasksLocked;
     private bool progressLocked;
@@ -553,6 +554,41 @@ public partial class MainWindow : Window
             HeaderStatus.Text = "학습 상세 JSON 복원 완료 · 기존 원본 백업 보존";
         }
         catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void WritingStart_Click(object sender, RoutedEventArgs e)
+    {
+        string target = WritingTargetInput.Text.Trim();
+        if (target.Length is < 1 or > 1500) {
+            ShowError("암기할 문장을 1~1500자로 입력하세요."); return;
+        }
+        writingTarget = target;
+        WritingTargetInput.Text = "";
+        WritingTargetInput.Visibility = Visibility.Collapsed;
+        WritingAttemptInput.Text = "";
+        WritingResultText.Text = "정답을 가렸습니다. 문장을 입력한 뒤 채점하세요.";
+    }
+
+    private void WritingCheck_Click(object sender, RoutedEventArgs e)
+    {
+        if (writingTarget is null) { ShowError("먼저 암기 문장을 입력하고 가리세요."); return; }
+        string answer = WritingAttemptInput.Text.Trim();
+        if (answer.Length == 0) { ShowError("기억나는 문장을 입력하세요."); return; }
+        static string Normalized(string text) =>
+            string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        WritingResultText.Text = Normalized(answer) == Normalized(writingTarget)
+            ? "정확하게 작성했습니다."
+            : "다른 부분이 있습니다.\n정답: " + writingTarget + "\n입력한 문장: " + answer +
+              "\n대문자·구두점까지 구분합니다.";
+    }
+
+    private void WritingReset_Click(object sender, RoutedEventArgs e)
+    {
+        writingTarget = null;
+        WritingTargetInput.Text = "";
+        WritingTargetInput.Visibility = Visibility.Visible;
+        WritingAttemptInput.Text = "";
+        WritingResultText.Text = "";
     }
 
     private void SaveWrong_Click(object sender, RoutedEventArgs e)
