@@ -64,9 +64,22 @@ jobs:
           javac -encoding UTF-8 -d /tmp/studyone-daily-checklist-classes \
             app/src/main/java/com/studyone/app/Models.java \
             app/src/main/java/com/studyone/app/StudyCategories.java \
+            app/src/main/java/com/studyone/app/StudyTaskDetail.java \
             app/src/main/java/com/studyone/app/StudyDailyChecklist.java \
             scripts/tests/StudyDailyChecklistSmoke.java
           java -cp /tmp/studyone-daily-checklist-classes StudyDailyChecklistSmoke
+      - name: Compile and validate optional study guidance format and limits
+        run: |
+          mkdir -p /tmp/studyone-task-detail-classes
+          javac -encoding UTF-8 -d /tmp/studyone-task-detail-classes \
+            app/src/main/java/com/studyone/app/Models.java \
+            app/src/main/java/com/studyone/app/StudyCategories.java \
+            app/src/main/java/com/studyone/app/StudyTaskDetail.java \
+            app/src/main/java/com/studyone/app/StudyDailyChecklist.java \
+            scripts/tests/StudyTaskDetailSmoke.java
+          java -cp /tmp/studyone-task-detail-classes StudyTaskDetailSmoke
+      - name: Check safe local-only detail persistence, editor and backup contracts
+        run: python3 scripts/tests/check_task_details.py
       - name: Audit mobile sync local-only transport and explicit-consent safeguards
         run: python3 scripts/tests/check_mobile_sync_guards.py
       - name: Compile and smoke-test standalone Java progress model
