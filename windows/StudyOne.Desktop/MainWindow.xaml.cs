@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private bool syncBusy;
     private long? selectedTask;
     private string? selectedProgress;
+    private int taskDisplayMode; // 0=today + overdue & tomorrow homework, 1=tomorrow, 2=all
 
     public MainWindow()
     {
@@ -62,6 +63,7 @@ public partial class MainWindow : Window
             ShowError("오답 원본을 읽지 못했습니다. 기존 원본을 보존합니다.\n" + error.Message);
         }
         RefreshTasks();
+        TaskDateFilterCombo.SelectedIndex = 0;
         RefreshProgress();
         RefreshWrong();
         ClearWrongForm();
@@ -89,14 +91,36 @@ public partial class MainWindow : Window
             "기존 데이터 교체 확인",
             MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
+    private void TaskDateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TaskDateFilterCombo is null || TasksGrid is null || TasksSummary is null) return;
+        taskDisplayMode = Math.Clamp(TaskDateFilterCombo.SelectedIndex, 0, 2);
+        RefreshTasks();
+    }
+
+    private static bool IsHomework(StudyTask task) =>
+        task.Type is "숙제 항목" or "과제" || task.Title.Contains("숙제", StringComparison.Ordinal);
+
     private void RefreshTasks()
     {
+        string today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        string tomorrow = DateTime.Today.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        IEnumerable<StudyTask> visible = taskBackup.Tasks;
+        if (taskDisplayMode == 0)
+            visible = visible.Where(item => item.DueDate == today
+                || (string.CompareOrdinal(item.DueDate, today) < 0 && !item.Completed)
+                || (item.DueDate == tomorrow && IsHomework(item)));
+        else if (taskDisplayMode == 1)
+            visible = visible.Where(item => item.DueDate == tomorrow);
         tasks.Clear();
-        foreach (StudyTask item in taskBackup.Tasks.OrderBy(t => t.DueDate).ThenBy(t => t.Completed))
+        foreach (StudyTask item in visible.OrderBy(t => t.DueDate).ThenBy(t => t.Completed))
             tasks.Add(item);
+        string scope = taskDisplayMode == 0 ? "오늘·이월·내일 숙제 미리 하기"
+                     : taskDisplayMode == 1 ? "내일 마감" : "전체 날짜";
         TasksSummary.Text = tasksLocked
             ? "일정 데이터 읽기 오류 · 원본 보존 중 · 유효한 JSON을 다시 가져와 복구하세요."
-            : $"전체 일정 {tasks.Count}개 · 완료 {tasks.Count(t => t.Completed)}개 · 남음 {tasks.Count(t => !t.Completed)}개";
+            : $"{scope} · 표시 {tasks.Count}개 / 원본 {taskBackup.Tasks.Count}개"
+              + $" · 완료 {tasks.Count(t => t.Completed)}개 · 남음 {tasks.Count(t => !t.Completed)}개";
     }
 
     private void RefreshProgress()
