@@ -8,5 +8,6 @@
   <ItemGroup>
     <Compile Include="../StudyOne.Desktop/StudyData.cs" Link="StudyData.cs"/>
     <Compile Include="../StudyOne.Desktop/SyncClient.cs" Link="SyncClient.cs"/>
+    <Compile Include="../StudyOne.Desktop/StudyChecklistText.cs" Link="StudyChecklistText.cs"/>
   </ItemGroup>
 </Project>
