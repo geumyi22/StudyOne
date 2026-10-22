@@ -66,7 +66,7 @@ public static class StudyData
     };
 
     public static string DataDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StudyOne");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StudyOneCanary");
 
     public static string TasksPath => Path.Combine(DataDirectory, "tasks.json");
     public static string ProgressPath => Path.Combine(DataDirectory, "progress.json");
