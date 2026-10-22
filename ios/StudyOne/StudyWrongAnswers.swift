@@ -179,6 +179,10 @@ struct StudyWrongAnswersView: View {
     @State private var notice = ""
     @State private var errorText = ""
     @State private var showError = false
+    @State private var writingTarget = ""
+    @State private var writingAnswer = ""
+    @State private var writingHidden = false
+    @State private var writingResult = ""
     private var dueCount: Int {
         store.entries.filter { !$0.mastered && $0.nextReview <= Date().studyString() }.count
     }
@@ -226,6 +230,41 @@ struct StudyWrongAnswersView: View {
                                 Button("수정") { editing = item; showingEditor = true }
                             }.buttonStyle(.bordered).font(.caption)
                         }.padding(.vertical, 3)
+                    }
+                }
+                Section("영어 쓰기 수행평가 연습") {
+                    Text("문장을 가리고 직접 작성합니다. 이 연습 문장은 앱·AI·서버에 저장하거나 전송하지 않습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !writingHidden {
+                        TextField("암기할 영어 문장", text: $writingTarget, axis: .vertical)
+                        Button("문장 가리고 시작") {
+                            if !writingTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                && writingTarget.count <= 1500 {
+                                writingHidden = true
+                                writingAnswer = ""
+                                writingResult = ""
+                            }
+                        }
+                        .disabled(writingTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                  writingTarget.count > 1500)
+                    } else {
+                        TextField("기억나는 문장을 직접 쓰세요", text: $writingAnswer, axis: .vertical)
+                            .lineLimit(3...6)
+                        Button("채점하기") {
+                            func clean(_ text: String) -> String {
+                                text.split(whereSeparator: { $0.isWhitespace })
+                                    .joined(separator: " ")
+                            }
+                            let correct = clean(writingTarget) == clean(writingAnswer)
+                            writingResult = correct ? "정확하게 작성했습니다." :
+                                "다른 부분이 있습니다. 정답: \(writingTarget)"
+                        }
+                        .disabled(writingAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if !writingResult.isEmpty { Text(writingResult).font(.subheadline) }
+                        Button("다른 문장 연습") {
+                            writingTarget = ""; writingAnswer = ""
+                            writingHidden = false; writingResult = ""
+                        }
                     }
                 }
                 Section("데이터 백업·복원") {
