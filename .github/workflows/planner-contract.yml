@@ -88,6 +88,8 @@ jobs:
         run: python3 scripts/tests/check_wrong_answer_parity.py
       - name: Audit Android icon navigation UI and selected-tab regression
         run: python3 scripts/tests/check_navigation_ui.py
+      - name: Check segmented planner hub, homework preview and source isolation
+        run: python3 scripts/tests/check_planner_hub.py
       - name: Audit mobile sync local-only transport and explicit-consent safeguards
         run: python3 scripts/tests/check_mobile_sync_guards.py
       - name: Compile and smoke-test standalone Java progress model
