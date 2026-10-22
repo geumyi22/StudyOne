@@ -12,8 +12,8 @@ android {
         applicationId = "com.studyone.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 30104
-        versionName = "3.1.0-canary.4"
+        versionCode = 30105
+        versionName = "3.1.0-canary.5"
     }
 
     if (!studyOneKeyFile.isNullOrBlank()) {
@@ -34,7 +34,7 @@ android {
     buildTypes {
         debug {
             // Canary debug builds are isolated from the installed signed Beta/Stable app.
-            applicationIdSuffix = ".canary4"
+            applicationIdSuffix = ".canary5"
             versionNameSuffix = "-debug"
         }
         release {
