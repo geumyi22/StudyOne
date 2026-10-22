@@ -331,16 +331,39 @@ public class MainActivity extends Activity {
             startActivityForResult(intent,PROGRESS_IMPORT);
         });
         c.addView(progressImport);
+        Button copyProgress=secondary("과목명 포함 진도 체크리스트 복사");
+        copyProgress.setOnClickListener(v->{
+            try {
+                String text=StudyProgressChecklist.format(progressStorage.list());
+                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)
+                        getSystemService(CLIPBOARD_SERVICE);
+                if(clipboard==null)throw new IllegalStateException("클립보드에 접근할 수 없습니다.");
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("StudyOne 진도",text));
+                toast("과목별 진도 체크리스트를 복사했습니다.");
+            } catch (RuntimeException error) {
+                toast(error.getMessage()==null?"진도 복사 실패":error.getMessage());
+            }
+        });
+        c.addView(copyProgress);
         try {
             List<StudyProgressItem> progress=progressStorage.list();
-            int complete=0, total=0, pending=0;
+            int complete=0, total=0, pending=0, started=0, todo=0;
             for(StudyProgressItem item:progress) {
                 if(!item.inExamScope)continue;
                 total++;
                 if(StudyProgressItem.DONE.equals(item.status))complete++;
                 if(StudyProgressItem.UNKNOWN.equals(item.status))pending++;
+                if(StudyProgressItem.IN_PROGRESS.equals(item.status))started++;
+                if(StudyProgressItem.TODO.equals(item.status))todo++;
             }
-            c.addView(cardText("시험범위 항목 "+total+"개 · 완료 "+complete+"개 · 확인 필요 "+pending+"개",13));
+            int percent=total==0?0:(int)Math.round(100.0*complete/total);
+            c.addView(cardText("시험범위 "+total+"개 · 완료 "+complete+" · 진행 중 "+started
+                    +" · 미완료 "+todo+" · 확인 필요 "+pending+" · 완료율 "+percent+"%",13));
+            android.widget.ProgressBar meter=new android.widget.ProgressBar(this,null,
+                    android.R.attr.progressBarStyleHorizontal);
+            meter.setMax(Math.max(total,1));
+            meter.setProgress(complete);
+            c.addView(meter);
             if(progress.isEmpty()) {
                 c.addView(cardText("등록된 교재 진도가 없습니다. 위 버튼에서 직접 추가할 수 있습니다.",13));
             } else {
@@ -1286,25 +1309,48 @@ public class MainActivity extends Activity {
 
     private View progressCard(StudyProgressItem item) {
         LinearLayout box=card();
-        box.addView(tv(item.subject+" · "+item.material+" · "+item.unit,14,TEXT,true));
-        box.addView(tv(item.status+" · "+(item.inExamScope?"시험범위 포함":"시험범위 제외")
-                +" · 수정 "+item.revision+"회차",12,MUTED,false));
-        LinearLayout buttons=new LinearLayout(this);
-        Button cycle=secondary("상태 변경");
-        cycle.setOnClickListener(v->{
-            int index=0;
-            for(int i=0;i<StudyProgressItem.STATUSES.length;i++)
-                if(StudyProgressItem.STATUSES[i].equals(item.status))index=i;
-            String next=StudyProgressItem.STATUSES[(index+1)%StudyProgressItem.STATUSES.length];
+        LinearLayout titleRow=new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        CheckBox completed=new CheckBox(this);
+        completed.setText("완료");
+        completed.setContentDescription(item.subject+" "+item.unit+" 완료 체크");
+        completed.setChecked(StudyProgressItem.DONE.equals(item.status));
+        completed.setOnCheckedChangeListener((button,isChecked)->{
+            String next=isChecked?StudyProgressItem.DONE:StudyProgressItem.TODO;
+            if(next.equals(item.status))return;
             try {
-                progressStorage.update(item.id,item.revision,item.subject,item.material,item.unit,
-                        next,item.inExamScope);
+                progressStorage.update(item.id,item.revision,item.subject,item.material,
+                        item.unit,next,item.inExamScope);
                 showTab(3);
             } catch(RuntimeException error) {
-                toast(error.getMessage()==null?"변경 실패":error.getMessage());
+                toast(error.getMessage()==null?"진도 체크 실패":error.getMessage());
+                showTab(3);
             }
         });
-        buttons.addView(cycle,new LinearLayout.LayoutParams(0,dp(46),1f));
+        LinearLayout labels=column();
+        labels.addView(tv("["+item.subject+"] "+item.material+" · "+item.unit,14,TEXT,true));
+        labels.addView(tv(item.status+" · "+(item.inExamScope?"시험범위 포함":"시험범위 제외")
+                +" · 수정 "+item.revision+"회차",12,MUTED,false));
+        titleRow.addView(completed);
+        titleRow.addView(labels,new LinearLayout.LayoutParams(0,-2,1f));
+        box.addView(titleRow);
+        LinearLayout buttons=new LinearLayout(this);
+        Button chooseStatus=secondary("상태 선택");
+        chooseStatus.setOnClickListener(v->new AlertDialog.Builder(this)
+                .setTitle("["+item.subject+"] "+item.unit+" 상태")
+                .setItems(StudyProgressItem.STATUSES,(dialog,which)->{
+                    String next=StudyProgressItem.STATUSES[which];
+                    if(next.equals(item.status))return;
+                    try {
+                        progressStorage.update(item.id,item.revision,item.subject,item.material,
+                                item.unit,next,item.inExamScope);
+                        showTab(3);
+                    } catch(RuntimeException error) {
+                        toast(error.getMessage()==null?"상태 변경 실패":error.getMessage());
+                        showTab(3);
+                    }
+                }).setNegativeButton("취소",null).show());
+        buttons.addView(chooseStatus,new LinearLayout.LayoutParams(0,dp(46),1f));
         Button edit=secondary("수정");
         edit.setOnClickListener(v->progressDialog(item));
         buttons.addView(edit,new LinearLayout.LayoutParams(0,dp(46),1f));
