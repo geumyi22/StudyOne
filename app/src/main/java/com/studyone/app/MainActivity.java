@@ -54,6 +54,8 @@ public class MainActivity extends Activity {
     private FrameLayout content;
     private TextView title;
     private int currentTab;
+    private int plannerPage;
+    private static final String[] PLANNER_PAGES = {"오늘", "내일", "전체", "진도", "오답", "쓰기", "관리"};
     private static final String[] NAV_NAMES = {"홈", "시간표", "급식", "플래너", "추천", "설정"};
     private static final int[] NAV_ICONS = {R.drawable.ic_nav_home, R.drawable.ic_nav_timetable,
             R.drawable.ic_nav_meals, R.drawable.ic_nav_planner,
@@ -96,6 +98,8 @@ public class MainActivity extends Activity {
             root.addView(central,new LinearLayout.LayoutParams(-1,-1));
         }
         setContentView(root);
+        plannerPage=b == null ? 0 : Math.max(0,Math.min(PLANNER_PAGES.length-1,
+                b.getInt("studyone_planner_page",0)));
         Reminders.schedule(this);
         showTab(b == null ? 0 : Math.max(0, Math.min(NAV_NAMES.length - 1,
                 b.getInt("studyone_active_tab", 0))));
@@ -154,6 +158,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle out) {
         out.putInt("studyone_active_tab", currentTab);
+        out.putInt("studyone_planner_page",plannerPage);
         super.onSaveInstanceState(out);
     }
 
@@ -398,67 +403,142 @@ public class MainActivity extends Activity {
         return s;
     }
 
+    /** StudyOne planner hub: task navigation is presentation only; all records retain their original IDs. */
     private View planner() {
         ScrollView s=page(); LinearLayout c=column(); s.addView(c);
-        Button add=primary("+ 학습 일정 추가");
-        add.setOnClickListener(v->taskDialog(null)); c.addView(add);
-
-        Button roles=secondary("5개 학습 분류의 역할 보기");
-        roles.setOnClickListener(v->new AlertDialog.Builder(this)
-                .setTitle("학습 분류 안내")
-                .setMessage(StudyCategories.guide())
-                .setPositiveButton("확인",null).show());
-        c.addView(roles);
-
-        Button copyToday=secondary("오늘 할꺼 · 과목별 리마인더 목록 복사");
-        copyToday.setOnClickListener(v->{
-            try {
-                List<Models.StudyTask> current=storage.tasks();
-                LocalDate today=LocalDate.now();
-                java.util.Map<Long,StudyTaskDetail> details=new java.util.HashMap<>();
-                for(Models.StudyTask item:StudyDailyChecklist.visible(current,today)) {
-                    StudyTaskDetail extra=detailStorage.get(item.id);
-                    if(extra!=null)details.put(item.id,extra);
-                }
-                String content=StudyDailyChecklist.format(current,today,details);
-                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)
-                        getSystemService(CLIPBOARD_SERVICE);
-                if(clipboard==null)throw new IllegalStateException("클립보드에 접근할 수 없습니다.");
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("StudyOne 오늘 할꺼",content));
-                toast("오늘·미완료 이월 과목별 체크리스트를 복사했습니다.");
-            } catch (RuntimeException error) {
-                toast(error.getMessage()==null?"일별 계획 복사 실패":error.getMessage());
-            }
-        });
-        c.addView(copyToday);
-
-        c.addView(cardText("예상 시간·공부 단계·완료 기준은 기존 일정·동기화 JSON과 별도로 저장합니다. 다른 기기에는 전용 JSON 백업을 직접 가져와야 합니다.",12));
-        Button detailExport=secondary("학습 상세 정보 JSON 백업");
-        detailExport.setOnClickListener(v->{
-            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
-            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-            intent.setType("application/json");
-            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-task-details.json");
-            startActivityForResult(intent,DETAILS_EXPORT);
-        });
-        c.addView(detailExport);
-        Button detailImport=secondary("학습 상세 정보 JSON 가져오기");
-        detailImport.setOnClickListener(v->{
-            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-            intent.setType("application/json");
-            startActivityForResult(intent,DETAILS_IMPORT);
-        });
-        c.addView(detailImport);
-
-        appendWrongAnswerNotebook(c);
-        appendWritingPractice(c);
-
-        // Put the live, directly tappable today's checklist before the broader progress tracker.
-        // This is a view of existing local records, not a new persisted or uploaded plan.
+        LocalDate today=LocalDate.now();
         List<Models.StudyTask> tasks=storage.tasks();
-        appendTodayChecklist(c,tasks,LocalDate.now());
 
+        LinearLayout headline=card();
+        headline.setPadding(dp(18),dp(17),dp(18),dp(15));
+        headline.addView(tv("나의 학습 공간",13,BLUE_DARK,true));
+        headline.addView(spacer(4));
+        headline.addView(tv(PLANNER_PAGES[plannerPage]+" 관리",23,TEXT,true));
+        int finished=0;
+        for(Models.StudyTask t:tasks) if(t.completed) finished++;
+        List<Models.StudyTask> tomorrowHomeworks=StudyPlannerSections.tomorrowHomework(tasks,today);
+        headline.addView(tv("전체 "+tasks.size()+"개 · 완료 "+finished+"개 · 내일 숙제 "
+                +tomorrowHomeworks.size()+"개",12,MUTED,false));
+        c.addView(headline);
+        c.addView(plannerPageNavigation());
+        c.addView(spacer(7));
+
+        if(plannerPage==0) {
+            Button add=primary("+ 학습 일정 추가");
+            add.setOnClickListener(v->taskDialog(null)); c.addView(add);
+            // Today's actual tasks + unfinished past tasks, unchanged from original.
+            appendTodayChecklist(c,tasks,today);
+            c.addView(section("내일 숙제 · 미리 하기"));
+            c.addView(cardText("마감일을 바꾸지 않고 오늘부터 미리 완료 체크할 수 있습니다. "
+                    +"내일 화면에도 같은 일정이 표시되며 하나의 완료 상태를 공유합니다.",12));
+            if(tomorrowHomeworks.isEmpty()) {
+                c.addView(cardText("내일 마감인 숙제가 없습니다.",13));
+            } else {
+                for(Models.StudyTask task:tomorrowHomeworks)c.addView(taskCard(task));
+            }
+            Button tomorrow=secondary("내일 제출할 일 전체 보기");
+            tomorrow.setOnClickListener(v->openPlannerPage(1)); c.addView(tomorrow);
+            c.addView(section("추천 순서"));
+            c.addView(prioritySummary());
+        } else if(plannerPage==1) {
+            c.addView(section("내일 마감 일정 · "+today.plusDays(1)));
+            Button add=primary("+ 학습 일정 추가");
+            add.setOnClickListener(v->taskDialog(null));c.addView(add);
+            List<Models.StudyTask> tomorrowTasks=StudyPlannerSections.tomorrow(tasks,today);
+            if(tomorrowTasks.isEmpty()) {
+                c.addView(cardText("내일 마감인 일정이 없습니다. 추가할 때 마감일을 내일로 설정하세요.",13));
+            } else {
+                c.addView(cardText("내일 마감 "+tomorrowTasks.size()+"개 · 숙제 "
+                        +tomorrowHomeworks.size()+"개. 체크 결과는 오늘·전체·달력에도 바로 반영됩니다.",13));
+                boolean hasHomework=false,hasOther=false;
+                for(Models.StudyTask task:tomorrowTasks) {
+                    if(StudyPlannerSections.isHomework(task)) {
+                        if(!hasHomework){c.addView(section("제출 숙제"));hasHomework=true;}
+                        c.addView(taskCard(task));
+                    }
+                }
+                for(Models.StudyTask task:tomorrowTasks) {
+                    if(!StudyPlannerSections.isHomework(task)) {
+                        if(!hasOther){c.addView(section("수행·시험·기타 일정"));hasOther=true;}
+                        c.addView(taskCard(task));
+                    }
+                }
+            }
+        } else if(plannerPage==2) {
+            Button add=primary("+ 학습 일정 추가");
+            add.setOnClickListener(v->taskDialog(null));c.addView(add);
+            Button calendar=secondary("월간 달력에서 일정 보기");
+            calendar.setOnClickListener(v->calendarDialog()); c.addView(calendar);
+            c.addView(section("전체 일정 · 날짜순"));
+            c.addView(cardText("과거·오늘·미래의 일정을 모두 표시합니다. "
+                    +"오늘·내일 화면과 동일한 원본에 연결되므로 중복 저장되지 않습니다.",12));
+            if(tasks.isEmpty()) {
+                c.addView(cardText("등록된 일정이 없습니다.",14));
+            } else {
+                String lastDate="";
+                for(Models.StudyTask task:StudyPlannerSections.allSorted(tasks)) {
+                    String date=task.dueDate.toString();
+                    if(!date.equals(lastDate)) {
+                        c.addView(section(task.dueDate+" · "+dDay(task.dueDate)));
+                        lastDate=date;
+                    }
+                    c.addView(taskCard(task));
+                }
+            }
+        } else if(plannerPage==3) {
+            appendProgressHub(c);
+        } else if(plannerPage==4) {
+            appendWrongAnswerNotebook(c);
+        } else if(plannerPage==5) {
+            appendWritingPractice(c);
+        } else {
+            appendPlannerManagement(c);
+        }
+        return s;
+    }
+
+    private View plannerPageNavigation() {
+        android.widget.HorizontalScrollView scroll=new android.widget.HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setFillViewport(false);
+        LinearLayout tabs=new LinearLayout(this);
+        tabs.setPadding(dp(1),dp(1),dp(1),dp(6));
+        scroll.addView(tabs);
+        TextView active=null;
+        for(int index=0;index<PLANNER_PAGES.length;index++) {
+            final int position=index;
+            boolean selected=index==plannerPage;
+            TextView chip=tv(PLANNER_PAGES[index],13,selected?Color.WHITE:BLUE_DARK,selected);
+            chip.setGravity(Gravity.CENTER);
+            chip.setContentDescription(PLANNER_PAGES[index]+(selected?" · 현재 선택됨":"")+" 학습 탭");
+            chip.setClickable(true);
+            chip.setFocusable(true);
+            chip.setSelected(selected);
+            chip.setMinWidth(dp(65));
+            chip.setPadding(dp(14),dp(11),dp(14),dp(11));
+            GradientDrawable bg=new GradientDrawable();
+            bg.setColor(selected?BLUE_DARK:Color.WHITE);
+            bg.setCornerRadius(dp(14));
+            if(!selected)bg.setStroke(dp(1),Color.rgb(214,222,237));
+            chip.setBackground(bg);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(43));
+            lp.setMargins(dp(3),0,dp(3),0);
+            tabs.addView(chip,lp);
+            chip.setOnClickListener(v->openPlannerPage(position));
+            if(selected)active=chip;
+        }
+        final TextView visible=active;
+        if(visible!=null)scroll.post(()->scroll.scrollTo(Math.max(0,visible.getLeft()-dp(12)),0));
+        return scroll;
+    }
+
+    private void openPlannerPage(int page) {
+        if(page<0||page>=PLANNER_PAGES.length)return;
+        plannerPage=page;
+        showTab(3);
+    }
+
+    private void appendProgressHub(LinearLayout c) {
         c.addView(section("교재 · 시험범위 · 진도"));
         c.addView(cardText("교재 진도는 기존 일별 숙제와 별도로 관리합니다. 기존 전체 일정 JSON 백업에는 진도가 포함되지 않으므로 아래의 별도 진도 JSON 백업을 사용하세요.",12));
         Button addProgress=secondary("+ 시험범위 진도 추가");
@@ -524,90 +604,97 @@ public class MainActivity extends Activity {
         } catch (IllegalStateException e) {
             c.addView(cardText("진도 데이터 읽기 오류: "+e.getMessage(),13));
         }
+        Button manage=secondary("진도 백업 및 관리");
+        manage.setOnClickListener(v->openPlannerPage(6));
+        c.addView(manage);
+    }
 
-        if(tasks.isEmpty()){
-            c.addView(spacer(12));
-            c.addView(cardText("일별 일정은 아직 없습니다. 위에서 교재 진도를 별도로 관리할 수 있습니다.",14));
-            return s;
-        }
-
-        int done=0;
-        for(Models.StudyTask t:tasks) if(t.completed) done++;
-        c.addView(cardText("전체 "+tasks.size()+"건 · 완료 "+done+"건 · 미완료 "+(tasks.size()-done)+"건",15));
-
-        Button calendar=secondary("월간 달력에서 일정 보기");
-        calendar.setOnClickListener(view->calendarDialog());
-        c.addView(calendar);
-
-        c.addView(section("추천 순서"));
-        List<Models.StudyTask> ranked=new ArrayList<>(tasks);
-        ranked.removeIf(t->t.completed);
-        ranked.sort(Comparator.comparingDouble(this::score).reversed());
-        LinearLayout rec=card();
-        int count=0;
-        for(Models.StudyTask t:ranked){
-            if(count>=3) break;
-            count++;
-            rec.addView(tv(count+". "+label(t)+"   "+dDay(t.dueDate),15,TEXT,true));
-            rec.addView(spacer(7));
-        }
-        if(count==0) rec.addView(tv("모든 일정을 완료했습니다.",14,MUTED,false));
-        c.addView(rec);
-
-        // Retain every historical and future task, but don't duplicate all of them above the fold.
-        LinearLayout everyTask=column();
-        everyTask.setVisibility(View.GONE);
-        Button expandAll=secondary("과거·미래 포함 전체 일정 펼치기");
-        expandAll.setOnClickListener(v->{
-            boolean opening=everyTask.getVisibility()!=View.VISIBLE;
-            everyTask.setVisibility(opening?View.VISIBLE:View.GONE);
-            expandAll.setText(opening?"전체 일정 접기":"과거·미래 포함 전체 일정 펼치기");
-        });
-        c.addView(expandAll);
-        c.addView(everyTask);
-        everyTask.addView(section("분류별 전체 일정"));
-        for(String role:StudyCategories.ROLE_TITLES) {
-            boolean hasRole=false;
-            for(Models.StudyTask t:tasks) {
-                if(!role.equals(t.type))continue;
-                if(!hasRole){everyTask.addView(section(role));hasRole=true;}
-                everyTask.addView(taskCard(t));
+    private void appendPlannerManagement(LinearLayout c) {
+        c.addView(section("분류·복사·백업 관리"));
+        Button roles=secondary("5개 학습 분류의 역할 보기");
+        roles.setOnClickListener(v->new AlertDialog.Builder(this)
+                .setTitle("학습 분류 안내")
+                .setMessage(StudyCategories.guide())
+                .setPositiveButton("확인",null).show());
+        c.addView(roles);
+        Button copyToday=secondary("오늘 할꺼 · 과목별 리마인더 목록 복사");
+        copyToday.setOnClickListener(v->{
+            try {
+                List<Models.StudyTask> current=storage.tasks();
+                LocalDate today=LocalDate.now();
+                java.util.Map<Long,StudyTaskDetail> details=new java.util.HashMap<>();
+                for(Models.StudyTask item:StudyDailyChecklist.visible(current,today)) {
+                    StudyTaskDetail extra=detailStorage.get(item.id);
+                    if(extra!=null)details.put(item.id,extra);
+                }
+                String content=StudyDailyChecklist.format(current,today,details);
+                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)
+                        getSystemService(CLIPBOARD_SERVICE);
+                if(clipboard==null)throw new IllegalStateException("클립보드에 접근할 수 없습니다.");
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("StudyOne 오늘 할꺼",content));
+                toast("오늘·미완료 이월 과목별 체크리스트를 복사했습니다.");
+            } catch (RuntimeException error) {
+                toast(error.getMessage()==null?"일별 계획 복사 실패":error.getMessage());
             }
-        }
-        boolean hasLegacy=false;
-        for(Models.StudyTask t:tasks) {
-            if(StudyCategories.isRole(t.type))continue;
-            if(!hasLegacy){everyTask.addView(section("기존 일정 (이전 분류)"));hasLegacy=true;}
-            everyTask.addView(taskCard(t));
-        }
-        return s;
+        });
+        c.addView(copyToday);
+        c.addView(cardText("예상 시간·공부 단계·완료 기준은 기존 일정·동기화 JSON과 별도로 저장합니다. 다른 기기에는 전용 JSON 백업을 직접 가져와야 합니다.",12));
+        Button detailExport=secondary("학습 상세 정보 JSON 백업");
+        detailExport.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(android.content.Intent.EXTRA_TITLE,"StudyOne-task-details.json");
+            startActivityForResult(intent,DETAILS_EXPORT);
+        });
+        c.addView(detailExport);
+        Button detailImport=secondary("학습 상세 정보 JSON 가져오기");
+        detailImport.setOnClickListener(v->{
+            android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent,DETAILS_IMPORT);
+        });
+        c.addView(detailImport);
+        c.addView(cardText("일정·진도·학습 상세·오답의 JSON은 서로 다른 데이터입니다. "
+                +"기존 원본을 백업한 뒤 가져오세요. 별도 데이터는 자동 동기화되지 않습니다.",12));
+        Button toProgress=secondary("진도 현황으로 이동");
+        toProgress.setOnClickListener(v->openPlannerPage(3));c.addView(toProgress);
+        Button toWrong=secondary("오답 기록으로 이동");
+        toWrong.setOnClickListener(v->openPlannerPage(4));c.addView(toWrong);
     }
 
     /** A live, clickable five-role snapshot; carryover is presentation only. */
+    /** Today and carryover are views of existing records; no due date or category mutation. */
     private void appendTodayChecklist(LinearLayout root,List<Models.StudyTask> all,LocalDate today) {
         List<Models.StudyTask> selected=StudyDailyChecklist.visible(all,today);
         int complete=0;
         for(Models.StudyTask task:selected)if(task.completed)complete++;
-        root.addView(section("오늘 할꺼 · 삼성 리마인더 체크리스트"));
-        root.addView(cardText(today+" · 오늘과 전날 미완료 항목 · 완료 "+complete+"/"+selected.size()
-                +"개\n체크하면 기기 내 원래 일정의 완료 상태가 바뀝니다. 마감일·분류는 유지됩니다.",13));
+        root.addView(section("오늘 할꺼 · 5개 학습 분류"));
+        root.addView(cardText(today+" · 완료 "+complete+"/"+selected.size()
+                +"개 · 오늘 일정 및 이전 날짜의 미완료 항목",13));
+        if(selected.isEmpty()) {
+            root.addView(cardText("오늘 마감이거나 이월된 일정은 없습니다. 내일 숙제는 아래에서 미리 확인하세요.",13));
+            return;
+        }
         for(int i=0;i<StudyCategories.ROLE_TITLES.length;i++) {
-            root.addView(section((i+1)+". "+StudyCategories.ROLE_TITLES[i]));
             int count=0;
+            for(Models.StudyTask task:selected)
+                if(StudyDailyChecklist.groupIndex(task,today)==i)count++;
+            if(count==0)continue;
+            root.addView(section((i+1)+". "+StudyCategories.ROLE_TITLES[i]+" · "+count));
             for(Models.StudyTask task:selected) {
                 if(StudyDailyChecklist.groupIndex(task,today)!=i)continue;
-                if(task.dueDate.isBefore(today))
-                    root.addView(cardText("전날 못 다 · 원래 마감 "+task.dueDate,12));
                 root.addView(taskCard(task));
-                count++;
             }
-            if(count==0)root.addView(cardText("등록된 할 일이 없습니다.",12));
         }
         int legacy=0;
-        for(Models.StudyTask task:selected) {
-            if(StudyDailyChecklist.groupIndex(task,today)!=5)continue;
-            if(legacy++==0)root.addView(section("기존 분류 일정"));
-            root.addView(taskCard(task));
+        for(Models.StudyTask task:selected)
+            if(StudyDailyChecklist.groupIndex(task,today)==5)legacy++;
+        if(legacy>0) {
+            root.addView(section("기존 분류 일정 · "+legacy));
+            for(Models.StudyTask task:selected)
+                if(StudyDailyChecklist.groupIndex(task,today)==5)root.addView(taskCard(task));
         }
     }
 
