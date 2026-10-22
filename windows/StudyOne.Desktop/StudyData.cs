@@ -42,6 +42,8 @@ public sealed class StudyProgressItem
     public string Material { get; set; } = "";
     public string Unit { get; set; } = "";
     public string Status { get; set; } = "미완료";
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDone => Status == "완료";
     public bool InExamScope { get; set; } = true;
     public long Revision { get; set; } = 1;
     public long UpdatedAt { get; set; }
