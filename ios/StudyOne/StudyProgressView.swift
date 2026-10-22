@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// A local textbook/exam progress workspace. This view never modifies daily tasks.
@@ -27,6 +28,26 @@ struct StudyProgressView: View {
 
     private var examItems: [StudyProgressItem] { progress.items.filter(\.inExamScope) }
     private var finishedCount: Int { examItems.filter { $0.status == .done }.count }
+    private var startedCount: Int { examItems.filter { $0.status == .inProgress }.count }
+    private var todoCount: Int { examItems.filter { $0.status == .todo }.count }
+    private var unknownCount: Int { examItems.filter { $0.status == .unknown }.count }
+
+    /// Export for deliberate, on-device clipboard copying only. No network upload.
+    private var checklistText: String {
+        let sorted = progress.items.sorted {
+            if $0.subject != $1.subject { return $0.subject < $1.subject }
+            if $0.material != $1.material { return $0.material < $1.material }
+            return $0.unit < $1.unit
+        }
+        guard !sorted.isEmpty else {
+            return "StudyOne 교재·시험범위 진도 체크리스트\n등록된 진도가 없습니다."
+        }
+        return (["StudyOne 교재·시험범위 진도 체크리스트"] + sorted.map { item in
+            let mark = item.status == .done ? "☑" : "☐"
+            let scope = item.inExamScope ? "시험범위 포함" : "시험범위 제외"
+            return "\(mark) [\(item.subject)] \(item.material) · \(item.unit) — \(item.status.rawValue) (\(scope))"
+        }).joined(separator: "\n")
+    }
 
     private func error(_ message: String) {
         errorText = message
@@ -39,7 +60,7 @@ struct StudyProgressView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("시험범위 진도").font(.headline)
-                        Text("완료 \(finishedCount)/\(examItems.count)개 · 확인 필요 \(examItems.filter { $0.status == .unknown }.count)개")
+                        Text("완료 \(finishedCount)/\(examItems.count)개 · 진행 중 \(startedCount) · 미완료 \(todoCount) · 확인 필요 \(unknownCount)")
                             .font(.subheadline).foregroundStyle(.secondary)
                         ProgressView(value: Double(finishedCount), total: Double(max(1, examItems.count)))
                     }
@@ -69,8 +90,25 @@ struct StudyProgressView: View {
                     ForEach(visible) { item in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 8) {
+                                Button {
+                                    do {
+                                        try progress.update(
+                                            item, subject: item.subject, material: item.material,
+                                            unit: item.unit,
+                                            status: item.status == .done ? .todo : .done,
+                                            inExamScope: item.inExamScope
+                                        )
+                                    } catch { self.error(error.localizedDescription) }
+                                } label: {
+                                    Image(systemName: item.status == .done ? "checkmark.circle.fill" : "circle")
+                                        .font(.title2)
+                                        .foregroundStyle(item.status == .done ? Color.green : Color.secondary)
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel("[\(item.subject)] \(item.unit) 완료 체크")
+                                .accessibilityValue(item.status == .done ? "완료" : "미완료")
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.unit).font(.headline)
+                                    Text("[\(item.subject)] \(item.unit)").font(.headline)
                                     Text("\(item.subject) · \(item.material)")
                                         .font(.subheadline).foregroundStyle(.secondary)
                                 }
@@ -109,6 +147,16 @@ struct StudyProgressView: View {
                         }
                         .padding(.vertical, 3)
                     }
+                }
+                Section("삼성 리마인더용 진도 체크리스트") {
+                    Button {
+                        UIPasteboard.general.string = checklistText
+                        backupNotice = "과목명이 포함된 진도 체크리스트를 복사했습니다."
+                    } label: {
+                        Label("과목명 포함 진도 목록 복사", systemImage: "doc.on.doc")
+                    }
+                    Text("체크된 진도는 ☑, 나머지는 ☐로 표시합니다. 상태 및 시험범위 포함 여부도 복사됩니다.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("진도 데이터 백업·복원") {
                     Text("진도만 별도 JSON 파일로 내보낼 수 있습니다. 기존 학교·일정 백업과는 다른 파일입니다.")
