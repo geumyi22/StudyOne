@@ -86,9 +86,11 @@ public partial class MainWindow : Window
         int scoped = progress.Count(x => x.InExamScope);
         int done = progress.Count(x => x.InExamScope && x.Status == "완료");
         int unknown = progress.Count(x => x.InExamScope && x.Status == "확인 필요");
+        int started = progress.Count(x => x.InExamScope && x.Status == "진행 중");
+        int todo = progress.Count(x => x.InExamScope && x.Status == "미완료");
         ProgressSummary.Text = progressLocked
             ? "진도 데이터 읽기 오류 · 원본 보존 중 · 유효한 JSON을 다시 가져와 복구하세요."
-            : $"시험범위 진도 {scoped}개 · 완료 {done}개 · 확인 필요 {unknown}개 · 시험범위 제외 {progress.Count - scoped}개";
+            : $"시험범위 {scoped}개 · 완료 {done} · 진행 중 {started} · 미완료 {todo} · 확인 필요 {unknown} · 시험범위 제외 {progress.Count - scoped}";
         ExamProgressBar.Value = scoped == 0 ? 0 : 100.0 * done / scoped;
     }
 
@@ -139,6 +141,83 @@ public partial class MainWindow : Window
         ProgressUnitInput.Text = item.Unit;
         ProgressStatusCombo.SelectedItem = item.Status;
         ProgressScopeCheck.IsChecked = item.InExamScope;
+    }
+
+    private void CopyToday_Click(object sender, RoutedEventArgs e)
+    {
+        if (tasksLocked) { ShowError("일정 데이터를 읽지 못해 복사를 차단했습니다."); return; }
+        try
+        {
+            Clipboard.SetText(StudyChecklistText.Daily(
+                taskBackup.Tasks, DateOnly.FromDateTime(DateTime.Today)));
+            HeaderStatus.Text = "오늘 할꺼를 클립보드로 복사했습니다 · 로컬 작업";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void CopyProgress_Click(object sender, RoutedEventArgs e)
+    {
+        if (progressLocked) { ShowError("진도 데이터를 읽지 못해 복사를 차단했습니다."); return; }
+        try
+        {
+            Clipboard.SetText(StudyChecklistText.Progress(progressBackup.Items));
+            HeaderStatus.Text = "과목별 진도를 클립보드로 복사했습니다 · 로컬 작업";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void ToggleTaskRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: StudyTask original }) return;
+        if (tasksLocked) { ShowError("손상된 일정은 수정할 수 없습니다."); RefreshTasks(); return; }
+        try
+        {
+            TaskBackup next = CloneTasks();
+            int index = next.Tasks.FindIndex(t => t.Id == original.Id);
+            if (index < 0) throw new InvalidDataException("선택한 일정을 찾을 수 없습니다.");
+            StudyTask current = next.Tasks[index];
+            // Copy the value: never mutate the shared object before durable validation.
+            next.Tasks[index] = new StudyTask
+            {
+                Id = current.Id, Type = current.Type, Subject = current.Subject,
+                Title = current.Title, DueDate = current.DueDate,
+                Importance = current.Importance, Completed = !current.Completed
+            };
+            StudyData.SaveTasks(next);
+            taskBackup = next;
+            RefreshTasks();
+        }
+        catch (Exception error) { ShowError(error.Message); RefreshTasks(); }
+    }
+
+    private void ToggleProgressRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { DataContext: StudyProgressItem original }) return;
+        if (progressLocked) { ShowError("손상된 진도는 수정할 수 없습니다."); RefreshProgress(); return; }
+        try
+        {
+            int index = progressBackup.Items.FindIndex(x => x.Id == original.Id);
+            if (index < 0) throw new InvalidDataException("선택한 진도를 찾을 수 없습니다.");
+            StudyProgressItem current = progressBackup.Items[index];
+            if (current.Revision == long.MaxValue || current.UpdatedAt == long.MaxValue)
+                throw new InvalidDataException("진도 수정 기록 한도를 초과했습니다.");
+            var next = new ProgressBackup
+            {
+                Format = "studyone-progress", Schema = 1, Items = progressBackup.Items.ToList()
+            };
+            next.Items[index] = new StudyProgressItem
+            {
+                Id = current.Id, Subject = current.Subject, Material = current.Material,
+                Unit = current.Unit, InExamScope = current.InExamScope,
+                Status = current.Status == "완료" ? "미완료" : "완료",
+                Revision = current.Revision + 1,
+                UpdatedAt = Math.Max(StudyData.NowMillis(), current.UpdatedAt + 1)
+            };
+            StudyData.SaveProgress(next);
+            progressBackup = next;
+            RefreshProgress();
+        }
+        catch (Exception error) { ShowError(error.Message); RefreshProgress(); }
     }
 
     private void SaveTask_Click(object sender, RoutedEventArgs e)
