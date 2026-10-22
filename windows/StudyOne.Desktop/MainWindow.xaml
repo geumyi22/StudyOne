@@ -63,16 +63,29 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock x:Name="TasksSummary" Text="학교·학원 숙제와 날짜별 공부 계획"
-                               FontSize="14" Foreground="#53617B" Margin="0,8,0,0"/>
-                    <DataGrid x:Name="TasksGrid" Grid.Row="1" SelectionChanged="TasksGrid_SelectionChanged">
+                    <StackPanel>
+                        <TextBlock x:Name="TasksSummary" Text="학교·학원 숙제와 날짜별 공부 계획"
+                                   FontSize="14" Foreground="#53617B" Margin="0,8,0,5"/>
+                        <Button Content="오늘 할꺼 · 과목명 포함 목록 복사" Click="CopyToday_Click"
+                                HorizontalAlignment="Left" Margin="0,0,0,7"/>
+                    </StackPanel>
+                    <DataGrid x:Name="TasksGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                              SelectionChanged="TasksGrid_SelectionChanged">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="날짜" Binding="{Binding DueDate}" Width="110"/>
                             <DataGridTextColumn Header="분류" Binding="{Binding Type}" Width="175"/>
                             <DataGridTextColumn Header="과목" Binding="{Binding Subject}" Width="105"/>
                             <DataGridTextColumn Header="할 일" Binding="{Binding Title}" Width="*"/>
                             <DataGridTextColumn Header="중요도" Binding="{Binding Importance}" Width="74"/>
-                            <DataGridCheckBoxColumn Header="완료" Binding="{Binding Completed}" Width="65"/>
+                            <DataGridTemplateColumn Header="완료 체크" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Completed, Mode=OneWay}"
+                                                  Content="완료" Click="ToggleTaskRow_Click"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                     <Border Grid.Row="2" Background="#F5F7FC" CornerRadius="12" Padding="15">
@@ -124,13 +137,25 @@
                         <TextBlock x:Name="ProgressSummary" Text="시험범위 진도 관리"
                                    FontSize="14" Foreground="#53617B" Margin="0,8,0,8"/>
                         <ProgressBar x:Name="ExamProgressBar" Height="9" Minimum="0" Maximum="100" Value="0"/>
+                        <Button Content="과목명 포함 진도 체크리스트 복사" Click="CopyProgress_Click"
+                                HorizontalAlignment="Left" Margin="0,7,0,7"/>
                     </StackPanel>
-                    <DataGrid x:Name="ProgressGrid" Grid.Row="1" SelectionChanged="ProgressGrid_SelectionChanged">
+                    <DataGrid x:Name="ProgressGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                              SelectionChanged="ProgressGrid_SelectionChanged">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="과목" Binding="{Binding Subject}" Width="130"/>
                             <DataGridTextColumn Header="교재" Binding="{Binding Material}" Width="175"/>
                             <DataGridTextColumn Header="진도 · 문제 · 오답" Binding="{Binding Unit}" Width="*"/>
                             <DataGridTextColumn Header="진행 상태" Binding="{Binding Status}" Width="110"/>
+                            <DataGridTemplateColumn Header="완료 체크" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsDone, Mode=OneWay}"
+                                                  Content="완료" Click="ToggleProgressRow_Click"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridCheckBoxColumn Header="시험범위" Binding="{Binding InExamScope}" Width="85"/>
                         </DataGrid.Columns>
                     </DataGrid>
