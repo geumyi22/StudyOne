@@ -657,7 +657,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("앱 정보") {
-                    LabeledContent("버전", value: "3.1.0-canary.1 · iOS")
+                    LabeledContent("버전", value: "3.1.0-canary.2 · iOS")
                     LabeledContent("번들 ID", value: "com.studyone.ios")
                     Text("Android APK의 데이터는 자동으로 이전되지 않습니다. 기존 Android 앱에서 JSON 백업을 내보낸 뒤 iOS에서 복원할 수 있습니다.")
                         .font(.caption).foregroundStyle(.secondary)
