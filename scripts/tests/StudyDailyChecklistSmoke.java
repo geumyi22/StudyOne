@@ -17,7 +17,21 @@ public final class StudyDailyChecklistSmoke {
         Models.StudyTask future=task(4,StudyCategories.ROLE_TITLES[3],"역사","다음 주 숙제","2026-10-25",false);
         Models.StudyTask oldDone=task(5,StudyCategories.ROLE_TITLES[3],"국어","완료된 과거 숙제","2026-10-20",true);
         Models.StudyTask legacy=task(6,"과제","사회","단원평가","2026-10-22",false);
-        String result=StudyDailyChecklist.format(Arrays.asList(math,science,english,future,oldDone,legacy),today);
+        java.util.List<Models.StudyTask> all=Arrays.asList(math,science,english,future,oldDone,legacy);
+        java.util.List<Models.StudyTask> visible=StudyDailyChecklist.visible(all,today);
+        if(visible.size()!=4 || visible.contains(future) || visible.contains(oldDone))
+            throw new AssertionError("visible today and overdue filtering failed");
+        if(StudyDailyChecklist.groupIndex(math,today)!=0 ||
+                StudyDailyChecklist.groupIndex(science,today)!=3 ||
+                StudyDailyChecklist.groupIndex(english,today)!=1 ||
+                StudyDailyChecklist.groupIndex(legacy,today)!=5 ||
+                StudyDailyChecklist.groupIndex(future,today)!=-1 ||
+                StudyDailyChecklist.groupIndex(oldDone,today)!=-1)
+            throw new AssertionError("UI grouping differs from copy grouping");
+        if(!math.dueDate.equals(LocalDate.parse("2026-10-21")) ||
+                !math.type.equals(StudyCategories.ROLE_TITLES[3]))
+            throw new AssertionError("carryover changed original data");
+        String result=StudyDailyChecklist.format(all,today);
         if(!result.contains("☐ [수학] 내신 종이 숙제 (전날 못 다 · 원래 마감 2026-10-21)"))
             throw new AssertionError("carryover missing: "+result);
         if(!result.contains("☐ [과학] 오투 7-3-1") || !result.contains("☑ [영어] 5~6과 전체 복습"))
