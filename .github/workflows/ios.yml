@@ -13,6 +13,12 @@ on:
       - 'ios/**'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
+    inputs:
+      attach_to_matching_release:
+        description: "Explicitly attach the existing unsigned iOS artifact to a matching signed release (only when already published)"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -67,35 +73,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(python3 -c 'import json; print(json.load(open("version.json"))["versionName"])')"
+          VERSION="$(python3 -c 'import json; print(json.load(open("ios/version.json"))["versionName"])')"
           ( cd ios/dist && /usr/bin/shasum -a 256 -c "StudyOne-v${VERSION}-unsigned.ipa.sha256" )
           test -s "ios/dist/StudyOne-v${VERSION}-unsigned.ipa"
           unzip -t "ios/dist/StudyOne-v${VERSION}-unsigned.ipa" >/dev/null
 
       - name: Attach verified unsigned IPA to matching Android prerelease
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.attach_to_matching_release == true && github.ref == 'refs/heads/main' }}
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="$(python3 -c 'import json; print(json.load(open("version.json"))["versionName"])')"
+          VERSION="$(python3 -c 'import json; print(json.load(open("ios/version.json"))["versionName"])')"
           TAG="v${VERSION}"
-          for attempt in $(seq 1 60); do
-            HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-            if [[ "$HEAD" != "$GITHUB_SHA" ]]; then
-              echo "Main advanced: refuse to publish an obsolete IPA"
-              exit 1
-            fi
-            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')"
-              test "$TAG_SHA" = "$GITHUB_SHA" || { echo "Version tag does not match tested commit"; exit 1; }
-              gh release upload "$TAG" "ios/dist/StudyOne-v${VERSION}-unsigned.ipa" "ios/dist/StudyOne-v${VERSION}-unsigned.ipa.sha256" --repo "$GITHUB_REPOSITORY"
-              echo "Uploaded verified unsigned IPA to $TAG"
-              exit 0
-            fi
-            echo "Waiting for verified signed Android prerelease: $TAG (attempt $attempt)"
-            sleep 15
-          done
-          echo "Signed Android prerelease not available; IPA is retained as workflow artifact"
-          exit 1
+          HEAD="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$HEAD" != "$GITHUB_SHA" ]]; then
+            echo "Main advanced: refuse stale artifact attachment"
+            exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "No existing matching iOS version release: $TAG; no publication attempted"
+            exit 1
+          fi
+          TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')"
+          test "$TAG_SHA" = "$GITHUB_SHA" || { echo "Version tag does not match tested commit"; exit 1; }
+          gh release upload "$TAG" "ios/dist/StudyOne-v${VERSION}-unsigned.ipa" "ios/dist/StudyOne-v${VERSION}-unsigned.ipa.sha256" --repo "$GITHUB_REPOSITORY"
+          echo "Uploaded opt-in unsigned IPA to existing release $TAG"
+
