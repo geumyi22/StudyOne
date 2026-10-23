@@ -1,6 +1,7 @@
 """Proposed ChatGPT plans are drafts until a writable user device approves."""
 from __future__ import annotations
 import json
+import sqlite3
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import tempfile
@@ -107,6 +108,48 @@ class ProposalCoreTests(unittest.TestCase):
         with self.assertRaises(ApiProblem):
             self.proposals.approve(saved["id"])
         self.assertEqual(self.registry.store(self.a).snapshot()["records"], [])
+
+    def test_existing_account_proposal_table_migrates_without_deleting_drafts(self):
+        legacy_store = self.registry.store(self.b)
+        old_id = str(uuid4())
+        with legacy_store.connect() as db:
+            db.execute("""
+                CREATE TABLE study_plan_proposals (
+                    id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL UNIQUE,
+                    request_hash TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    mutations_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    cursor INTEGER
+                )
+            """)
+            db.execute("""INSERT INTO study_plan_proposals
+                (id,request_id,request_hash,title,mutations_json,
+                 created_at,expires_at,state,cursor)
+                VALUES(?,?,?,?,?,?,?,?,NULL)
+            """, (old_id, str(uuid4()), "synthetic-hash", "오래된 승인 대기함",
+                  "[]", int(time.time()), int(time.time())+3600, "pending"))
+        migrated = ProposalStore(legacy_store)
+        items = migrated.pending()["proposals"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], old_id)
+        with legacy_store.connect() as db:
+            names = {row["name"] for row in db.execute(
+                "PRAGMA table_info(study_plan_proposals)")}
+            base = db.execute(
+                "SELECT base_cursor FROM study_plan_proposals WHERE id=?",
+                (old_id,)).fetchone()[0]
+        self.assertIn("base_cursor", names)
+        self.assertIsNone(base)
+
+    def test_invalid_base_cursor_rejected_without_writing(self):
+        for invalid in (True, False, -1, "0", None, 3.5):
+            with self.subTest(invalid=invalid), self.assertRaises(ApiProblem):
+                self.proposals.create(dict(draft(), baseCursor=invalid))
+        self.assertEqual(self.registry.store(self.a).snapshot()["cursor"], 0)
 
     def test_pending_limit_fails_closed(self):
         for i in range(20):
