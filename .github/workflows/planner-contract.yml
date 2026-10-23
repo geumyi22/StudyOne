@@ -6,6 +6,8 @@ on:
       - 'app/src/main/java/com/studyone/app/StudyCategories.java'
       - 'app/src/main/java/com/studyone/app/StudyProgress*.java'
       - 'app/src/main/java/com/studyone/app/BackupIo.java'
+      - 'app/src/main/java/com/studyone/app/AppUpdates.java'
+      - 'app/src/main/java/com/studyone/app/StudyUpdateChannels.java'
       - 'ios/StudyOne/StudyCategories.swift'
       - 'ios/StudyOne/StudyProgress*.swift'
       - 'ios/StudyOne/StudyTaskDetail.swift'
@@ -97,6 +99,13 @@ jobs:
         run: python3 scripts/tests/check_developer_sync_ui.py
       - name: Audit main-only signed single-app Canary update policy
         run: python3 scripts/tests/check_signed_update_policy.py
+      - name: Compile and test Stable Beta Canary release-channel isolation
+        run: |
+          mkdir -p /tmp/studyone-update-channel-test
+          javac -encoding UTF-8 -d /tmp/studyone-update-channel-test \
+            app/src/main/java/com/studyone/app/StudyUpdateChannels.java \
+            scripts/tests/StudyUpdateChannelsSmoke.java
+          java -cp /tmp/studyone-update-channel-test StudyUpdateChannelsSmoke
       - name: Audit portable migration backup and recovery safeguards
         run: python3 scripts/tests/check_safe_migration.py
       - name: Audit Android iOS Windows Today Tomorrow All schedule parity
