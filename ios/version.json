@@ -1,0 +1,8 @@
+{
+  "versionCode": 30106,
+  "versionName": "3.1.0-canary.6",
+  "channel": "canary",
+  "platform": "ios",
+  "signed": false,
+  "notes": "iOS Canary.6 unsigned IPA / simulator preview; Android Canary.7 has different features and build code. Not App Store deployable."
+}
