@@ -7,6 +7,7 @@ ROOT=Path(__file__).resolve().parents[2]
 workflow=(ROOT/".github/workflows/signed-canary-preview.yml").read_text("utf-8")
 gradle=(ROOT/"app/build.gradle.kts").read_text("utf-8")
 updater=(ROOT/"app/src/main/java/com/studyone/app/AppUpdates.java").read_text("utf-8")
+channels=(ROOT/"app/src/main/java/com/studyone/app/StudyUpdateChannels.java").read_text("utf-8")
 debug_name=(ROOT/"app/src/debug/res/values/strings.xml").read_text("utf-8")
 doc=(ROOT/"docs/SIGNED-SINGLE-APP-CANARY.md").read_text("utf-8")
 
@@ -43,10 +44,14 @@ class SignedSingleAppPolicy(unittest.TestCase):
         self.assertIn("앱 외부",doc)
         self.assertIn("StudyOne 개발판",debug_name)
     def test_canary_updater_can_see_prereleases(self):
-        self.assertIn('installedVersionName.contains("canary")',updater)
-        self.assertIn("!prereleaseAllowed",updater)
+        self.assertIn("StudyUpdateChannels.permits(installedVersionName",updater)
+        self.assertIn('release.optString("tag_name")',updater)
+        self.assertIn('meta.optString("channel", "")',updater)
         self.assertIn("ctx.getPackageName().equals(candidate.packageName)",updater)
         self.assertIn("Signature[] current = signatures(installed)",updater)
+        self.assertIn('if (BETA.equals(installed)) return !CANARY.equals(candidate);',channels)
+        self.assertIn('if (CANARY.equals(installed)) return true;',channels)
+        self.assertIn('return STABLE.equals(candidate);',channels)
 
 if __name__=="__main__":
     unittest.main()
