@@ -51,7 +51,13 @@ class Parity(unittest.TestCase):
         # iOS/Windows are still .6 while Android has a separately gated .7
         # preview. Preserve explicit version divergence, never claim 3-platform ship.
         gradle=(R/"app/build.gradle.kts").read_text(encoding="utf-8")
+        ios_meta=(R/"ios/version.json").read_text(encoding="utf-8")
+        ios_builder=(R/"ios/scripts/build_unsigned_ipa.sh").read_text(encoding="utf-8")
         self.assertIn('CURRENT_PROJECT_VERSION: 30106',project)
+        self.assertIn('"versionCode": 30106',ios_meta)
+        self.assertIn('"versionName": "3.1.0-canary.6"',ios_meta)
+        self.assertIn('open("version.json")',ios_builder)
+        self.assertNotIn('open("../version.json")',ios_builder)
         self.assertIn('"versionCode": 30107',version)
         self.assertIn('"versionName": "3.1.0-canary.7"',version)
         self.assertIn('versionCode = 30107',gradle)
