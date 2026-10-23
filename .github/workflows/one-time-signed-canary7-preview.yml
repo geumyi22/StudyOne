@@ -28,14 +28,14 @@ jobs:
       - name: Checkout exact tested Canary source (never the triggering commit)
         uses: actions/checkout@v4
         with:
-          ref: 85e8a76306a0f781c9bf441dff9d7cd7142ae3ea
+          ref: 27bb6328ae4ce6633d50d50b88d4226afa270e6c
           persist-credentials: false
 
       - name: Verify source is exactly approved Canary and release app ID unchanged
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "85e8a76306a0f781c9bf441dff9d7cd7142ae3ea"
+          test "$(git rev-parse HEAD)" = "27bb6328ae4ce6633d50d50b88d4226afa270e6c"
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -148,7 +148,7 @@ jobs:
       - name: Checkout pinned source, for known app package metadata only
         uses: actions/checkout@v4
         with:
-          ref: 85e8a76306a0f781c9bf441dff9d7cd7142ae3ea
+          ref: 27bb6328ae4ce6633d50d50b88d4226afa270e6c
           persist-credentials: false
 
       - name: Download signed preview from this very run
