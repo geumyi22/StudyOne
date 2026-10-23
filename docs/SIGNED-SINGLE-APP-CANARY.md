@@ -38,3 +38,13 @@
 - 워크플로는 **main에 추가되기 전에는 실행할 수 없고**, 성공 결과 없이 "서명된 Canary APK 제공 완료"라고 주장하지 않습니다.
 - Signed APK 업그레이드 검증은 Android 패키지 설치와 데이터 보존 조건의 일부 검증일 뿐, 실기기 전체 DB 항목의 E2E 검사 완료를 뜻하지 않습니다.
 - 기존 v3.0.0-beta.2 서명·원본 및 공개 릴리즈는 변경하지 않습니다.
+
+## 업데이트 채널 격리 (2026-10-23)
+- **Stable 설치본**: 정식 Stable(일반 GitHub Release)만 업데이트 후보로 제시
+- **Beta 또는 RC 설치본**: Beta/RC 프리릴리즈 및 정식 Stable만 제시. **Canary는 제시하지 않음**
+- **Canary 설치본**: 더 높은 Android versionCode의 Canary/Beta/RC/Stable 중 유효한 후보 허용
+- GitHub Release의 `prerelease` 표시와 실제 `versionName` 채널이 일치해야 하며 태그는 `v`+버전명과 정확히 일치해야 함
+- 업데이트 APK는 기존대로 **SHA-256, 같은 패키지명, 동일 서명자, 더 높은 versionCode** 확인 후 Android 설치 UI로 전달
+- `scripts/tests/StudyUpdateChannelsSmoke.java`의 20개 시나리오가 CI에서 채널 격리를 검사. CI는 서명/원본 인증서를 노출하지 않음
+
+기존 통합 릴리즈 도구 `Unified-Release-Manager-v3.0.2-HOTFIX` 및 `START-GUI.cmd`·`SELF-TEST.cmd`는 교체하지 않고 재사용합니다. StudyOne의 기존 signed-release 자동 게시 워크플로와 중복 게시되는 수동 경로는 계속 차단해야 합니다. 보호 Secrets가 필요한 signed Canary는 승인된 main 스냅샷을 위한 별도 *아티팩트 전용* 수동 워크플로에서만 생성하도록 준비돼 있으며, 실제 APK가 만들어졌다는 뜻이 아닙니다.
