@@ -1,15 +1,14 @@
 {
-  "versionCode": 30106,
-  "versionName": "3.1.0-canary.6",
+  "versionCode": 30107,
+  "versionName": "3.1.0-canary.7",
   "channel": "canary",
   "minimumVersionCode": 20800,
   "mandatory": false,
   "notes": [
-    "iOS study tasks now have Today/Tomorrow/All segmented date views, tomorrow homework early-completion preview, and hidden empty categories, without duplicating or changing original records",
-    "Windows task grid supports Today (including overdue and tomorrow homework), Tomorrow, and All date filters with pure selector regression tests",
-    "Android four-section portable backup, 7-page planner, developer-only sync controls, strict import and recovery are retained from Canary.5",
-    "iOS unsigned IPA is a build artifact requiring separate signing; Windows self-contained EXE is an unsigned preview",
-    "No automatic cloud synchronization, production ChatGPT account linkage, or guaranteed in-place Android debug update; all remain gated",
-    "Android Canary debug package com.studyone.app.canary6 installs separately; previously installed app data is not auto-transferred"
+    "Android Canary.7 adds opt-in HTTPS-only ChatGPT plan approval inbox and manual, add-only import of approved tasks; no automatic ChatGPT integration or hosted account server.",
+    "StudyOne MCP backend Phase19 supports authenticated account change feed and cursor-bound AI plan approval; not connected to this ChatGPT conversation yet.",
+    "Official Android signed app identity remains com.studyone.app for in-place update from signed Canary.6 when built with the same production certificate.",
+    "Debug Android builds use separate com.studyone.app.canary7 package. Never use debug APK for in-place production upgrade.",
+    "Android Canary.7 is a candidate; iOS/Windows Canary.6 unsigned preview builds remain separate until platform parity and shipping validation."
   ]
 }
