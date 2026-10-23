@@ -176,6 +176,26 @@ jobs:
           sudo udevadm trigger --name-match=kvm || true
           test -e /dev/kvm
 
+      - name: Prepare one-process signed upgrade smoke script
+        shell: bash
+        run: |
+          cat > "$GITHUB_WORKSPACE/signed-upgrade-smoke.sh" <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          adb install baseline/StudyOne-v3.0.0-beta.2.apk
+          BEFORE=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+          test -n "$BEFORE"
+          echo "Installed official Beta, captured installation timestamp."
+          adb install -r signed-output/StudyOne-v3.1.0-canary.6-SIGNED-single-app-update.apk
+          AFTER=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+          test "$BEFORE" = "$AFTER" || { echo "In-place update failed"; exit 1; }
+          test "$(adb shell pm list packages com.studyone.app | grep -c '^package:com.studyone.app$')" = 1
+          adb shell am start -W -n com.studyone.app/com.studyone.app.MainActivity
+          adb shell pidof com.studyone.app | grep -Eq '^[0-9]+'
+          echo SIGNED_CANARY_ONE_APP_IN_PLACE_UPDATE_PASSED
+          BASH
+          chmod +x "$GITHUB_WORKSPACE/signed-upgrade-smoke.sh"
+
       - name: Install Beta then update in place and verify app identity retained
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -186,15 +206,4 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: |
-            set -eu  # android-emulator-runner executes script using /bin/sh, not Bash
-            adb install baseline/StudyOne-v3.0.0-beta.2.apk
-            BEFORE=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
-            test -n "$BEFORE"
-            adb install -r signed-output/StudyOne-v3.1.0-canary.6-SIGNED-single-app-update.apk
-            AFTER=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
-            test "$BEFORE" = "$AFTER" || { echo 'In-place update failed'; exit 1; }
-            test "$(adb shell pm list packages com.studyone.app | grep -c '^package:com.studyone.app$')" = 1
-            adb shell am start -W -n com.studyone.app/com.studyone.app.MainActivity
-            adb shell pidof com.studyone.app | grep -Eq '^[0-9]+'
-            echo SIGNED_CANARY_ONE_APP_IN_PLACE_UPDATE_PASSED
+          script: bash "$GITHUB_WORKSPACE/signed-upgrade-smoke.sh"
