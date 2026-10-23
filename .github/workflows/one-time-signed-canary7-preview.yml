@@ -1,0 +1,224 @@
+name: StudyOne approved Canary.7 signed one-app preview
+
+# This workflow does not create a GitHub Release or tag.
+# Run once when merging this narrowly scoped workflow into main with
+# the exact [single-app-preview] marker, or manually dispatch with BUILD.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-signed-canary7-preview.yml'
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Enter BUILD to create an artifact (not release) from pinned tested SHA"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sign-existing-app-update:
+    if: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[single-app-preview]')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'BUILD') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout exact tested Canary source (never the triggering commit)
+        uses: actions/checkout@v4
+        with:
+          ref: 27bb6328ae4ce6633d50d50b88d4226afa270e6c
+          persist-credentials: false
+
+      - name: Verify source is exactly approved Canary and release app ID unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "27bb6328ae4ce6633d50d50b88d4226afa270e6c"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('version.json').read_text())
+          g=Path('app/build.gradle.kts').read_text()
+          assert v['versionName']=='3.1.0-canary.7'
+          assert v['versionCode']==30107
+          assert v['channel']=='canary'
+          assert 'applicationId = "com.studyone.app"' in g
+          assert 'versionCode = 30107' in g
+          assert 'versionName = "3.1.0-canary.7"' in g
+          assert 'applicationIdSuffix = ".canary7"' in g
+          assert 'signingConfig = signingConfigs.getByName("studyoneProduction")' in g
+          print('Exact source and common release application ID verified')
+          PY
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android command line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install SDK 37
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/15859902/bin/android" --sdk="$ANDROID_HOME" sdk install --canary \
+            platforms/android-37 build-tools/37.0.0 platform-tools
+
+      - name: Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Load EXISTING production signing certificate from GitHub Secrets
+        shell: bash
+        env:
+          KEY_BASE64: ${{ secrets.STUDYONE_KEYSTORE_BASE64 }}
+          STUDYONE_STORE_PASSWORD: ${{ secrets.STUDYONE_STORE_PASSWORD }}
+          STUDYONE_KEY_PASSWORD: ${{ secrets.STUDYONE_KEY_PASSWORD }}
+          STUDYONE_KEY_ALIAS: ${{ secrets.STUDYONE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$KEY_BASE64" || { echo 'Missing keystore secret'; exit 1; }
+          test -n "$STUDYONE_STORE_PASSWORD" || { echo 'Missing signing password'; exit 1; }
+          test -n "$STUDYONE_KEY_PASSWORD" || { echo 'Missing key password'; exit 1; }
+          test -n "$STUDYONE_KEY_ALIAS" || { echo 'Missing alias'; exit 1; }
+          umask 077
+          printf '%s' "$KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/studyone-approved-production.jks"
+          echo "STUDYONE_KEYSTORE_FILE=$RUNNER_TEMP/studyone-approved-production.jks" >> "$GITHUB_ENV"
+          echo "STUDYONE_STORE_PASSWORD=$STUDYONE_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "STUDYONE_KEY_PASSWORD=$STUDYONE_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "STUDYONE_KEY_ALIAS=$STUDYONE_KEY_ALIAS" >> "$GITHUB_ENV"
+
+      - name: Build real production-signed single-app Canary APK
+        run: gradle :app:assembleRelease :app:lintRelease --no-daemon
+
+      - name: Verify checksum, pinned certificate, package and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          BT="$ANDROID_HOME/build-tools/37.0.0"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" >/dev/null
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/signature.txt"
+          grep -Eq 'Verified using v[23] scheme.*true' "$RUNNER_TEMP/signature.txt"
+          PIN=3f95e9aaecb32ae66c86dbd6795b0a49118f8dacf515f7fbe31795970b1681ed
+          grep -qi "$PIN" "$RUNNER_TEMP/signature.txt" || { echo 'Signer differs from official Beta, blocked'; exit 1; }
+          META=$("$BT/aapt2" dump badging "$APK" | head -n1)
+          grep -Fq "name='com.studyone.app'" <<<"$META"
+          grep -Fq "versionCode='30107'" <<<"$META"
+          grep -Fq "versionName='3.1.0-canary.7'" <<<"$META"
+          mkdir -p signed-output
+          cp "$APK" signed-output/StudyOne-v3.1.0-canary.7-SIGNED-single-app-update.apk
+          (cd signed-output && sha256sum *.apk > SHA256SUMS.txt)
+          cat > signed-output/READ-ME.txt <<'TXT'
+          This is a SIGNED CANARY PREVIEW, not a public Stable/Beta release.
+          Update existing com.studyone.app only; installed APK must have official matching signing key.
+          Does NOT update com.studyone.app.canary7 (debug app, different app ID/key).
+          Do not uninstall Canary.7 until all four study backup sections are exported to external storage
+          and restored/verified in the signed com.studyone.app.
+          TXT
+
+      - name: Upload signed artifact only; NEVER publish release/tag
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-SIGNED-one-app-Canary7-Preview
+          path: signed-output/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/studyone-approved-production.jks"
+
+  verify-beta-canary6-to-canary7-in-place:
+    needs: sign-existing-app-update
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pinned source, for known app package metadata only
+        uses: actions/checkout@v4
+        with:
+          ref: 27bb6328ae4ce6633d50d50b88d4226afa270e6c
+          persist-credentials: false
+
+      - name: Download signed preview from this very run
+        uses: actions/download-artifact@v4
+        with:
+          name: StudyOne-SIGNED-one-app-Canary7-Preview
+          path: signed-output
+
+      - name: Download existing public official Beta APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p baseline
+          gh release download v3.0.0-beta.2 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'StudyOne-v3.0.0-beta.2.apk' --dir baseline
+          test -s baseline/StudyOne-v3.0.0-beta.2.apk
+
+      - name: Download previously verified signed Canary6 APK from its CI artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh run download 39946119581 --repo "$GITHUB_REPOSITORY" \
+            --name 'StudyOne-SIGNED-one-app-Canary6-Preview' --dir baseline
+          test -s baseline/StudyOne-v3.1.0-canary.6-SIGNED-single-app-update.apk
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          test -e /dev/kvm
+
+      - name: Prepare one-process signed upgrade smoke script
+        shell: bash
+        run: |
+          cat > "$GITHUB_WORKSPACE/signed-upgrade-smoke.sh" <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          adb install baseline/StudyOne-v3.0.0-beta.2.apk
+          BEFORE=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+          test -n "$BEFORE"
+          echo "Installed official Beta, captured installation timestamp."
+          adb install -r baseline/StudyOne-v3.1.0-canary.6-SIGNED-single-app-update.apk
+          MID=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+          test "$BEFORE" = "$MID" || { echo 'Beta to Canary6 in-place upgrade failed'; exit 1; }
+          adb install -r signed-output/StudyOne-v3.1.0-canary.7-SIGNED-single-app-update.apk
+          AFTER=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
+          test "$BEFORE" = "$AFTER" || { echo "In-place update failed"; exit 1; }
+          test "$(adb shell pm list packages com.studyone.app | grep -c '^package:com.studyone.app$')" = 1
+          adb shell am start -W -n com.studyone.app/com.studyone.app.MainActivity
+          adb shell pidof com.studyone.app | grep -Eq '^[0-9]+'
+          adb shell dumpsys package com.studyone.app | grep -q 'versionCode=30107'
+          echo SIGNED_CANARY7_IN_PLACE_FROM_CANARY6_PASSED
+          BASH
+          chmod +x "$GITHUB_WORKSPACE/signed-upgrade-smoke.sh"
+
+      - name: Install Beta, Canary6 and Canary7 in place with retained app identity
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: bash "$GITHUB_WORKSPACE/signed-upgrade-smoke.sh"
