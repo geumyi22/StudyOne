@@ -822,7 +822,7 @@ public class MainActivity extends Activity {
 
 
         c.addView(section("계정 동기화 · ChatGPT 계획"));
-        c.addView(cardText("정식 계정 로그인과 자동 동기화는 아직 준비 중입니다. "
+        c.addView(cardText("정식 계정 동기화는 아직 준비 중입니다. 현재 학습 기록은 이 기기에 저장되며 "
                 +"개인 HTTPS StudyOne 서버와 쓰기 권한 장치 토큰을 발급받은 경우에만 "
                 +"AI 공부 계획 승인함을 수동으로 열 수 있습니다. 이 ChatGPT 대화와 "
                 +"현재 앱은 아직 자동으로 연결되지 않습니다.",12));
