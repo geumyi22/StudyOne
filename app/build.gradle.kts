@@ -12,8 +12,8 @@ android {
         applicationId = "com.studyone.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 30001
-        versionName = "3.0.0-beta.2"
+        versionCode = 30107
+        versionName = "3.1.0-canary.7"
     }
 
     if (!studyOneKeyFile.isNullOrBlank()) {
@@ -32,6 +32,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Canary debug builds are isolated from the installed signed Beta/Stable app.
+            applicationIdSuffix = ".canary7"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             if (!studyOneKeyFile.isNullOrBlank()) {

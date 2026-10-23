@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -7,6 +8,8 @@ struct ContentView: View {
             DashboardView().tabItem { Label("홈", systemImage: "house") }
             SchoolView().tabItem { Label("시간표·급식", systemImage: "calendar") }
             TasksView().tabItem { Label("일정", systemImage: "checklist") }
+            StudyProgressView().tabItem { Label("진도", systemImage: "chart.bar.xaxis") }
+            StudyWrongAnswersView().tabItem { Label("오답", systemImage: "checkmark.seal") }
             AiView().tabItem { Label("AI", systemImage: "sparkles") }
             SettingsView().tabItem { Label("설정", systemImage: "gearshape") }
         }.tint(.indigo)
@@ -77,40 +80,237 @@ struct TasksView: View {
     @State private var showingEditor = false
     @State private var editing: StudyTask?
     @State private var filter = "전체"
-    private let filters = ["전체", "과제", "수행평가", "시험", "준비물"]
-    private var filtered: [StudyTask] {
-        store.tasks.filter { filter == "전체" || $0.type == filter }
-            .sorted { $0.dueDate == $1.dueDate ? $0.importance > $1.importance : $0.dueDate < $1.dueDate }
+    @State private var todayOnly = true
+    @State private var scheduleMode = "오늘"
+    private let scheduleModes = ["오늘", "내일", "전체"]
+    @State private var copiedNotice = false
+    @StateObject private var detailStore = StudyTaskDetailStore()
+    @State private var editingDetail: StudyTask?
+    @State private var detailExportURL: URL?
+    @State private var detailImportPicker = false
+    @State private var pendingDetailImport: Data?
+    @State private var detailOriginal: Data?
+    @State private var detailImportCount = 0
+    @State private var detailNotice = ""
+    @State private var detailError = ""
+    @State private var showDetailError = false
+    @State private var confirmDetailImport = false
+    private let filters = StudyCategories.filters
+
+    private var today: String { Date().studyString() }
+    private var tomorrow: String {
+        Calendar.current.date(byAdding: .day, value: 1, to: Date())?.studyString() ?? today
     }
+    private var tomorrowHomework: [StudyTask] {
+        store.tasks.filter { item in
+            item.dueDate == tomorrow &&
+            (item.type == "숙제 항목" || item.type == "과제" || item.title.contains("숙제"))
+        }.sorted { $0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance }
+    }
+    private var filtered: [StudyTask] {
+        store.tasks.filter { item in
+            (filter == "전체" || item.type == filter) &&
+            (scheduleMode == "전체" ||
+             (scheduleMode == "내일" && item.dueDate == tomorrow) ||
+             (scheduleMode == "오늘" &&
+                (!todayOnly || item.dueDate == today ||
+                 (item.dueDate < today && !item.completed))))
+        }.sorted {
+            $0.dueDate == $1.dueDate
+                ? ($0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance)
+                : $0.dueDate < $1.dueDate
+        }
+    }
+
+    private func byRole(_ role: String) -> [StudyTask] {
+        filtered.filter { item in
+            let carried = scheduleMode == "오늘" && todayOnly && item.dueDate < today && !item.completed
+            if role == StudyCategories.roles[0].title { return carried || item.type == role }
+            return !carried && item.type == role
+        }
+    }
+
+    private var legacy: [StudyTask] {
+        filtered.filter { item in
+            !(scheduleMode == "오늘" && todayOnly && item.dueDate < today && !item.completed)
+                && !StudyCategories.roles.contains(where: { $0.title == item.type })
+        }
+    }
+
+    /// Explicit clipboard export: today plus overdue incomplete items, regardless of UI filter.
+    private var reminderText: String {
+        let selected = store.tasks.filter {
+            $0.dueDate == today || ($0.dueDate < today && !$0.completed)
+        }.sorted {
+            $0.dueDate == $1.dueDate
+                ? ($0.importance == $1.importance ? $0.id < $1.id : $0.importance > $1.importance)
+                : $0.dueDate < $1.dueDate
+        }
+        func line(_ task: StudyTask, carried: Bool) -> String {
+            let subject = task.subject.trimmingCharacters(in: .whitespacesAndNewlines)
+            let marker = task.completed ? "☑" : "☐"
+            let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let header = "\(marker) [\(subject.isEmpty ? "기타" : subject)] \(title)" +
+                (carried ? " (전날 못 다 · 원래 마감 \(task.dueDate))" : "")
+            guard let extra = detailStore.detail(for: task.id) else { return header }
+            return header + "\n" + extra.displayText.split(separator: "\n")
+                .map { "    " + String($0) }.joined(separator: "\n")
+        }
+        var lines = ["StudyOne 할꺼 · \(today)"]
+        for (index, role) in StudyCategories.roles.enumerated() {
+            lines.append("")
+            lines.append("\(index + 1). \(role.title)")
+            let subset = selected.filter { task in
+                let carried = task.dueDate < today && !task.completed
+                return index == 0 ? carried || task.type == role.title
+                    : !carried && task.type == role.title
+            }
+            if subset.isEmpty { lines.append("(없음)") }
+            for task in subset {
+                lines.append(line(task, carried: task.dueDate < today && !task.completed))
+            }
+        }
+        let prior = selected.filter { task in
+            task.dueDate >= today &&
+            !StudyCategories.roles.contains(where: { role in role.title == task.type })
+        }
+        if !prior.isEmpty {
+            lines.append("")
+            lines.append("기존 분류 일정")
+            for task in prior { lines.append(line(task, carried: false)) }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    @ViewBuilder
+    private func taskRow(_ item: StudyTask) -> some View {
+        HStack(spacing: 12) {
+            Button { store.toggle(item) } label: {
+                Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("[\(item.subject)] \(item.title) 완료 체크")
+            VStack(alignment: .leading, spacing: 5) {
+                Text("[\(item.subject.isEmpty ? "기타" : item.subject)] \(item.title)")
+                    .fontWeight(.semibold).strikethrough(item.completed)
+                Text("\(item.dueDate) · 중요도 \(item.importance)" +
+                     ((scheduleMode == "오늘" && todayOnly && item.dueDate < today && !item.completed) ? " · 전날 못 다" : ""))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let guidance = detailStore.detail(for: item.id) {
+                    Text(guidance.displayText)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                }
+            }
+            Spacer(minLength: 0)
+            Button {
+                editingDetail = item
+            } label: { Image(systemName: "list.bullet.rectangle").foregroundStyle(.secondary) }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("[\(item.subject)] \(item.title) 학습 상세 편집")
+                .disabled(detailStore.loadError != nil)
+            Button {
+                editing = item
+                showingEditor = true
+            } label: { Image(systemName: "pencil").foregroundStyle(.secondary) }
+                .buttonStyle(.borderless)
+        }.padding(.vertical, 4)
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 Section {
+                    Picker("일정 날짜", selection: $scheduleMode) {
+                        ForEach(scheduleModes, id: \.self) { Text($0).tag($0) }
+                    }.pickerStyle(.segmented)
+                    Text("오늘은 이전 날짜의 미완료 항목을 포함하며, 내일 숙제는 아래 미리 하기에서도 체크할 수 있습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Picker("구분", selection: $filter) {
                         ForEach(filters, id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.menu)
-                }
-                Section("일정 \(filtered.count)개") {
-                    if filtered.isEmpty { Text("등록된 일정이 없습니다.").foregroundStyle(.secondary) }
-                    ForEach(filtered) { item in
-                        HStack(spacing: 12) {
-                            Button { store.toggle(item) } label: {
-                                Image(systemName: item.completed ? "checkmark.circle.fill" : "circle").font(.title2)
-                            }.buttonStyle(.borderless)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(item.title).fontWeight(.semibold).strikethrough(item.completed)
-                                Text("\(item.type) · \(item.subject) · \(item.dueDate) · 중요도 \(item.importance)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 0)
-                            Button {
-                                editing = item
-                                showingEditor = true
-                            } label: { Image(systemName: "pencil").foregroundStyle(.secondary) }
-                                .buttonStyle(.borderless)
-                        }.padding(.vertical, 4)
+                    if scheduleMode == "오늘" {
+                        Toggle("오늘 할꺼 + 밀린 일정만 표시", isOn: $todayOnly)
                     }
-                    .onDelete { store.delete(at: $0, from: filtered) }
+                    Button {
+                        UIPasteboard.general.string = reminderText
+                        copiedNotice = true
+                    } label: {
+                        Label("과목명 포함 삼성 리마인더 목록 복사", systemImage: "doc.on.doc")
+                    }
+                    if copiedNotice {
+                        Text("오늘과 미완료 이월 항목을 5개 분류로 복사했습니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("현재 표시 \(filtered.filter(\.completed).count)/\(filtered.count)개 완료")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if scheduleMode == "오늘" {
+                    Section("내일 숙제 · 미리 하기") {
+                        Text("내일 마감일은 유지하면서 오늘부터 완료 체크할 수 있습니다. 모든 화면은 같은 일정의 완료 상태를 공유합니다.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if tomorrowHomework.isEmpty {
+                            Text("내일 마감인 숙제가 없습니다.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(tomorrowHomework) { item in taskRow(item) }
+                                .onDelete { store.delete(at: $0, from: tomorrowHomework) }
+                        }
+                    }
+                }
+                Section("학습 상세 · 별도 로컬 저장") {
+                    Text("예상 시간·공부 단계·완료 기준은 기존 일정/진도 JSON 및 서버 동기화와 별도로 저장합니다. 다른 기기에는 전용 JSON을 직접 가져와야 합니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let issue = detailStore.loadError {
+                        Text(issue).foregroundStyle(.red).font(.caption)
+                    }
+                    Button("학습 상세 JSON 백업 파일 준비") {
+                        do {
+                            detailExportURL = try detailStore.exportBackup()
+                            detailNotice = "학습 상세 백업 파일을 준비했습니다."
+                        } catch {
+                            detailError = error.localizedDescription
+                            showDetailError = true
+                        }
+                    }.disabled(detailStore.loadError != nil)
+                    if let detailExportURL {
+                        ShareLink(item: detailExportURL) {
+                            Label("학습 상세 JSON 공유·저장", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Button("학습 상세 JSON 백업 불러오기") { detailImportPicker = true }
+                        .disabled(detailStore.loadError != nil)
+                    if !detailNotice.isEmpty {
+                        Text(detailNotice).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    DisclosureGroup("5개 학습 분류 역할") {
+                        ForEach(StudyCategories.roles, id: \.title) { role in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(role.title).font(.subheadline.bold())
+                                Text(role.description).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+                if filtered.isEmpty {
+                    Section("일정") { Text("해당 날짜의 일정이 없습니다.").foregroundStyle(.secondary) }
+                }
+                ForEach(StudyCategories.roles, id: \.title) { role in
+                    if !byRole(role.title).isEmpty {
+                        Section(role.title) {
+                            ForEach(byRole(role.title)) { item in taskRow(item) }
+                                .onDelete { store.delete(at: $0, from: byRole(role.title)) }
+                        }
+                    }
+                }
+                if !legacy.isEmpty {
+                    Section("기존 분류 일정") {
+                        ForEach(legacy) { item in taskRow(item) }
+                            .onDelete { store.delete(at: $0, from: legacy) }
+                    }
                 }
             }
             .navigationTitle("학습 일정")
@@ -127,6 +327,56 @@ struct TasksView: View {
                     } else { store.add(newTask) }
                 }
             }
+            .sheet(item: $editingDetail) { item in
+                StudyTaskDetailEditor(task: item, existing: detailStore.detail(for: item.id)) {
+                    minutes, steps, criteria in
+                    try detailStore.save(taskId: item.id, minutes: minutes,
+                                         steps: steps, criteria: criteria)
+                }
+            }
+            .fileImporter(isPresented: $detailImportPicker, allowedContentTypes: [.json]) { result in
+                do {
+                    let file = try result.get()
+                    guard file.startAccessingSecurityScopedResource() else {
+                        throw StudyError.message("학습 상세 백업 파일 접근 권한이 없습니다.")
+                    }
+                    defer { file.stopAccessingSecurityScopedResource() }
+                    let data = try Data(contentsOf: file)
+                    let checked = try StudyTaskDetailStore.parseBackup(data)
+                    detailOriginal = try detailStore.currentData()
+                    pendingDetailImport = data
+                    detailImportCount = checked.count
+                    confirmDetailImport = true
+                } catch {
+                    detailError = error.localizedDescription
+                    showDetailError = true
+                }
+            }
+            .confirmationDialog("학습 상세 백업으로 교체할까요?",
+                                isPresented: $confirmDetailImport, titleVisibility: .visible) {
+                if let data = pendingDetailImport {
+                    Button("상세 정보 \(detailImportCount)개로 교체", role: .destructive) {
+                        do {
+                            try detailStore.importBackup(data, expectedOriginal: detailOriginal)
+                            detailNotice = "상세 정보 백업을 복원했습니다."
+                        } catch {
+                            detailError = error.localizedDescription
+                            showDetailError = true
+                        }
+                        pendingDetailImport = nil
+                        detailOriginal = nil
+                    }
+                }
+                Button("취소", role: .cancel) {
+                    pendingDetailImport = nil
+                    detailOriginal = nil
+                }
+            } message: {
+                Text("현재 이 iPhone의 학습 상세 정보만 교체합니다. 기존 원본을 앱 내부에 먼저 백업합니다. 학교·일정·진도·계정·API 키는 변경하지 않습니다.")
+            }
+            .alert("학습 상세 오류", isPresented: $showDetailError) {
+                Button("확인", role: .cancel) {}
+            } message: { Text(detailError) }
         }
     }
 }
@@ -134,7 +384,7 @@ struct TaskEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: StudyTask?
     let onSave: (StudyTask) -> Void
-    @State private var type = "과제"
+    @State private var type = "숙제 항목"
     @State private var subject = ""
     @State private var title = ""
     @State private var due = Date()
@@ -143,7 +393,7 @@ struct TaskEditor: View {
         NavigationStack {
             Form {
                 Picker("일정 종류", selection: $type) {
-                    ForEach(["과제", "수행평가", "시험", "준비물"], id: \.self) { Text($0) }
+                    ForEach(StudyCategories.taskTypes(preserving: existing?.type), id: \.self) { Text($0) }
                 }
                 TextField("과목", text: $subject)
                 TextField("할 일", text: $title, axis: .vertical).lineLimit(2...4)
@@ -429,8 +679,18 @@ struct SettingsView: View {
                     }
                     Button("JSON 백업 불러오기") { importPicker = true }
                 }
+                Section("보안 HTTPS 계정 동기화 실험 · Canary") {
+                    NavigationLink {
+                        SyncExperimentView()
+                    } label: {
+                        Label("HTTPS 서버 수동 연결·새 항목 전송",
+                              systemImage: "lock.shield")
+                    }
+                    Text("사용자가 HTTPS 주소·기기 토큰을 입력해야 연결됩니다. 기존 기록 덮어쓰기·자동 동기화는 지원하지 않습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("앱 정보") {
-                    LabeledContent("버전", value: "3.0.0-beta.1 · iOS")
+                    LabeledContent("버전", value: "3.1.0-canary.2 · iOS")
                     LabeledContent("번들 ID", value: "com.studyone.ios")
                     Text("Android APK의 데이터는 자동으로 이전되지 않습니다. 기존 Android 앱에서 JSON 백업을 내보낸 뒤 iOS에서 복원할 수 있습니다.")
                         .font(.caption).foregroundStyle(.secondary)

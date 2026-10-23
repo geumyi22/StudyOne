@@ -121,6 +121,70 @@ final class StudyOneStore: ObservableObject {
         }
         restoreCache()
     }
+    /// Fail closed for explicit sync. Legacy initial load tolerates a broken
+    /// UserDefaults blob; it must never silently upload a truncated task list.
+    func checkedTasksForSync() throws -> [StudyTask] {
+        guard let bytes = UserDefaults.standard.data(forKey: settingsKey) else {
+            guard tasks.isEmpty else {
+                throw StudyError.message("일정이 디스크에 저장되지 않았습니다. 전송을 중단합니다.")
+            }
+            return []
+        }
+        guard let saved = try? JSONDecoder().decode(Saved.self, from: bytes),
+              saved.tasks == tasks, saved.tasks.count <= 5000 else {
+            throw StudyError.message("저장된 일정과 현재 화면의 진도가 일치하지 않습니다. 전송하지 않습니다.")
+        }
+        var ids = Set<Int64>()
+        for task in saved.tasks {
+            guard task.id > 0,
+                  ids.insert(task.id).inserted,
+                  !task.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  task.type.count <= 100,
+                  task.subject.count <= 60,
+                  !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  task.title.count <= 500,
+                  (1...3).contains(task.importance) else {
+                throw StudyError.message("일정 ID 또는 필드가 잘못되어 전송을 차단했습니다.")
+            }
+        }
+        return saved.tasks
+    }
+
+    /// Writes new server IDs only, after backing up the exact original settings.
+    /// Existing school, NEIS keys, tasks and study completion states are retained.
+    func mergeNewTasksFromServer(_ added: [StudyTask],
+                                 original expected: [StudyTask]) throws -> URL {
+        let verified = try checkedTasksForSync()
+        guard verified == expected else {
+            throw StudyError.message("승인 도중 iPhone 일정이 변경되어 가져오기를 중단했습니다.")
+        }
+        guard !added.isEmpty, verified.count + added.count <= 5000 else {
+            throw StudyError.message("가져올 일정이 없거나 저장 제한을 초과합니다.")
+        }
+        var ids = Set(verified.map(\.id))
+        for task in added {
+            guard task.id > 0, ids.insert(task.id).inserted,
+                  !task.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  task.type.count <= 100, task.subject.count <= 60,
+                  !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  task.title.count <= 500, (1...3).contains(task.importance) else {
+                throw StudyError.message("잘못되거나 기존 항목과 ID가 겹치는 일정이 있습니다.")
+            }
+        }
+        let merged = (verified + added).sorted { $0.dueDate < $1.dueDate }
+        let document = Saved(school: school, grade: grade,
+                             className: className, tasks: merged)
+        let blob = try JSONEncoder().encode(document)
+        let raw = UserDefaults.standard.data(forKey: settingsKey)
+        let backup = try StudySyncBackup.save(raw, kind: "tasks")
+        UserDefaults.standard.set(blob, forKey: settingsKey)
+        guard UserDefaults.standard.data(forKey: settingsKey) == blob else {
+            throw StudyError.message("동기화 일정 저장에 실패했습니다. 이전 백업은 보존됩니다.")
+        }
+        tasks = merged
+        return backup
+    }
+
     func persist() {
         let saved = Saved(school: school, grade: grade, className: className, tasks: tasks)
         if let bytes = try? JSONEncoder().encode(saved) {

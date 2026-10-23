@@ -1,0 +1,50 @@
+# StudyOne — 한 앱에 Canary/Beta/Stable 업데이트 적용하기
+
+## 왜 아이콘이 여러 개 생겼나요?
+지금까지의 Android Canary 디버그 APK들은 `com.studyone.app.canary3`부터 `com.studyone.app.canary6`처럼 버전마다 **서로 다른 Android applicationId**를 사용했습니다. GitHub Actions 실행 때마다 별도로 생성된 디버그 서명 인증서도 업데이트 호환성을 보장하지 않습니다. 이는 정상 앱과 나란히 설치해 실험 데이터를 분리하기 위한 개발 정책이었으나, 실사용자에게는 앱 중복과 데이터 이전 부담을 만들었습니다.
+
+## 앞으로의 단일 앱 정책
+- 일반 사용자에게 제공할 **서명된 빌드**는 릴리즈 채널과 관계없이 `com.studyone.app`을 사용하며, 기존 공식 Beta와 동일한 **서명 인증서**를 사용합니다.
+- 앱 코드에서 모든 채널의 `versionCode`는 **단조 증가**해야 합니다. 예: 기존 Beta 30001 → Canary 30106 → 후속 Beta/Stable은 30107 이상. Android에서 낮은 코드로 되돌리는 것은 일반 업데이트로 지원되지 않습니다.
+- 릴리즈 채널 표기(`canary`, `beta`, `stable`)는 설치 앱 ID가 아니라 **버전명·업데이터 메타데이터·릴리즈 정책**으로 분리합니다.
+- 동일 서명·동일 앱 ID면 기존 `com.studyone.app`에 **덮어쓰기 업데이트**하며 Android가 앱 내부 데이터를 보존합니다. 기존 설치본에서 실제 업데이트와 데이터 유지 테스트를 통과한 후에만 배포합니다.
+- 디버그 개발판은 별도 패키지명/앱 이름 `StudyOne 개발판`으로 명확히 표시합니다. **실사용 Canary 배포에 디버그 APK를 사용하지 않습니다.**
+- 앱 자체 자동 업데이트는 안드로이드 설치 확인 화면을 거칩니다. 사용자 승인 없는 자동·무음 APK 설치는 지원하지 않습니다.
+
+## 새 서명된 Canary 빌드 경로
+`.github/workflows/signed-canary-preview.yml`은 수동 실행만 허용하는 보호된 워크플로입니다.
+1. 새 Canary 소스와 테스트가 통합 PR에서 승인되고, **main에 안전하게 반영된 뒤에만** 실행합니다.
+2. `Actions → StudyOne Signed Single-App Canary Preview → Run workflow`에서 main을 선택하고 `SIGNED_PREVIEW`를 입력합니다.
+3. 기존 GitHub Actions 비공개 서명 Secrets가 실제 존재해야 합니다. 동일한 기존 서명 인증서 SHA-256이 아니면 실패합니다. Secrets는 APK/문서/채팅에 노출하면 안 됩니다.
+4. APK 패키지·versionCode·versionName·ZIP·서명·기존 Beta 인증서 호환성을 검사합니다.
+5. 공개 v3.0.0-beta.2 APK → 새 후보 APK를 **에뮬레이터에 실제 덮어쓰기 설치**해서 앱 설치 시각이 유지되는지 검사하고 정상 실행 확인합니다.
+6. 성공해도 자동 출시하지 않고 GitHub Actions에 14일짜리 **개발 검증 artifact**만 저장합니다. Release/태그/기존 Stable/Beta를 수정하지 않습니다.
+7. 실제 사용자 기기의 앱 데이터 보존과 인앱 업데이트 기능은 별도 실기기 검증 후 Beta/Stable 출시 여부를 결정합니다.
+
+## 이미 `com.studyone.app.canary6`을 사용 중인 경우
+**중요: 새 고정 서명 빌드는 `com.studyone.app.canary6`을 직접 업데이트하지 못합니다.** 앱 ID가 다르고 임시 CI 디버그 서명을 재사용할 수 없기 때문입니다.
+
+따라서 첫 1회:
+1. 현재 Canary.6을 **삭제하지 말고**, **플래너 → 관리 → 4종 학습 데이터 통합 백업 저장**으로 사용자가 직접 접근할 수 있는 다운로드/드라이브 위치에 파일을 저장합니다.
+2. 해당 JSON 파일을 파일 앱에서 확인하고, 가능하면 별도 위치로 복사해 보관합니다.
+3. 안전하게 서명·검증된 `com.studyone.app` 후보가 준비되면 **별도 설치 후** 기존 개별 백업 또는 지원되는 통합 파일을 가져옵니다. 작업이 성공했는지 일정·진도·오답을 확인합니다.
+4. **반드시 새 앱에서 복원을 확인한 후에만** 기존 `.canary6` 개발판을 삭제하세요.
+5. 이후에는 `com.studyone.app` 고정 ID와 동일 인증서로 설치해 한 앱만 업데이트합니다.
+
+앱 삭제 시 앱 내부 데이터 및 앱 내부 복구용 원본 파일도 사라질 수 있습니다. 백업 파일이 앱 외부에 실제 저장됐는지 먼저 확인하세요.
+
+## 미검증·차단 사항
+- 본 변경은 서명된 단일앱 **빌드·검증 워크플로를 준비**하는 단계입니다. GitHub 보호 Secrets 유무는 코드만 보고 확정할 수 없습니다.
+- 워크플로는 **main에 추가되기 전에는 실행할 수 없고**, 성공 결과 없이 "서명된 Canary APK 제공 완료"라고 주장하지 않습니다.
+- Signed APK 업그레이드 검증은 Android 패키지 설치와 데이터 보존 조건의 일부 검증일 뿐, 실기기 전체 DB 항목의 E2E 검사 완료를 뜻하지 않습니다.
+- 기존 v3.0.0-beta.2 서명·원본 및 공개 릴리즈는 변경하지 않습니다.
+
+## 업데이트 채널 격리 (2026-10-23)
+- **Stable 설치본**: 정식 Stable(일반 GitHub Release)만 업데이트 후보로 제시
+- **Beta 또는 RC 설치본**: Beta/RC 프리릴리즈 및 정식 Stable만 제시. **Canary는 제시하지 않음**
+- **Canary 설치본**: 더 높은 Android versionCode의 Canary/Beta/RC/Stable 중 유효한 후보 허용
+- GitHub Release의 `prerelease` 표시와 실제 `versionName` 채널이 일치해야 하며 태그는 `v`+버전명과 정확히 일치해야 함
+- 업데이트 APK는 기존대로 **SHA-256, 같은 패키지명, 동일 서명자, 더 높은 versionCode** 확인 후 Android 설치 UI로 전달
+- `scripts/tests/StudyUpdateChannelsSmoke.java`의 20개 시나리오가 CI에서 채널 격리를 검사. CI는 서명/원본 인증서를 노출하지 않음
+
+기존 통합 릴리즈 도구 `Unified-Release-Manager-v3.0.2-HOTFIX` 및 `START-GUI.cmd`·`SELF-TEST.cmd`는 교체하지 않고 재사용합니다. StudyOne의 기존 signed-release 자동 게시 워크플로와 중복 게시되는 수동 경로는 계속 차단해야 합니다. 보호 Secrets가 필요한 signed Canary는 승인된 main 스냅샷을 위한 별도 *아티팩트 전용* 수동 워크플로에서만 생성하도록 준비돼 있으며, 실제 APK가 만들어졌다는 뜻이 아닙니다.

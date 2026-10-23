@@ -1,0 +1,123 @@
+name: StudyOne Planner Contract
+
+on:
+  pull_request:
+    paths:
+      - 'app/src/main/java/com/studyone/app/StudyCategories.java'
+      - 'app/src/main/java/com/studyone/app/StudyProgress*.java'
+      - 'app/src/main/java/com/studyone/app/BackupIo.java'
+      - 'app/src/main/java/com/studyone/app/AppUpdates.java'
+      - 'app/src/main/java/com/studyone/app/StudyUpdateChannels.java'
+      - 'ios/StudyOne/StudyCategories.swift'
+      - 'ios/StudyOne/StudyProgress*.swift'
+      - 'ios/StudyOne/StudyTaskDetail.swift'
+      - 'ios/StudyOne/ContentView.swift'
+      - 'windows/StudyOne.Desktop/MainWindow.xaml'
+      - 'windows/StudyOne.Desktop/MainWindow.xaml.cs'
+      - 'windows/StudyOne.Desktop/StudyTaskViews.cs'
+      - 'ios/StudyOne/ModelsAndStore.swift'
+      - 'scripts/tests/**'
+      - '.github/workflows/planner-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/src/main/java/com/studyone/app/StudyCategories.java'
+      - 'ios/StudyOne/StudyCategories.swift'
+      - 'scripts/tests/**'
+      - '.github/workflows/planner-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  planner-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Android/iOS role parity and backup schema preservation
+        run: python3 scripts/tests/check_study_categories.py
+      - name: Verify textbook progress parity, isolation and backup compatibility
+        run: python3 scripts/tests/check_study_progress.py
+      - name: Validate portable progress JSON transfer and confirmed import safeguards
+        run: python3 scripts/tests/check_study_progress_backup.py
+      - name: Compile and smoke-test standalone Java role model
+        run: |
+          mkdir -p /tmp/studyone-contract-classes
+          javac -encoding UTF-8 -d /tmp/studyone-contract-classes \
+            app/src/main/java/com/studyone/app/StudyCategories.java \
+            scripts/tests/StudyCategoriesSmoke.java
+          java -cp /tmp/studyone-contract-classes StudyCategoriesSmoke
+      - name: Verify one-tap progress controls and subject-prefixed clipboard parity
+        run: python3 scripts/tests/check_progress_one_tap.py
+      - name: Compile and exercise the standalone Java progress checklist formatter
+        run: |
+          mkdir -p /tmp/studyone-progress-checklist-classes
+          javac -encoding UTF-8 -d /tmp/studyone-progress-checklist-classes \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            app/src/main/java/com/studyone/app/StudyProgressChecklist.java \
+            scripts/tests/StudyProgressChecklistSmoke.java
+          java -cp /tmp/studyone-progress-checklist-classes StudyProgressChecklistSmoke
+      - name: Verify Samsung Reminder daily-plan contract on Android and iOS
+        run: python3 scripts/tests/check_daily_reminder.py
+      - name: Compile and smoke-test read-only five-role daily checklist export
+        run: |
+          mkdir -p /tmp/studyone-daily-checklist-classes
+          javac -encoding UTF-8 -d /tmp/studyone-daily-checklist-classes \
+            app/src/main/java/com/studyone/app/Models.java \
+            app/src/main/java/com/studyone/app/StudyCategories.java \
+            app/src/main/java/com/studyone/app/StudyTaskDetail.java \
+            app/src/main/java/com/studyone/app/StudyDailyChecklist.java \
+            scripts/tests/StudyDailyChecklistSmoke.java
+          java -cp /tmp/studyone-daily-checklist-classes StudyDailyChecklistSmoke
+      - name: Compile and validate optional study guidance format and limits
+        run: |
+          mkdir -p /tmp/studyone-task-detail-classes
+          javac -encoding UTF-8 -d /tmp/studyone-task-detail-classes \
+            app/src/main/java/com/studyone/app/Models.java \
+            app/src/main/java/com/studyone/app/StudyCategories.java \
+            app/src/main/java/com/studyone/app/StudyTaskDetail.java \
+            app/src/main/java/com/studyone/app/StudyDailyChecklist.java \
+            scripts/tests/StudyTaskDetailSmoke.java
+          java -cp /tmp/studyone-task-detail-classes StudyTaskDetailSmoke
+      - name: Check safe local-only detail persistence, editor and backup contracts
+        run: python3 scripts/tests/check_task_details.py
+      - name: Verify iOS task detail parity, export and fail-closed safeguards
+        run: python3 scripts/tests/check_ios_task_details.py
+      - name: Validate cross-platform wrong-answer data, review UI and safe backups
+        run: python3 scripts/tests/check_wrong_answer_parity.py
+      - name: Audit Android icon navigation UI and selected-tab regression
+        run: python3 scripts/tests/check_navigation_ui.py
+      - name: Check segmented planner hub, homework preview and source isolation
+        run: python3 scripts/tests/check_planner_hub.py
+      - name: Audit debug-only local-sync experiment gating
+        run: python3 scripts/tests/check_developer_sync_ui.py
+      - name: Audit production HTTPS-only ChatGPT plan inbox and protected imports
+        run: python3 scripts/tests/check_android_chatgpt_inbox.py
+      - name: Audit main-only signed single-app Canary update policy
+        run: python3 scripts/tests/check_signed_update_policy.py
+      - name: Compile and test Stable Beta Canary release-channel isolation
+        run: |
+          mkdir -p /tmp/studyone-update-channel-test
+          javac -encoding UTF-8 -d /tmp/studyone-update-channel-test \
+            app/src/main/java/com/studyone/app/StudyUpdateChannels.java \
+            scripts/tests/StudyUpdateChannelsSmoke.java
+          java -cp /tmp/studyone-update-channel-test StudyUpdateChannelsSmoke
+      - name: Audit portable migration backup and recovery safeguards
+        run: python3 scripts/tests/check_safe_migration.py
+      - name: Audit Android iOS Windows Today Tomorrow All schedule parity
+        run: python3 scripts/tests/check_crossplatform_planner.py
+      - name: Audit mobile sync local-only transport and explicit-consent safeguards
+        run: python3 scripts/tests/check_mobile_sync_guards.py
+      - name: Compile and smoke-test standalone Java progress model
+        run: |
+          mkdir -p /tmp/studyone-progress-classes
+          javac -encoding UTF-8 -d /tmp/studyone-progress-classes \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            scripts/tests/StudyProgressSmoke.java
+          java -cp /tmp/studyone-progress-classes StudyProgressSmoke

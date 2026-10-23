@@ -99,14 +99,13 @@ public final class AppUpdates {
         int current = installedVersion(ctx);
         String installedVersionName = ctx.getPackageManager()
                 .getPackageInfo(ctx.getPackageName(), 0).versionName;
-        boolean betaAllowed = installedVersionName != null
-                && (installedVersionName.contains("beta") || installedVersionName.contains("rc"));
+        // Channel filters intentionally never show Canary to Stable/Beta users.
         JSONArray releases = new JSONArray(getText(RELEASES, 2_000_000));
         ReleaseInfo best = null;
         for (int i = 0; i < releases.length(); i++) {
             JSONObject release = releases.getJSONObject(i);
             if (release.optBoolean("draft", true)) continue;
-            if (release.optBoolean("prerelease", false) && !betaAllowed) continue;
+            boolean isPrerelease = release.optBoolean("prerelease", false);
             JSONArray assets = release.optJSONArray("assets");
             if (assets == null) continue;
 
@@ -123,6 +122,12 @@ public final class AppUpdates {
             ReleaseInfo candidate = new ReleaseInfo();
             candidate.code = meta.getInt("versionCode");
             candidate.name = meta.getString("versionName");
+            if (!StudyUpdateChannels.permits(installedVersionName,
+                    candidate.name, isPrerelease)) continue;
+            if (!("v" + candidate.name).equals(release.optString("tag_name"))) continue;
+            String metadataChannel = meta.optString("channel", "");
+            if (!metadataChannel.isEmpty() &&
+                    !metadataChannel.equals(StudyUpdateChannels.channel(candidate.name))) continue;
             candidate.apkUrl = meta.getString("apkUrl");
             candidate.hash = meta.getString("sha256").toLowerCase(java.util.Locale.ROOT);
             candidate.description = meta.optString("notes", "안정성 개선 및 기능 업데이트");
