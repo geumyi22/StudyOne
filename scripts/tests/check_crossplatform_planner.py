@@ -47,9 +47,17 @@ class Parity(unittest.TestCase):
             self.assertIn(token,selector)
         self.assertIn('ReferenceEquals(todayPreview.Single',testcs)
         self.assertIn('Read-only filtering never rewrites homework status or date',testcs)
-    def test_aligned_canary_version(self):
+    def test_android_only_canary7_version_is_explicit_not_false_ios_parity(self):
+        # iOS/Windows are still .6 while Android has a separately gated .7
+        # preview. Preserve explicit version divergence, never claim 3-platform ship.
+        gradle=(R/"app/build.gradle.kts").read_text(encoding="utf-8")
         self.assertIn('CURRENT_PROJECT_VERSION: 30106',project)
-        self.assertIn('"versionName": "3.1.0-canary.6"',version)
+        self.assertIn('"versionCode": 30107',version)
+        self.assertIn('"versionName": "3.1.0-canary.7"',version)
+        self.assertIn('versionCode = 30107',gradle)
+        self.assertIn('versionName = "3.1.0-canary.7"',gradle)
+        self.assertIn('applicationIdSuffix = ".canary7"',gradle)
+        self.assertIn('iOS/Windows Canary.6 unsigned preview builds remain separate',version)
 
 if __name__ == "__main__":
     unittest.main()
