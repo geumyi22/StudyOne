@@ -821,8 +821,14 @@ public class MainActivity extends Activity {
         Button clear=secondary("시간표·급식 캐시 초기화");clear.setOnClickListener(v->{storage.clearSchoolCaches();toast("캐시를 초기화했습니다.");showTab(currentTab);});c.addView(clear);
 
 
-        c.addView(section("계정 동기화"));
-        c.addView(cardText("정식 계정 동기화는 아직 준비 중입니다. 현재 학습 기록은 이 기기에 저장되며, 백업은 관리 메뉴에서 직접 진행할 수 있습니다.",12));
+        c.addView(section("계정 동기화 · ChatGPT 계획"));
+        c.addView(cardText("정식 계정 로그인과 자동 동기화는 아직 준비 중입니다. "
+                +"개인 HTTPS StudyOne 서버와 쓰기 권한 장치 토큰을 발급받은 경우에만 "
+                +"AI 공부 계획 승인함을 수동으로 열 수 있습니다. 이 ChatGPT 대화와 "
+                +"현재 앱은 아직 자동으로 연결되지 않습니다.",12));
+        Button chatgptPlans=secondary("ChatGPT 공부 계획 승인함 · 수동 HTTPS 연결");
+        chatgptPlans.setOnClickListener(v->openVerifiedPlanInbox());
+        c.addView(chatgptPlans);
         // Debug-only transport experiments must not be presented as production sync.
         if (isDeveloperBuild()) {
             Button developer=secondary("개발자 도구 · 로컬 동기화 실험");
@@ -903,6 +909,59 @@ public class MainActivity extends Activity {
         c.addView(section("앱 정보"));
         c.addView(cardText("StudyOne "+getPackageManagerVersion()+"\nCanary 실험판 · 데이터는 기기에 저장\n기존 Stable/Beta와 별도 개발 빌드",13));
         return s;
+    }
+
+    /**
+     * Explicit, production-visible HTTPS plan inbox.
+     * Does NOT enable experimental upload, store bearer tokens, or sync in background.
+     * Plans are committed to the account only after the user's approval and
+     * imported to this device only through the existing non-overwriting path.
+     */
+    private void openVerifiedPlanInbox() {
+        LinearLayout body=column();
+        body.setPadding(dp(20),dp(8),dp(20),dp(8));
+        body.addView(cardText("ChatGPT 연결 실험 기능 · HTTPS 계정 서버가 별도로 필요합니다. "
+                +"지금 이 대화와 자동 연동되지는 않습니다. 서버 주소·인증 토큰을 직접 "
+                +"설정한 경우에만 동작합니다. 어떤 데이터도 자동 업로드하지 않습니다.",12));
+        EditText address=input("StudyOne HTTPS 계정 서버 (https://.../)", "https://");
+        address.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+        body.addView(address);
+        EditText token=input("계정 장치 토큰 (입력 중에만 사용·저장 안 함)", "");
+        token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        body.addView(token);
+        TextView status=tv("승인 전 학습 계획은 휴대폰 일정에 들어가지 않습니다. "
+                +"먼저 승인 대기함을 열어 검토하세요.",13,MUTED,false);
+        body.addView(status);
+        Button inbox=primary("AI 학습 계획 승인 대기함 확인");
+        Button download=secondary("승인 완료된 신규 일정 가져오기");
+        body.addView(inbox);
+        body.addView(download);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("StudyOne · ChatGPT 공부 계획")
+                .setView(body)
+                .setPositiveButton("닫기",(d,w)->{})
+                .create();
+        dialog.setOnDismissListener(d->token.setText(""));
+        dialog.show();
+        inbox.setOnClickListener(v->{
+            try {
+                String endpoint=StudySyncClient.checkedAccountAddress(
+                        address.getText().toString().trim());
+                showStudyPlanInbox(token.getText().toString(),endpoint,status,dialog);
+            }catch(Exception invalid){
+                status.setText("유효한 HTTPS 서버 루트 주소를 확인하세요. "
+                        +"HTTP와 서버 경로·쿼리 입력은 허용되지 않습니다.");
+            }
+        });
+        download.setOnClickListener(v->{
+            try {
+                String endpoint=StudySyncClient.checkedAccountAddress(
+                        address.getText().toString().trim());
+                importNewRemote(true,token.getText().toString(),endpoint,status,dialog);
+            }catch(Exception invalid){
+                status.setText("유효한 HTTPS 계정 서버 주소를 확인하세요.");
+            }
+        });
     }
 
     /**
