@@ -2,9 +2,11 @@
 
 학생의 **시간표 · 급식 · 과제 · 수행평가 · 시험 · 공부 계획**을 한곳에서 관리하는 개인 학습 앱입니다. Android 네이티브(Java)와 iOS 네이티브(SwiftUI)로 개발합니다.
 
-> **현재 배포 채널: Beta — v3.0.0-beta.2 (build 30001)**. 정식 Stable 출시가 아니며 iOS 실기기 E2E 검증은 별도입니다.
+> **공개 최신 릴리즈: Beta v3.0.0-beta.2 (build 30001)** · **통합 `main` 개발 소스: Android 3.1.0-canary.7 / iOS·Windows Canary.6 기반**. 새 소스가 자동으로 공개 릴리즈가 되거나 기존 휴대폰에 설치되는 것은 아닙니다. [상세 버전 매트릭스](docs/VERSION-MATRIX.md)
 
 ## 플랫폼 및 실제 지원 기능
+
+Android·iOS 표는 주요 앱 기능을 설명하며 Windows는 [빌드 후보](windows/README.md)로 별도 관리합니다. ChatGPT 실사용 계정 연결 및 세 플랫폼 자동 동기화는 아직 미배포입니다.
 
 | 기능 | Android | iOS |
 | --- | --- | --- |
@@ -31,7 +33,7 @@ Android의 OpenAI 키는 Android Keystore AES-GCM, iOS 키는 Keychain에 저장
 ## 빌드 및 CI
 
 - Android: Gradle 9.3.1 / AGP 9.1.1 / JDK 17 / SDK 37 / minSdk 26. [Android APK CI](https://github.com/geumyi22/StudyOne/actions/workflows/android.yml)
-- Android 릴리즈: 고정 인증서 서명, manifest·SHA256 검증, API 36 에뮬레이터 테스트 및 v2.8 설치판에서 덮어쓰기 테스트. [Signed release workflow](https://github.com/geumyi22/StudyOne/actions/workflows/signed-release.yml)
+- Android Canary.7: 공식 서명 인증서·APK manifest·SHA-256 검증과 Beta.2→Canary.6→Canary.7 단일 앱 덮어쓰기 에뮬레이터 테스트를 통과했습니다. [검증 기록](https://github.com/geumyi22/StudyOne/actions/runs/39961148498). 기존 Beta.2 릴리즈 워크플로는 자동 공개를 중단하고 수동 승인 전용으로 보존합니다.
 - iOS: SwiftUI / iOS 16+ / macOS Xcode + XcodeGen, signed IPA가 아닌 **unsigned IPA**. [iOS CI](https://github.com/geumyi22/StudyOne/actions/workflows/ios.yml)
 - 개인 OpenAI 유료 API E2E, 실기기 iOS 기능, 자동 동기화는 CI에서 검증하지 않습니다.
 
@@ -42,12 +44,17 @@ Android의 OpenAI 키는 Android Keystore AES-GCM, iOS 키는 Keychain에 저장
 - [iOS 빌드 및 알려진 한계](ios/README.md)
 - [고정 서명 및 업데이트](docs/SIGNING-AND-UPDATES.md)
 - [다음 Stable 개발 로드맵 (계획)](docs/NEXT-STABLE-ROADMAP.md)
-- [ChatGPT ↔ StudyOne 동기화 설계 (미구현)](docs/CHATGPT-SYNC-DESIGN.md)
+- [ChatGPT ↔ StudyOne 동기화 설계 (실사용 미연결)](docs/CHATGPT-SYNC-DESIGN.md) · [MCP 변경 이력·기준 커서 검사](docs/IMPLEMENTATION-PHASE19-CHATGPT-CHANGEFEED-AND-CURSOR.md) · [Android HTTPS 계획 승인함](docs/IMPLEMENTATION-PHASE20-ANDROID-CHATGPT-PLAN-INBOX.md)
 - [Stable·Beta·Canary 릴리즈 및 저장소 관리 원칙](docs/RELEASE-POLICY.md)
 
 기존 역사적 v2.x 및 v3 beta.1 릴리즈와 문서는 삭제하지 않습니다.
 
 
-## 차기 StudyOne 방향 (개발 전)
+## 최신 통합 및 남은 과제
 
-Android·iOS·Windows 설치형 앱, UI/UX 전면 개선, 신뢰할 수 있는 기기간 데이터 동기화, 그리고 ChatGPT에서 `할꺼`/ `변경사항 인지해`로 StudyOne 데이터를 읽고 쓰는 통합을 **검토·설계 중**입니다. 이 기능들은 현재 `v3.0.0-beta.2`의 동작 기능이나 배포 약속이 아닙니다. 구현 전에 기존 플랫폼 코드·데이터 보존·릴리즈 서명 체계를 감사하고 새 Stable의 검증 조건을 통과해야 합니다. 상세 범위와 보안 조건은 위의 차기 로드맵 및 연동 설계 문서에 정리했습니다.
+- [통합 PR #43](https://github.com/geumyi22/StudyOne/pull/43)으로 Android·iOS·Windows 개발 코드, 복구·서명·채널 정책, ChatGPT MCP 프로토타입과 Android 수동 계획 승인함을 `main`에 병합했습니다. 7개 워크플로의 사전 통합 검증(모바일·데스크톱·서버·복구)이 통과했습니다.
+- **ChatGPT가 이 대화에서 앱 기록을 즉시 읽거나 쓰는 것은 아직 불가능합니다.** HTTPS 운영 서버, 로그인/복구, ChatGPT OAuth/MCP 앱 등록, 모바일 안전 자동 동기화가 남아 있습니다.
+- Android는 공식 서명 Canary.7의 인플레이스(덮어쓰기) 설치를 에뮬레이터에서 검증했습니다. iOS는 unsigned Canary.6, Windows는 WPF Canary.6 후보이므로 **세 플랫폼 Stable로 게시한 상태가 아닙니다**.
+- 새 빌드 설치 전 사용자 본인의 **4종 학습 데이터 통합 백업**을 외부에 저장하세요. 개발 브랜치·CI·GitHub 병합은 사용자의 휴대폰 데이터에 접근하거나 초기화하지 않습니다.
+
+안전한 후속 일정과 Stable 수용 기준은 [로드맵](docs/NEXT-STABLE-ROADMAP.md) 및 [버전·배포 매트릭스](docs/VERSION-MATRIX.md)를 참조하세요.
