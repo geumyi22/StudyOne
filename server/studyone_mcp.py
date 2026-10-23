@@ -29,6 +29,22 @@ def definitions():
             "inputSchema": dict(base, properties={}, required=[])
         },
         {
+            "name": "studyone_read_changes",
+            "description": (
+                "Read this account's task/progress change log after the specified cursor, "
+                "including deletions. For '변경사항 인지해', paginate until hasMore=false. "
+                "Never claim local unsynced changes have been observed."
+            ),
+            "inputSchema": {
+                "type": "object", "additionalProperties": False,
+                "required": ["after"],
+                "properties": {
+                    "after": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100}
+                }
+            }
+        },
+        {
             "name": "studyone_pending_study_plans",
             "description": (
                 "Read AI-proposed plans awaiting explicit approval in the "
@@ -39,16 +55,18 @@ def definitions():
         {
             "name": "studyone_propose_study_plan",
             "description": (
-                "Submit a DRAFT list of tasks for StudyOne app approval. "
+                "Submit a DRAFT study plan based on an exact snapshot cursor. "
+                "Reject stale snapshots or modifications before app approval. "
                 "Creating a proposal NEVER writes active tasks. The user must "
                 "review and approve it in an authenticated StudyOne device."
             ),
             "inputSchema": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["requestId", "title", "tasks"],
+                "required": ["requestId", "title", "tasks", "baseCursor"],
                 "properties": {
                     "requestId": {"type": "string", "format": "uuid"},
+                    "baseCursor": {"type": "integer", "minimum": 0},
                     "title": {"type": "string", "minLength": 1, "maxLength": 100},
                     "tasks": {
                         "type": "array", "minItems": 1, "maxItems": 30,
@@ -91,11 +109,20 @@ def call(registry, account_id, name, arguments):
         if arguments:
             raise ApiProblem(400, "INVALID_TOOL_ARGUMENTS")
         return store.snapshot()
+    if name == "studyone_read_changes":
+        if (set(arguments) not in ({"after"}, {"after", "limit"}) or
+                type(arguments.get("after")) is not int or
+                type(arguments.get("limit", 100)) is not int or
+                not 1 <= arguments.get("limit", 100) <= 100):
+            raise ApiProblem(400, "INVALID_CHANGE_QUERY")
+        return store.changes(arguments["after"], arguments.get("limit", 100))
     if name == "studyone_pending_study_plans":
         if arguments:
             raise ApiProblem(400, "INVALID_TOOL_ARGUMENTS")
         return ProposalStore(store).pending()
     if name == "studyone_propose_study_plan":
+        if set(arguments) != {"requestId", "title", "tasks", "baseCursor"}:
+            raise ApiProblem(400, "PLAN_CURSOR_REQUIRED")
         return ProposalStore(store).create(arguments)
     raise ApiProblem(404, "UNKNOWN_TOOL")
 
