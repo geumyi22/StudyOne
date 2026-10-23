@@ -50,9 +50,15 @@ class ProposalStore:
                     expires_at INTEGER NOT NULL,
                     state TEXT NOT NULL
                       CHECK(state IN ('pending','approved','rejected')),
-                    cursor INTEGER
+                    cursor INTEGER,
+                    base_cursor INTEGER
                 )
             """)
+            # Non-destructive migration: older account DBs lack base_cursor.
+            columns = {row["name"] for row in db.execute(
+                "PRAGMA table_info(study_plan_proposals)")}
+            if "base_cursor" not in columns:
+                db.execute("ALTER TABLE study_plan_proposals ADD COLUMN base_cursor INTEGER")
             db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_proposals_state
                 ON study_plan_proposals(state,expires_at)
@@ -74,9 +80,16 @@ class ProposalStore:
 
     @staticmethod
     def _checked_draft(request):
-        if not isinstance(request, dict) or set(request) != {"requestId", "title", "tasks"}:
+        if (not isinstance(request, dict) or
+                set(request) not in ({"requestId", "title", "tasks"},
+                                     {"requestId", "title", "tasks", "baseCursor"})):
             raise ApiProblem(400, "INVALID_PROPOSAL")
         key, title, tasks = request["requestId"], request["title"], request["tasks"]
+        expected_cursor = request.get("baseCursor")
+        if "baseCursor" in request and (
+                type(expected_cursor) is not int or
+                expected_cursor < 0 or expected_cursor > MAX_TASK_ID):
+            raise ApiProblem(400, "INVALID_PLAN_CURSOR")
         if not canonical_uuid(key) or not isinstance(title, str) or not 1 <= len(title.strip()) <= 100:
             raise ApiProblem(400, "INVALID_PROPOSAL")
         if not isinstance(tasks, list) or not 1 <= len(tasks) <= MAX_PLAN_TASKS:
@@ -87,10 +100,10 @@ class ProposalStore:
             sample = dict(task)
             sample.update(id=1, completed=False)
             validate_record("task", "1", sample)
-        return key, title.strip(), tasks
+        return key, title.strip(), tasks, expected_cursor
 
     def create(self, request):
-        key, title, tasks = self._checked_draft(request)
+        key, title, tasks, expected_cursor = self._checked_draft(request)
         request_hash = hashlib.sha256(json_bytes(request)).hexdigest()
         now = int(time.time())
         with self.store.connect() as db:
@@ -102,6 +115,12 @@ class ProposalStore:
                 if existing["request_hash"] != request_hash:
                     raise ApiProblem(409, "PROPOSAL_KEY_REUSED")
                 return self._item(existing)
+            if expected_cursor is not None:
+                current_cursor = db.execute(
+                    "SELECT COALESCE(MAX(seq),0) FROM change_log"
+                ).fetchone()[0]
+                if current_cursor != expected_cursor:
+                    raise ApiProblem(409, "STALE_PLAN_CURSOR")
             count = db.execute("""
                 SELECT COUNT(*) FROM study_plan_proposals
                 WHERE state='pending' AND expires_at>?
@@ -124,11 +143,11 @@ class ProposalStore:
             db.execute("""
                 INSERT INTO study_plan_proposals
                     (id,request_id,request_hash,title,mutations_json,
-                     created_at,expires_at,state,cursor)
-                VALUES(?,?,?,?,?,?,?,?,NULL)
+                     created_at,expires_at,state,cursor,base_cursor)
+                VALUES(?,?,?,?,?,?,?,?,NULL,?)
             """, (proposal_id, key, request_hash, title,
                   json_bytes(mutations).decode("utf-8"),
-                  now, now + EXPIRES_AFTER, "pending"))
+                  now, now + EXPIRES_AFTER, "pending", expected_cursor))
             row = db.execute(
                 "SELECT * FROM study_plan_proposals WHERE id=?", (proposal_id,)
             ).fetchone()
@@ -161,6 +180,12 @@ class ProposalStore:
                 return {"id": proposal_id, "state": "approved", "cursor": row["cursor"]}
             if row["state"] != "pending" or row["expires_at"] <= int(time.time()):
                 raise ApiProblem(409, "PROPOSAL_UNAVAILABLE")
+            # Fail closed: never approve a plan grounded in a superseded snapshot.
+            # Shared SQLite write transaction keeps this check and task insert atomic.
+            if row["base_cursor"] is not None:
+                head = db.execute("SELECT COALESCE(MAX(seq),0) FROM change_log").fetchone()[0]
+                if head != row["base_cursor"]:
+                    raise ApiProblem(409, "STALE_PLAN_CURSOR")
             body = {
                 "requestId": proposal_id,
                 "mutations": json.loads(row["mutations_json"])
