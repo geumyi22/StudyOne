@@ -907,7 +907,7 @@ public class MainActivity extends Activity {
         c.addView(retryUpdate);
 
         c.addView(section("앱 정보"));
-        c.addView(cardText("StudyOne "+getPackageManagerVersion()+"\nCanary 실험판 · 데이터는 기기에 저장\n기존 Stable/Beta와 별도 개발 빌드",13));
+        c.addView(cardText("StudyOne "+getPackageManagerVersion()+"\nCanary 검증판 · 데이터는 기기에 저장\n공식 서명판은 동일 앱에 덮어쓰기 가능 (버전 코드 증가·서명 일치 시)",13));
         return s;
     }
 
