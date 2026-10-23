@@ -54,6 +54,17 @@ public final class StudySyncClient {
         }
     }
 
+    /**
+     * Explicit HTTPS-only account server address for production-visible screens.
+     * Legacy loopback HTTP is strictly limited to developer test tools.
+     */
+    public static String checkedAccountAddress(String address) {
+        String normalized=checkedAddress(address);
+        if(!normalized.startsWith("https://"))
+            throw new IllegalArgumentException("계정 서버는 HTTPS로만 연결할 수 있습니다.");
+        return normalized;
+    }
+
     private static String apiPrefix(String base) {
         return base.startsWith("http://") ? "v1/" : "v2/";
     }
