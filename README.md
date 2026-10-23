@@ -39,6 +39,7 @@ Android의 OpenAI 키는 Android Keystore AES-GCM, iOS 키는 Keychain에 저장
 
 ## 문서
 
+- [2026-10-24 GitHub 저장소 현황 및 중복 PR 정리](docs/REPOSITORY-STATUS-2026-10-24.md)
 - [버전 매트릭스](docs/VERSION-MATRIX.md) · [CHANGELOG](CHANGELOG.md)
 - [현재 릴리즈 노트](docs/RELEASE-3.0.0-BETA.2.md)
 - [iOS 빌드 및 알려진 한계](ios/README.md)
