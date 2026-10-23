@@ -187,7 +187,7 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
-            set -euo pipefail
+            set -eu  # android-emulator-runner executes script using /bin/sh, not Bash
             adb install baseline/StudyOne-v3.0.0-beta.2.apk
             BEFORE=$(adb shell dumpsys package com.studyone.app | grep -m1 firstInstallTime | tr -d '\r')
             test -n "$BEFORE"
