@@ -1,9 +1,8 @@
 name: Signed In-App Update Release
 
+# Legacy Beta2 remains immutable. Disable automatic publishing on main Canary updates.
+# Only an explicit operator action may invoke this historical, Beta2-pinned release.
 on:
-  workflow_run:
-    workflows: ["Android APK"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       confirmation:
@@ -16,7 +15,7 @@ permissions:
 
 jobs:
   build-signed:
-    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RELEASE' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
