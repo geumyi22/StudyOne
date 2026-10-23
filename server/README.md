@@ -1,5 +1,8 @@
 # StudyOne Sync Core — Canary developer preview
 
+> **2026-10-24 주의:** 이 문서는 초기 **단일 사용자 루프백 동기화 코어**의 동작 가이드입니다. 이후 [PR #43](https://github.com/geumyi22/StudyOne/pull/43)에서 `private_sync.py`(계정별 HTTPS 실험), `studyone_mcp.py`(ChatGPT 읽기·변경 이력·제안) 및 모바일/Windows 클라이언트 원형이 별도로 통합됐습니다. 아래의 '클라이언트 미구현/MCP 미구현' 문장은 **최초 루프백 코어 작성 시점의 설명**입니다. 운영 배포 또는 실제 ChatGPT 자동 연결이 완료된 것은 아니며, 최신 기능·보안 경계는 [Private Sync Runbook](PRIVATE-SYNC-RUNBOOK.md), [MCP 구현 기록](../docs/IMPLEMENTATION-PHASE19-CHATGPT-CHANGEFEED-AND-CURSOR.md), [현황 보고](../docs/REPOSITORY-STATUS-2026-10-24.md)를 우선 참조하세요.
+
+
 **상태: 첫 동기화 서버 구현/검증 단계. 실제 앱 기기 간 자동 동기화 서비스는 아직 아닙니다.**
 
 ## 이번에 구현한 기술 기반

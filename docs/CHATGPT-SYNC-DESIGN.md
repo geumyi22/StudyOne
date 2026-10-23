@@ -1,6 +1,6 @@
-# StudyOne ↔ ChatGPT 양방향 연동 설계 (구현 전 초안)
+# StudyOne ↔ ChatGPT 양방향 연동 설계 (2026-10-20 초기 계약 초안)
 
-> **현재 미구현.** 아래는 미래 기능의 계약 초안으로, 기존 앱이나 이 대화가 지금 바로 동기화된다는 의미가 아닙니다.
+> **2026-10-24 상태 구분:** 이 문서의 아래 도구 이름/데이터 모델은 **최초 구상안**으로서 현재 실제 MCP 구현 계약과 일치하지 않을 수 있습니다. [PR #43](https://github.com/geumyi22/StudyOne/pull/43)으로 계정별 조회·변경 이력·계획 제안·Android HTTPS 수동 승인 프로토타입이 소스에 반영됐습니다. 그러나 **운영 서버·OAuth/ChatGPT 실제 연결·3플랫폼 자동 동기화는 미배포**이며, 현재 이 채팅에서 앱 기록에 자동 접근할 수 없습니다. 최신 구현은 [MCP 변경 이력 문서](IMPLEMENTATION-PHASE19-CHATGPT-CHANGEFEED-AND-CURSOR.md), [Android 계획 승인함](IMPLEMENTATION-PHASE20-ANDROID-CHATGPT-PLAN-INBOX.md), [현황 보고](REPOSITORY-STATUS-2026-10-24.md)를 참조하세요.
 
 ## 1. 기본 원칙
 

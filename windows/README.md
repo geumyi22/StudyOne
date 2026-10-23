@@ -2,6 +2,8 @@
 
 > 이 앱은 **개발 중인 Windows x64 프리뷰**입니다. 기존 Android/iOS StudyOne Beta 2 및 Stable 릴리즈와 다릅니다.
 
+> **2026-10-24 개발 상태:** WPF Canary.6 후보 및 아래 로컬 동기화 실험 코드는 [통합 PR #43](https://github.com/geumyi22/StudyOne/pull/43)으로 `main`에 포함됐습니다. 후속 계정별 HTTPS 수동 동기화 코드도 실험적으로 존재하지만 **실시간 자동 동기화나 정식 설치 프로그램은 아닙니다**. 아래 루프백 절차는 초기 개발 예시이므로 [현황 보고](../docs/REPOSITORY-STATUS-2026-10-24.md) 및 [서버 HTTPS 안내](../server/PRIVATE-SYNC-RUNBOOK.md)와 함께 확인하세요.
+
 ## 현재 실제 기능
 
 - Windows WPF 데스크톱 앱의 일정·숙제 목록과 편집/추가/삭제/완료 체크
@@ -42,7 +44,7 @@ GitHub Actions: StudyOne Windows Canary EXE. 빌드가 통과하면 14일간 임
 
 개발 로그: docs/IMPLEMENTATION-PHASE4-WINDOWS.md
 
-## 개발 중인 로컬 동기화 실험 (Canary PR #10)
+## 로컬 동기화 개발 실험 (초기 PR #10, 현재 #43 통합 완료)
 
 - 앱 상단 **동기화 실험** 탭을 선택합니다.
 - **같은 Windows PC**에서 개발 서버를 먼저 실행해야 합니다. 안내: ../server/README.md.
