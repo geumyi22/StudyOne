@@ -97,6 +97,8 @@ jobs:
         run: python3 scripts/tests/check_planner_hub.py
       - name: Audit debug-only local-sync experiment gating
         run: python3 scripts/tests/check_developer_sync_ui.py
+      - name: Audit production HTTPS-only ChatGPT plan inbox and protected imports
+        run: python3 scripts/tests/check_android_chatgpt_inbox.py
       - name: Audit main-only signed single-app Canary update policy
         run: python3 scripts/tests/check_signed_update_policy.py
       - name: Compile and test Stable Beta Canary release-channel isolation
