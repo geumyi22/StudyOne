@@ -33,7 +33,7 @@ class ProgressBackupContract(unittest.TestCase):
         self.assertIn("진도 JSON 백업 불러오기", ios)
         self.assertIn("진도 백업으로 기존 데이터를 교체할까요?", ios)
         self.assertIn("pendingImport = bytes", ios)
-        self.assertIn("progress.importBackup(data: bytes, original: original)", ios)
+        self.assertIn("progress.importBackup(data: bytes, original: approved)", ios)
         self.assertIn("StudySyncBackup.save(originalBytes, kind:",
                       (ROOT / "ios/StudyOne/StudyProgress.swift").read_text(encoding="utf-8"))
 
