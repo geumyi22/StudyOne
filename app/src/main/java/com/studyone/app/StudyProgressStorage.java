@@ -211,6 +211,32 @@ public final class StudyProgressStorage {
         }
     }
 
+    /**
+     * Explicit progress-only JSON import with a durable original recovery file.
+     * Review the backup first: any concurrent change blocks the replacement.
+     * This is deliberately separate from the four-store transfer importer.
+     */
+    public synchronized String restoreBackupWithRecovery(
+            List<StudyProgressItem> imported, String approvedRaw,
+            Context context) throws Exception {
+        if (!java.util.Objects.equals(rawProgressForSync(), approvedRaw))
+            throw new IllegalStateException("검토 중 기기의 진도가 변경됐습니다. 다시 확인하세요.");
+        // Parse the exact incoming portable schema again before touching the disk.
+        if (imported == null || imported.size() > LIMIT)
+            throw new IllegalArgumentException("진도 백업 크기가 올바르지 않습니다.");
+        List<StudyProgressItem> verified = parseBackup(encode(imported, true).toString());
+        // Fail closed if the old private data is unreadable. Never overwrite corruption.
+        String originalPortable = encode(list(), true).toString(2);
+        String name = "StudyOne-progress-before-import-"
+                + System.currentTimeMillis() + "-" + java.util.UUID.randomUUID() + ".json";
+        try (java.io.FileOutputStream out = context.openFileOutput(name, Context.MODE_PRIVATE)) {
+            out.write(originalPortable.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.getFD().sync();
+        }
+        write(verified);
+        return name;
+    }
+
     /** Call only after import preview and an explicit user confirmation. */
     public synchronized void restoreBackup(List<StudyProgressItem> imported) {
         if (imported == null || imported.size() > LIMIT) {
