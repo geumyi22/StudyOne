@@ -24,6 +24,8 @@ adb shell am force-stop "$APP_PACKAGE"
 adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_progress_self_test true
 sleep 2
 adb logcat -d -s StudyOneProgress:I | grep -q 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_progress_recovery_self_test true
+adb logcat -d -s StudyOneProgress:I | grep -q 'PROGRESS_ISOLATED_RECOVERY_E2E_PASSED'
 echo 'PROGRESS_BACKUP_ROUNDTRIP_PASSED'
 adb shell am force-stop "$APP_PACKAGE"
 adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" --ez studyone_nav_self_test true
