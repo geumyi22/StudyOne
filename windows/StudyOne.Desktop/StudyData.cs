@@ -145,6 +145,32 @@ public static class StudyData
     public static void SaveProgress(ProgressBackup backup) =>
         SaveAtomic(ProgressPath, SerializeAndValidateProgress(backup));
 
+    /// <summary>
+    /// Explicit destructive progress import or consented append with a preserved
+    /// original. The full JSON is checked before any write, disk bytes are compared
+    /// with the approved preview, and the recovery copy is written first.
+    /// </summary>
+    public static string SaveProgressWithRecovery(
+        ProgressBackup proposed, byte[]? approvedOriginal, string? destination = null)
+    {
+        string path = destination ?? ProgressPath;
+        byte[] next = SerializeAndValidateProgress(proposed);
+        byte[]? current = File.Exists(path) ? ReadLimited(path) : null;
+        if (approvedOriginal is null ? current is not null :
+            current is null || !current.SequenceEqual(approvedOriginal))
+            throw new InvalidDataException("확인 중 진도 원본이 변경됐습니다. 다시 검토하세요.");
+
+        // Retain even invalid old bytes during an explicitly approved recovery import.
+        // Missing originals are represented as a valid empty schema-1 progress backup.
+        byte[] old = current ?? SerializeAndValidateProgress(new ProgressBackup());
+        string folder = Path.Combine(Path.GetDirectoryName(path)!, "Recovery");
+        string backup = Path.Combine(folder,
+            "StudyOne-progress-before-replace-" + Guid.NewGuid().ToString("N") + ".json");
+        SaveAtomic(backup, old);
+        SaveAtomic(path, next);
+        return backup;
+    }
+
     public static byte[] SerializeAndValidateTasks(TaskBackup backup)
     {
         byte[] bytes = Serialize(backup);
