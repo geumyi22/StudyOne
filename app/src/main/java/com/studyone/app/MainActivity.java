@@ -164,6 +164,12 @@ public class MainActivity extends Activity {
                 throw new IllegalStateException("Portable backup bundle validation failed");
             android.util.Log.i("StudyOneBundle","TRANSFER_BUNDLE_VALIDATION_PASSED");
         }
+        if (isDeveloperBuild() && getIntent()!=null
+                && getIntent().getBooleanExtra("studyone_progress_recovery_self_test",false)) {
+            if (!StudyProgressStorage.selfTestRecovery(getApplicationContext()))
+                throw new IllegalStateException("Isolated progress recovery E2E failed");
+            android.util.Log.i("StudyOneProgress","PROGRESS_ISOLATED_RECOVERY_E2E_PASSED");
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_progress_self_test",false)){
             if(!StudyProgressStorage.selfTestBackup()) {
                 throw new IllegalStateException("Progress backup fixture round-trip failed");
