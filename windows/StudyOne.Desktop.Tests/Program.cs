@@ -196,6 +196,24 @@ string portableFromAndroid = "{\"format\":\"studyone-progress\",\"schema\":1," +
 Check(StudyData.ParseProgress(Encoding.UTF8.GetBytes(portableFromAndroid)).Items.Count == 1,
       "Cross-platform camelCase progress JSON");
 
+// Fast-add parity: existing social progress is authoritative even with another material.
+var onlineSocial = new StudyProgressItem {
+    Id = Guid.NewGuid().ToString("D"), Subject = "사회", Material = "학교 학습지",
+    Unit = StudyOnlinePractice.Unit, Status = "진행 중", InExamScope = true,
+    Revision = 7, UpdatedAt = 1790000000000
+};
+var onlineKnown = new List<StudyProgressItem> { progress.Items[0], onlineSocial };
+var onlineMissing = StudyOnlinePractice.MissingSubjects(onlineKnown);
+Check(onlineMissing.SequenceEqual(new[] { "국어", "역사", "과학", "영어", "수학" }),
+      "Online practice skips any existing subject and unit, regardless of material");
+var onlineCreated = StudyOnlinePractice.CreateMissing(onlineKnown);
+Check(onlineCreated.Count == 5 && onlineCreated.All(x => x.Status == "미완료"
+      && x.InExamScope && x.Revision == 1), "Five new pending online practice entries");
+Check(onlineSocial.Status == "진행 중" && onlineKnown.Count == 2,
+      "Preview never changes existing progress or its status");
+Check(StudyOnlinePractice.CreateMissing(onlineKnown.Concat(onlineCreated)).Count == 0,
+      "Repeat online practice request must be idempotent");
+
 string tempDir = Path.Combine(Path.GetTempPath(), "studyone-tests-" + Guid.NewGuid().ToString("N"));
 try
 {
@@ -204,6 +222,24 @@ try
     Check(File.Exists(file), "First atomic save");
     StudyData.SaveAtomic(file, StudyData.SerializeAndValidateProgress(new ProgressBackup()));
     Check(StudyData.ParseProgress(StudyData.ReadLimited(file)).Items.Count == 0, "Atomic replacement");
+
+    // Recovery is written BEFORE a confirmed replacement and stale review is rejected.
+    byte[] approved = StudyData.ReadLimited(file);
+    var proposal = new ProgressBackup { Items = onlineKnown.Concat(onlineCreated).ToList() };
+    string recoveryFile = StudyData.SaveProgressWithRecovery(proposal, approved, file);
+    Check(File.Exists(recoveryFile), "Import/quick-add recovery file exists");
+    Check(StudyData.ParseProgress(StudyData.ReadLimited(recoveryFile)).Items.Count == 0,
+          "Recovery contains the exact pre-replacement progress");
+    Check(StudyData.ParseProgress(StudyData.ReadLimited(file)).Items.Count == 7,
+          "Replacement stores the six subjects plus original progress");
+    byte[] after = StudyData.ReadLimited(file);
+    ExpectInvalid(() => StudyData.SaveProgressWithRecovery(new ProgressBackup(), approved, file),
+                  "Stale original backup must reject replacement");
+    Check(StudyData.ReadLimited(file).SequenceEqual(after),
+          "Stale import never changes confirmed progress");
+    Check(StudyData.ParseProgress(StudyData.ReadLimited(file)).Items
+          .Any(x => x.Id == onlineSocial.Id && x.Status == "진행 중"),
+          "Existing in-progress social status preserved after recovery-aware save");
 }
 finally
 {

@@ -251,6 +251,47 @@ public partial class MainWindow : Window
         catch (Exception error) { ShowError(error.Message); }
     }
 
+    private void QuickAddOnlinePractice_Click(object sender, RoutedEventArgs e)
+    {
+        if (progressLocked) {
+            ShowError("손상된 진도 저장소에는 새 항목을 추가하지 않습니다."); return;
+        }
+        try
+        {
+            byte[]? original = File.Exists(StudyData.ProgressPath)
+                ? StudyData.ReadLimited(StudyData.ProgressPath) : null;
+            ProgressBackup onDisk = original is null ? new ProgressBackup()
+                : StudyData.ParseProgress(original);
+            // Avoid overwriting records updated outside this view.
+            if (!StudyData.SerializeAndValidateProgress(onDisk).SequenceEqual(
+                    StudyData.SerializeAndValidateProgress(progressBackup)))
+                throw new InvalidDataException("앱 밖에서 진도가 변경됐습니다. 다시 읽어 확인하세요.");
+
+            var missing = StudyOnlinePractice.MissingSubjects(onDisk.Items);
+            if (missing.Count == 0)
+            {
+                MessageBox.Show(this,"6과목 모두 이미 온라인 내신 문제가 있습니다. 기존 상태는 유지했습니다.");
+                return;
+            }
+            if (MessageBox.Show(this,
+                $"신규 {missing.Count}개: {string.Join(", ",missing)}\n" +
+                "새 항목은 미완료·시험범위 포함으로 저장합니다.\n" +
+                "현재 데이터는 Recovery 폴더에 먼저 백업하며 기존 상태는 바꾸지 않습니다. 계속할까요?",
+                "온라인 내신 문제 빠른 추가", MessageBoxButton.YesNo,MessageBoxImage.Question)
+                != MessageBoxResult.Yes) return;
+            var additions = StudyOnlinePractice.CreateMissing(onDisk.Items);
+            var proposed = new ProgressBackup
+            {
+                Items = onDisk.Items.Concat(additions).ToList()
+            };
+            string recovery = StudyData.SaveProgressWithRecovery(proposed, original);
+            progressBackup = proposed;
+            RefreshProgress(); ClearProgressForm();
+            HeaderStatus.Text = $"온라인 내신 문제 {additions.Count}개 추가 · 기존 원본 보관: {recovery}";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
     private void ToggleTaskRow_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not CheckBox { DataContext: StudyTask original }) return;
@@ -713,13 +754,15 @@ public partial class MainWindow : Window
         try
         {
             ProgressBackup imported = StudyData.ParseProgress(StudyData.ReadLimited(path));
+            byte[]? original = File.Exists(StudyData.ProgressPath)
+                ? StudyData.ReadLimited(StudyData.ProgressPath) : null;
             if (!ConfirmReplace("진도", imported.Items.Count)) return;
-            StudyData.SaveProgress(imported);
+            string recovery = StudyData.SaveProgressWithRecovery(imported, original);
             progressBackup = imported;
             progressLocked = false;
             RefreshProgress();
             ClearProgressForm();
-            HeaderStatus.Text = "로컬 저장 · 자동 기기 동기화 없음";
+            HeaderStatus.Text = "진도 JSON 복원 완료 · 기존 원본: " + recovery;
         }
         catch (Exception error) { ShowError(error.Message); }
     }

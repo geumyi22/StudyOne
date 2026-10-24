@@ -257,6 +257,8 @@
                         <ProgressBar x:Name="ExamProgressBar" Height="9" Minimum="0" Maximum="100" Value="0"/>
                         <Button Content="과목명 포함 진도 체크리스트 복사" Click="CopyProgress_Click"
                                 HorizontalAlignment="Left" Margin="0,7,0,7"/>
+                        <Button Content="+ 6과목 온라인 내신 문제 빠른 추가" Click="QuickAddOnlinePractice_Click"
+                                HorizontalAlignment="Left" Margin="0,4,0,7"/>
                     </StackPanel>
                     <DataGrid x:Name="ProgressGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                               SelectionChanged="ProgressGrid_SelectionChanged">

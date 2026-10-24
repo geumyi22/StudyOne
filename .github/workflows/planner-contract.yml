@@ -71,6 +71,8 @@ jobs:
             app/src/main/java/com/studyone/app/StudyOnlinePractice.java \
             scripts/tests/StudyOnlinePracticeSmoke.java
           java -cp /tmp/studyone-online-practice-classes StudyOnlinePracticeSmoke
+      - name: Audit cross-platform online practice parity and recovery import safeguards
+        run: python3 scripts/tests/check_online_practice_parity.py
       - name: Verify Samsung Reminder daily-plan contract on Android and iOS
         run: python3 scripts/tests/check_daily_reminder.py
       - name: Compile and smoke-test read-only five-role daily checklist export

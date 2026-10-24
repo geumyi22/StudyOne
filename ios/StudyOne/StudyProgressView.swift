@@ -11,6 +11,10 @@ struct StudyProgressView: View {
     @State private var deleting: StudyProgressItem?
     @State private var importPicker = false
     @State private var pendingImport: Data?
+    @State private var pendingImportOriginal: [StudyProgressItem]?
+    @State private var showOnlineAdd = false
+    @State private var onlineOriginal: [StudyProgressItem] = []
+    @State private var onlineSubjects: [String] = []
     @State private var importCount = 0
     @State private var exportURL: URL?
     @State private var backupNotice = ""
@@ -75,6 +79,22 @@ struct StudyProgressView: View {
                     }
                     .pickerStyle(.menu)
                     Text("교재·소단원·모의고사·학습지·전체 오답 복습을 별도로 기록할 수 있습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("온라인 내신 문제") {
+                    Button {
+                        onlineOriginal = progress.items
+                        onlineSubjects = StudyOnlinePractice.missingSubjects(in: onlineOriginal)
+                        if onlineSubjects.isEmpty {
+                            backupNotice = "6과목 모두 이미 등록되어 있습니다. 기존 상태를 유지했습니다."
+                        } else {
+                            showOnlineAdd = true
+                        }
+                    } label: {
+                        Label("6과목 온라인 내신 문제 빠른 추가", systemImage: "plus.circle")
+                    }
+                    .disabled(progress.loadError != nil)
+                    Text("없는 과목만 미완료로 추가합니다. 기존 완료·진행 중 기록은 건너뜁니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let failure = progress.loadError {
@@ -220,6 +240,7 @@ struct StudyProgressView: View {
                         throw StudyError.message("지원되지 않거나 손상된 진도 백업입니다.")
                     }
                     importCount = parsed.items.count
+                    pendingImportOriginal = progress.items
                     pendingImport = bytes
                 } catch { self.error(error.localizedDescription) }
             }
@@ -231,6 +252,7 @@ struct StudyProgressView: View {
                         if !$0 {
                             deleting = nil
                             pendingImport = nil
+                            pendingImportOriginal = nil
                         }
                     }
                 ), titleVisibility: .visible
@@ -242,23 +264,41 @@ struct StudyProgressView: View {
                         deleting = nil
                     }
                 }
-                if let bytes = pendingImport {
+                if let bytes = pendingImport, let approved = pendingImportOriginal {
                     Button("진도 \(importCount)개로 교체", role: .destructive) {
                         do {
-                            try progress.importBackup(data: bytes)
-                            backupNotice = "진도 JSON 백업을 복원했습니다."
+                            // Capture the approved snapshot in the button closure.
+                            // SwiftUI may dismiss the confirmation before invoking it.
+                            let recovery = try progress.importBackup(data: bytes, original: approved)
+                            backupNotice = "진도를 복원했습니다. 내부 복구본: \(recovery.lastPathComponent)"
                         } catch { self.error(error.localizedDescription) }
                         pendingImport = nil
+                        pendingImportOriginal = nil
                     }
                 }
                 Button("취소", role: .cancel) {
                     deleting = nil
                     pendingImport = nil
+                    pendingImportOriginal = nil
                 }
             } message: {
                 Text(pendingImport == nil
                      ? (deleting.map { "\($0.subject) · \($0.unit)" } ?? "")
-                     : "현재 이 기기의 진도만 교체됩니다. 학교·숙제·시험 일정은 그대로 보존됩니다. 기존 진도도 먼저 백업하세요.")
+                     : "현재 이 기기의 진도만 교체됩니다. 학교·숙제·시험 일정은 그대로 보존됩니다. 승인하면 기존 진도 원본을 앱 내부에 자동 백업합니다.")
+            }
+            .confirmationDialog("온라인 내신 문제 빠른 추가", isPresented: $showOnlineAdd,
+                                titleVisibility: .visible) {
+                Button("신규 \(onlineSubjects.count)개만 추가") {
+                    do {
+                        let (count, backup) = try progress.addMissingOnlinePractice(
+                            original: onlineOriginal)
+                        backupNotice = "신규 \(count)개를 추가했습니다. 내부 복구본: \(backup.lastPathComponent)"
+                    } catch { self.error(error.localizedDescription) }
+                }
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("새로 추가할 과목: \(onlineSubjects.joined(separator: ", "))\n"
+                     + "상태는 미완료이며, 원본은 앱 내부에 백업합니다. 기존 진도 상태는 변경하지 않습니다.")
             }
             .alert("진도 관리 오류", isPresented: $showError) {
                 Button("확인", role: .cancel) {}
