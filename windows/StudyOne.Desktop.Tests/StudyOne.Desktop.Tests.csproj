@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../StudyOne.Desktop/StudyData.cs" Link="StudyData.cs"/>
+    <Compile Include="../StudyOne.Desktop/StudyOnlinePractice.cs" Link="StudyOnlinePractice.cs"/>
     <Compile Include="../StudyOne.Desktop/SyncClient.cs" Link="SyncClient.cs"/>
     <Compile Include="../StudyOne.Desktop/StudyChecklistText.cs" Link="StudyChecklistText.cs"/>
     <Compile Include="../StudyOne.Desktop/StudyTaskViews.cs" Link="StudyTaskViews.cs"/>
