@@ -591,6 +591,9 @@ public class MainActivity extends Activity {
         Button addProgress=secondary("+ 시험범위 진도 추가");
         addProgress.setOnClickListener(v->progressDialog(null));
         c.addView(addProgress);
+        Button onlinePractice=secondary("+ 6과목 온라인 내신 문제 빠른 추가");
+        onlinePractice.setOnClickListener(v->showOnlinePracticeDialog());
+        c.addView(onlinePractice);
         Button progressExport=secondary("진도 JSON 백업 내보내기");
         progressExport.setOnClickListener(v->{
             android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
@@ -1830,6 +1833,63 @@ public class MainActivity extends Activity {
                 .setTitle("백업 처리 실패")
                 .setMessage(e.getMessage()==null?"파일 형식을 확인하세요.":e.getMessage())
                 .setPositiveButton("확인",null).show();
+    }
+
+    /** Add only absent six-subject online-exam practice entries after explicit consent.
+     * Existing records (including their completion state and IDs) are never changed.
+     * A protected local progress backup is created before any new entry is saved.
+     */
+    private void showOnlinePracticeDialog() {
+        try {
+            final String reviewedRaw=progressStorage.rawProgressForSync();
+            final List<String> missing=StudyOnlinePractice.missingSubjects(progressStorage.list());
+            if(missing.isEmpty()) {
+                new AlertDialog.Builder(this)
+                    .setTitle("온라인 내신 문제")
+                    .setMessage("6과목 모두 온라인 내신 문제 진도가 이미 등록되어 있습니다. "
+                            +"기존 상태와 기록은 변경하지 않았습니다.")
+                    .setPositiveButton("확인",null).show();
+                return;
+            }
+            new AlertDialog.Builder(this)
+                .setTitle("6과목 온라인 내신 문제 빠른 추가")
+                .setMessage("기존 온라인 내신 문제 항목은 완료·진행 중·미완료 상태와 "
+                        +"관계없이 중복 추가하지 않습니다.\n\n"
+                        +"새로 추가할 과목 ("+missing.size()+"개): "
+                        +android.text.TextUtils.join(", ",missing)+"\n"
+                        +"새 항목 상태: 미완료 · 시험범위 포함\n\n"
+                        +"저장 전에 기존 진도 원본을 앱 내부에 보관합니다. "
+                        +"기존 과제·진도·오답 및 완료 상태는 변경하지 않습니다.")
+                .setNegativeButton("취소",null)
+                .setPositiveButton("신규 "+missing.size()+"개만 추가",(dialog,which)->{
+                    try {
+                        if(!java.util.Objects.equals(reviewedRaw,
+                                progressStorage.rawProgressForSync()))
+                            throw new IllegalStateException(
+                                    "검토 중 진도가 수정됐습니다. 새로 미리보기를 확인하세요.");
+                        List<StudyProgressItem> latest=progressStorage.list();
+                        if(!missing.equals(StudyOnlinePractice.missingSubjects(latest)))
+                            throw new IllegalStateException(
+                                    "추가 대상이 변경됐습니다. 새로 미리보기를 확인하세요.");
+                        List<StudyProgressItem> additions=
+                                StudyOnlinePractice.createMissing(latest);
+                        // Synchronised storage rechecks exact original bytes and backs up
+                        // the old list before appending new UUIDs.
+                        String recovery=progressStorage.appendNewProgressForSync(
+                                reviewedRaw,additions,getApplicationContext());
+                        openPlannerPage(3);
+                        new AlertDialog.Builder(this)
+                            .setTitle("온라인 내신 문제 "+additions.size()+"개 추가 완료")
+                            .setMessage("기존 항목은 보존하고 미완료 진도만 추가했습니다.\n"
+                                    +"기존 진도 복구용 내부 파일: "+recovery)
+                            .setPositiveButton("확인",null).show();
+                    } catch(Exception error) {
+                        showBackupError(error);
+                    }
+                }).show();
+        } catch(Exception error) {
+            showBackupError(error);
+        }
     }
 
     private void progressDialog(StudyProgressItem existing) {
