@@ -264,13 +264,12 @@ struct StudyProgressView: View {
                         deleting = nil
                     }
                 }
-                if let bytes = pendingImport {
+                if let bytes = pendingImport, let approved = pendingImportOriginal {
                     Button("진도 \(importCount)개로 교체", role: .destructive) {
                         do {
-                            guard let original = pendingImportOriginal else {
-                                throw StudyError.message("가져오기 미리보기를 다시 확인하세요.")
-                            }
-                            let recovery = try progress.importBackup(data: bytes, original: original)
+                            // Capture the approved snapshot in the button closure.
+                            // SwiftUI may dismiss the confirmation before invoking it.
+                            let recovery = try progress.importBackup(data: bytes, original: approved)
                             backupNotice = "진도를 복원했습니다. 내부 복구본: \(recovery.lastPathComponent)"
                         } catch { self.error(error.localizedDescription) }
                         pendingImport = nil
