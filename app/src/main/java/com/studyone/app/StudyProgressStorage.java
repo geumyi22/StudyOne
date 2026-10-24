@@ -21,7 +21,12 @@ public final class StudyProgressStorage {
     private final SharedPreferences preferences;
 
     public StudyProgressStorage(Context context) {
-        preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        this(context, PREFERENCES);
+    }
+
+    /** Private namespace constructor for synthetic emulator QA only. */
+    private StudyProgressStorage(Context context, String namespace) {
+        preferences = context.getSharedPreferences(namespace, Context.MODE_PRIVATE);
     }
 
     public synchronized List<StudyProgressItem> list() {
@@ -235,6 +240,48 @@ public final class StudyProgressStorage {
         }
         write(verified);
         return name;
+    }
+
+    /** Developer-only isolated emulator QA. Never opens the user's real progress prefs. */
+    public static boolean selfTestRecovery(Context context) {
+        String namespace = "studyone_progress_qa_" + java.util.UUID.randomUUID();
+        StudyProgressStorage isolated = new StudyProgressStorage(context, namespace);
+        String recovery = null;
+        try {
+            StudyProgressItem original = isolated.add(
+                    "사회", "학교 자료", "온라인 내신 문제", StudyProgressItem.IN_PROGRESS, true);
+            String approved = isolated.rawProgressForSync();
+            StudyProgressItem incoming = StudyProgressItem.create(
+                    "역사", "체크체크", "시험 대비 자료 10장", StudyProgressItem.TODO, true);
+            recovery = isolated.restoreBackupWithRecovery(
+                    java.util.Collections.singletonList(incoming), approved, context);
+            String recovered;
+            try (java.io.FileInputStream file = context.openFileInput(recovery);
+                 java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = file.read(buffer)) != -1) bytes.write(buffer, 0, n);
+                recovered = bytes.toString("UTF-8");
+            }
+            List<StudyProgressItem> before = parseBackup(recovered);
+            if (before.size() != 1 || !before.get(0).id.equals(original.id)
+                    || !StudyProgressItem.IN_PROGRESS.equals(before.get(0).status))
+                return false;
+            try {
+                isolated.restoreBackupWithRecovery(
+                        java.util.Collections.singletonList(original), approved, context);
+                return false; // stale approved original must be rejected
+            } catch (IllegalStateException expected) { /* correct */ }
+            List<StudyProgressItem> after = isolated.list();
+            return after.size() == 1 && after.get(0).id.equals(incoming.id)
+                    && StudyProgressItem.TODO.equals(after.get(0).status);
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (recovery != null) context.deleteFile(recovery);
+            context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
+                    .edit().clear().commit();
+        }
     }
 
     /** Call only after import preview and an explicit user confirmation. */
