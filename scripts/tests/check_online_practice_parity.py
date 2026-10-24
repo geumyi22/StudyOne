@@ -67,7 +67,7 @@ class BatchSafety(unittest.TestCase):
         self.assertIn('restoreBackupWithRecovery(', A)
         self.assertIn('StudySyncBackup.save(originalBytes, kind: "progress")', I)
         self.assertIn('func importBackup(data: Data, original expected:', I)
-        self.assertIn('progress.importBackup(data: bytes, original: original)', IV)
+        self.assertIn('progress.importBackup(data: bytes, original: approved)', IV)
         self.assertIn('SaveProgressWithRecovery(', WD)
         self.assertIn('current.SequenceEqual(approvedOriginal)', WD)
         self.assertIn('SaveAtomic(backup, old)', WD)
