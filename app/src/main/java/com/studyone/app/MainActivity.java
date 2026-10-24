@@ -1773,17 +1773,26 @@ public class MainActivity extends Activity {
                 }
                 List<StudyProgressItem> parsed=StudyProgressStorage.parseBackup(
                         bytes.toString("UTF-8"));
+                final String approvedRaw=progressStorage.rawProgressForSync();
+                // Fail closed before showing the user a destructive confirmation.
+                progressStorage.list();
                 new AlertDialog.Builder(this)
                         .setTitle("진도 백업 가져오기")
                         .setMessage("진도 "+parsed.size()+"개를 확인했습니다.\n"
                                 +"현재 이 기기의 진도 목록만 교체합니다. "
                                 +"학교·과제·수행평가 일정은 그대로 유지합니다. "
-                                +"현재 진도도 먼저 백업하는 것이 좋습니다. 계속할까요?")
+                                +"기존 진도 전체를 앱 내부 복구 파일에 저장한 뒤 교체합니다. "
+                                +"현재 진도의 외부 백업도 권장합니다. 계속할까요?")
                         .setPositiveButton("진도 교체",(dialog,which)->{
                             try {
-                                progressStorage.restoreBackup(parsed);
+                                String recovery=progressStorage.restoreBackupWithRecovery(
+                                        parsed,approvedRaw,getApplicationContext());
                                 showTab(3);
-                                toast("진도 JSON 복원이 완료되었습니다.");
+                                new AlertDialog.Builder(this)
+                                        .setTitle("진도 백업 복원 완료")
+                                        .setMessage("기존 진도 복구 파일을 앱 내부에 보존했습니다.\n"
+                                                +recovery)
+                                        .setPositiveButton("확인",null).show();
                             } catch(Exception error) { showBackupError(error); }
                         }).setNegativeButton("취소",null).show();
             } catch(Exception error) { showBackupError(error); }
