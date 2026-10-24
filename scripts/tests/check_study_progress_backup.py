@@ -17,7 +17,7 @@ class ProgressBackupContract(unittest.TestCase):
             self.assertIn(f'object.put("{field}"', android)
             self.assertIn(f'let {field}:', ios)
         self.assertIn("public static List<StudyProgressItem> parseBackup", android)
-        self.assertIn("func importBackup(data: Data)", ios)
+        self.assertIn("func importBackup(data: Data, original expected:", ios)
         self.assertIn("Set(ids).count == ids.count", ios)
         self.assertIn("if (!ids.add(item.id))", android)
         self.assertIn("PROGRESS_BACKUP_ROUNDTRIP_PASSED",
@@ -33,7 +33,6 @@ class ProgressBackupContract(unittest.TestCase):
         self.assertIn("진도 JSON 백업 불러오기", ios)
         self.assertIn("진도 백업으로 기존 데이터를 교체할까요?", ios)
         self.assertIn("pendingImport = bytes", ios)
-        self.assertIn("progress.importBackup(data: bytes, original: original)", ios)
         self.assertIn("progress.importBackup(data: bytes, original: original)", ios)
         self.assertIn("StudySyncBackup.save(originalBytes, kind:",
                       (ROOT / "ios/StudyOne/StudyProgress.swift").read_text(encoding="utf-8"))
