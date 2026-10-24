@@ -63,6 +63,14 @@ jobs:
             app/src/main/java/com/studyone/app/StudyProgressChecklist.java \
             scripts/tests/StudyProgressChecklistSmoke.java
           java -cp /tmp/studyone-progress-checklist-classes StudyProgressChecklistSmoke
+      - name: Compile and test idempotent six-subject online practice suggestions
+        run: |
+          mkdir -p /tmp/studyone-online-practice-classes
+          javac -encoding UTF-8 -d /tmp/studyone-online-practice-classes \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            app/src/main/java/com/studyone/app/StudyOnlinePractice.java \
+            scripts/tests/StudyOnlinePracticeSmoke.java
+          java -cp /tmp/studyone-online-practice-classes StudyOnlinePracticeSmoke
       - name: Verify Samsung Reminder daily-plan contract on Android and iOS
         run: python3 scripts/tests/check_daily_reminder.py
       - name: Compile and smoke-test read-only five-role daily checklist export
