@@ -76,6 +76,21 @@ struct StudyProgressTransfer: Codable {
     let items: [StudyProgressItem]
 }
 
+/// A locally approved exam practice plan. A subject is existing whenever any
+/// progress entry already uses the same unit name, regardless of material/status.
+enum StudyOnlinePractice {
+    static let unit = "온라인 내신 문제"
+    static let material = "온라인 문제풀이"
+    static let subjects = ["국어", "사회", "역사", "과학", "영어", "수학"]
+
+    static func missingSubjects(in existing: [StudyProgressItem]) -> [String] {
+        let known = Set(existing.filter {
+            $0.unit.trimmingCharacters(in: .whitespacesAndNewlines) == unit
+        }.map { $0.subject.trimmingCharacters(in: .whitespacesAndNewlines) })
+        return subjects.filter { !known.contains($0) }
+    }
+}
+
 @MainActor
 final class StudyProgressStore: ObservableObject {
     @Published private(set) var items: [StudyProgressItem] = []
@@ -152,6 +167,25 @@ final class StudyProgressStore: ObservableObject {
         return backup
     }
 
+    /// Confirmed local six-subject quick-add reuses exact-disk comparison,
+    /// additive-only merge, and private recovery from the sync-safe path.
+    func addMissingOnlinePractice(original expected: [StudyProgressItem]) throws -> (Int, URL) {
+        guard items == expected else {
+            throw StudyError.message("미리보기 이후 진도가 변경되었습니다. 다시 확인하세요.")
+        }
+        let missing = StudyOnlinePractice.missingSubjects(in: expected)
+        guard !missing.isEmpty else {
+            throw StudyError.message("6과목 모두 온라인 내신 문제가 등록되어 있습니다.")
+        }
+        let additions = try missing.map { subject in
+            try StudyProgressItem.create(subject: subject,
+                material: StudyOnlinePractice.material,
+                unit: StudyOnlinePractice.unit, status: .todo, inExamScope: true)
+        }
+        let backup = try mergeNewProgressFromServer(additions, original: expected)
+        return (additions.count, backup)
+    }
+
     /// Files can be shared through Files/iCloud; tokens and existing tasks are excluded.
     func exportBackup() throws -> URL {
         guard loadError == nil else {
@@ -169,7 +203,19 @@ final class StudyProgressStore: ObservableObject {
     }
 
     /// Fully validate before replacing locally stored progress.
-    func importBackup(data: Data) throws {
+    func importBackup(data: Data, original expected: [StudyProgressItem]) throws -> URL {
+        guard loadError == nil, items == expected else {
+            throw StudyError.message("진도 확인 중 내용이 변경됐습니다. 미리보기를 다시 확인하세요.")
+        }
+        let originalBytes = UserDefaults.standard.data(forKey: storeKey)
+        if let originalBytes {
+            let decoded = try JSONDecoder().decode(StudyProgressEnvelope.self, from: originalBytes)
+            guard decoded.schema == 1 && decoded.items == expected else {
+                throw StudyError.message("기기의 진도 원본이 변경됐습니다. 가져오기를 취소합니다.")
+            }
+        } else if !expected.isEmpty {
+            throw StudyError.message("기존 진도 원본을 찾지 못했습니다.")
+        }
         guard data.count <= 2_000_000 else {
             throw StudyError.message("진도 백업은 최대 2MB입니다.")
         }
@@ -182,7 +228,11 @@ final class StudyProgressStore: ObservableObject {
               document.items.allSatisfy(\.valid) else {
             throw StudyError.message("지원되지 않거나 손상된 StudyOne 진도 백업입니다.")
         }
+        // Persist a durable private recovery copy of the exact original bytes
+        // before any destructive progress-only replacement.
+        let backup = try StudySyncBackup.save(originalBytes, kind: "progress")
         try persist(document.items)
+        return backup
     }
 
     func add(subject: String, material: String, unit: String,
