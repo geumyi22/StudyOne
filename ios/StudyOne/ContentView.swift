@@ -628,6 +628,9 @@ struct SettingsView: View {
     @StateObject private var fourStoreDetails = StudyTaskDetailStore()
     @StateObject private var fourStoreWrong = StudyWrongAnswersStore()
     @State private var fourStoreExportURL: URL?
+    @State private var fourStoreImportPicker = false
+    @State private var fourStoreImportConfirmation = false
+    @State private var fourStorePrepared: StudyFourStoreImport.Prepared?
 
     // Resolve the build actually installed on this device, not an old
     // hard-coded Canary label that becomes misleading after updates.
@@ -693,7 +696,7 @@ struct SettingsView: View {
                     }
                     Button("JSON 백업 불러오기") { importPicker = true }
                 }
-                Section("4종 통합 백업 · 내보내기 전용") {
+                Section("4종 통합 백업 · 내보내기 및 안전 복원") {
                     Button("일정·진도·상세·오답 통합 JSON 준비") {
                         do {
                             // Reject any corrupt or stale local store instead of
@@ -720,7 +723,12 @@ struct SettingsView: View {
                             Label("4종 통합 JSON 공유·저장", systemImage: "square.and.arrow.up")
                         }
                     }
-                    Text("Android/Windows와 호환되는 백업 형식입니다. iOS에서 4종 전체 자동 복원은 아직 지원하지 않으며, 실제 계정 동기화도 아닙니다.")
+                    Button("4종 통합 JSON 복원 파일 선택") {
+                        fourStoreImportPicker = true
+                    }.disabled(fourStoreProgress.loadError != nil ||
+                               fourStoreDetails.loadError != nil ||
+                               fourStoreWrong.loadError != nil)
+                    Text("가져오기 전 SHA-256·전체 항목·기존 저장소를 검증합니다. 명시적으로 동의한 뒤에만 4종을 교체하고, 원본 복구 기록을 남깁니다. 자동 기기간 동기화는 아닙니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("보안 HTTPS 계정 동기화 실험 · Canary") {
@@ -766,6 +774,43 @@ struct SettingsView: View {
                     importedBackup = nil
                 }
                 Button("취소", role: .cancel) { importedBackup = nil }
+            }
+            .fileImporter(isPresented: $fourStoreImportPicker, allowedContentTypes: [.json]) { result in
+                do {
+                    let url = try result.get()
+                    guard url.startAccessingSecurityScopedResource() else {
+                        throw StudyError.message("백업 파일 접근 권한이 없습니다.")
+                    }
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    let candidate = try StudyFourStoreImport.prepare(
+                        Data(contentsOf: url),
+                        tasks: store, progress: fourStoreProgress,
+                        details: fourStoreDetails, wrong: fourStoreWrong)
+                    fourStorePrepared = candidate
+                    fourStoreImportConfirmation = true
+                } catch {
+                    fourStorePrepared = nil
+                    notice = error.localizedDescription
+                }
+            }
+            .confirmationDialog("4종 학습 기록을 모두 교체할까요?",
+                                isPresented: $fourStoreImportConfirmation,
+                                titleVisibility: .visible) {
+                Button("원본 복구 기록을 보관하고 4종 교체", role: .destructive) {
+                    guard let prepared = fourStorePrepared else { return }
+                    defer { fourStorePrepared = nil }
+                    do {
+                        try StudyFourStoreImport.apply(
+                            prepared, tasks: store, progress: fourStoreProgress,
+                            details: fourStoreDetails, wrong: fourStoreWrong)
+                        notice = "4종 복원 및 검증 완료: \(prepared.summary)"
+                    } catch {
+                        notice = error.localizedDescription
+                    }
+                }
+                Button("취소", role: .cancel) { fourStorePrepared = nil }
+            } message: {
+                Text("검증 결과: \(fourStorePrepared?.summary ?? "검증 전")\n기존 일정·진도·학습 상세·오답이 모두 교체됩니다. 원본은 앱 내부 복구 기록으로 보관되며, 복원 도중 중단되면 다음 실행 때 자동 복구합니다.")
             }
         }
     }
