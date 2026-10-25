@@ -12,6 +12,16 @@ enum StudyFourStoreImport {
     private static let keys = ["tasks", "progress", "details", "wrongAnswers"]
     private static let maxSize = 8_200_000
     private static let format = "studyone-fourstore-recovery"
+    private static var approvedTransactionActive = false
+
+    /// Called by every local writer to block edits after failed recovery.
+    /// Only the synchronous, user-approved transaction can write with a marker.
+    static func requireSafeWrite() throws {
+        if FileManager.default.fileExists(atPath: pendingURL.path)
+            && !approvedTransactionActive {
+            throw StudyError.message("4종 복원이 중단돼 원본 복구가 필요합니다. 앱을 재실행해 주세요.")
+        }
+    }
 
     #if DEBUG && targetEnvironment(simulator)
     /// Synthetic simulator QA only. Never compiled into an iPhone release.
@@ -250,6 +260,8 @@ enum StudyFourStoreImport {
             throw StudyError.message("복원 승인 중 로컬 기록이 변경됐습니다.")
         }
         try saveJournal(approved.originals)
+        approvedTransactionActive = true
+        defer { approvedTransactionActive = false }
         do {
             try tasks.importBackup(from: incoming["tasks"]!)
             try checkInjectedFailure(after: 1)
