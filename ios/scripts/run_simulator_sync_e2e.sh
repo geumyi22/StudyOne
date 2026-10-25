@@ -70,8 +70,38 @@ grep -Fq 'IOS_APP_V1_NETWORK_E2E_PASSED' "$REPORT" || {
     --predicate 'process == "StudyOne"' 2>/dev/null | tail -n 50 || true
   exit 1
 }
-# Independent external observer: SQLite-backed HTTP server has both records,
-# while no real device identity/account or personal data was ever accessed.
+# One server, two REAL application transport libraries:
+# the iOS Simulator just wrote two records; Windows .NET's actual SyncClient
+# must read both and write one additional task using the same loopback server.
+export STUDYONE_PHASE31_MAC_CROSSCLIENT=1
+export STUDYONE_E2E_BASE="http://127.0.0.1:8765/"
+dotnet run --project windows/StudyOne.Desktop.Tests/StudyOne.Desktop.Tests.csproj \
+  --configuration Release > "$TMP/dotnet.log" 2>&1 || {
+    tail -n 90 "$TMP/dotnet.log"; exit 1;
+  }
+grep -F 'DOTNET_ACTUAL_CLIENT_CROSS_IOS_E2E_PASSED' "$TMP/dotnet.log"
+
+# Cold restart of the real iOS app: it now sees the newly sent Windows task.
+xcrun simctl terminate "$DEVICE" com.studyone.ios
+CROSS_REPORT="$DATA_DIR/tmp/studyone-ci-ios-crossclient-result.txt"
+rm -f "$CROSS_REPORT"
+SIMCTL_CHILD_STUDYONE_RUN_APP_NETWORK_E2E=verify-dotnet-crossclient \
+SIMCTL_CHILD_STUDYONE_E2E_TOKEN="$STUDYONE_SYNC_TOKEN" \
+  xcrun simctl launch "$DEVICE" com.studyone.ios
+for attempt in $(seq 1 50); do
+  if [[ -s "$CROSS_REPORT" ]]; then break; fi
+  sleep 2
+done
+if [[ ! -s "$CROSS_REPORT" ]]; then
+  echo "iOS app did not read back the Windows .NET change"
+  exit 1
+fi
+cat "$CROSS_REPORT"
+grep -Fq 'IOS_APP_WINDOWS_CROSSCLIENT_E2E_PASSED' "$CROSS_REPORT"
+
+# Independent external observer: SQLite-backed server persisted THREE rows.
+# No real personal data, account identity or app study store is touched.
+
 python3 - <<'PY'
 import json,os,urllib.request
 url="http://127.0.0.1:8765/v1/snapshot"
@@ -79,10 +109,11 @@ request=urllib.request.Request(url,headers={
     "Authorization":"Bearer "+os.environ["STUDYONE_SYNC_TOKEN"]})
 with urllib.request.urlopen(request, timeout=5) as response:
     result=json.load(response)
-assert result["cursor"]==2, result["cursor"]
-assert len(result["records"])==2
+assert result["cursor"]==3, result["cursor"]
+assert len(result["records"])==3
 assert {r["kind"] for r in result["records"]}=={"task","progress"}
-assert {r["id"] for r in result["records"] if r["kind"]=="task"}=={"1790093110001"}
-print("IOS_APP_SERVER_PERSISTENCE_VERIFIED synthetic_records=2 cursor=2")
+assert {r["id"] for r in result["records"] if r["kind"]=="task"}=={
+    "1790093110001", "1790093110002"}
+print("IOS_AND_DOTNET_SERVER_PERSISTENCE_VERIFIED synthetic_records=3 cursor=3")
 PY
-echo "IOS_ACTUAL_SIMULATOR_SYNC_CLIENT_E2E_PASSED"
+echo "IOS_WINDOWS_ACTUAL_CROSSCLIENT_NETWORK_E2E_PASSED"
