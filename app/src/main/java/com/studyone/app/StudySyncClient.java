@@ -22,8 +22,8 @@ import java.util.UUID;
  * Android Emulator: "adb reverse tcp:8765 tcp:8765" before testing against
  * the developer workstation. NEVER expose plain HTTP to LAN/Internet.
  *
- * No background requests, persistent tokens, server-to-local writes or
- * updates/deletes of existing server records.
+ * No background requests, persistent tokens, or automatic server-to-local writes.
+ * Existing server records are changed only through explicit single-ID owner approval.
  */
 public final class StudySyncClient {
     private static final String BASE = "http://127.0.0.1:8765/";
