@@ -278,6 +278,210 @@ enum StudySyncClient {
         return mutations.count
     }
 
+    // Phase33: one deliberately selected existing server ID. The normal
+    // create-only batch type remains unchanged and cannot delete anything.
+    struct ReviewedChange {
+        let kind: String
+        let id: String
+        let baseRevision: Int64
+        let deleted: Bool
+        let payload: Payload?
+        let cursor: Int64
+        let remoteSummary: String
+        let localSummary: String
+        let remoteRecord: Data
+
+        func sameApprovedMutation(as other: ReviewedChange) throws -> Bool {
+            guard kind == other.kind, id == other.id,
+                  baseRevision == other.baseRevision, deleted == other.deleted,
+                  cursor == other.cursor,
+                  remoteSummary == other.remoteSummary,
+                  localSummary == other.localSummary else { return false }
+            let old = try JSONEncoder().encode(ReviewedMutation(change: self))
+            let new = try JSONEncoder().encode(ReviewedMutation(change: other))
+            return old == new
+        }
+    }
+
+    private struct ReviewedMutation: Encodable {
+        let kind: String
+        let id: String
+        let baseRevision: Int64
+        let deleted: Bool
+        let payload: Payload?
+        enum CodingKeys: String, CodingKey {
+            case kind, id, baseRevision, deleted, payload
+        }
+        init(change: ReviewedChange) {
+            kind = change.kind
+            id = change.id
+            baseRevision = change.baseRevision
+            deleted = change.deleted
+            payload = change.payload
+        }
+        func encode(to encoder: Encoder) throws {
+            var fields = encoder.container(keyedBy: CodingKeys.self)
+            try fields.encode(kind, forKey: .kind)
+            try fields.encode(id, forKey: .id)
+            try fields.encode(baseRevision, forKey: .baseRevision)
+            try fields.encode(deleted, forKey: .deleted)
+            if let payload { try fields.encode(payload, forKey: .payload) }
+            else { try fields.encodeNil(forKey: .payload) }
+        }
+    }
+
+    private struct ReviewedRequest: Encodable {
+        let requestId: String
+        let mutations: [ReviewedMutation]
+    }
+
+    static func prepareReviewedChange(
+        token: String, address: String,
+        localTasks: [StudyTask], localProgress: [StudyProgressItem],
+        kind: String, id: String, deleted: Bool
+    ) async throws -> ReviewedChange {
+        let (_, prefix) = try checkedAddress(address)
+        guard prefix == "v2/" else {
+            throw StudyError.message("기존 기록 변경·삭제는 HTTPS 계정 서버에서만 허용합니다.")
+        }
+        guard kind == "task" || kind == "progress", !id.isEmpty else {
+            throw StudyError.message("일정 또는 진도의 정확한 ID를 입력하세요.")
+        }
+        // First validate all remote records, not just the selected one.
+        let validated = try await previewIncoming(
+            token: token, address: address,
+            localTasks: localTasks, localProgress: localProgress)
+        let data = try await request(token, endpoint: "snapshot", address: address)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cursor = root["cursor"] as? Int64, cursor == validated.cursor,
+              let rows = root["records"] as? [[String: Any]],
+              rows.count <= 7000 else {
+            throw StudyError.message("비교 중 서버 기록이 변경됐습니다.")
+        }
+        let selected = rows.filter {
+            ($0["kind"] as? String) == kind && ($0["id"] as? String) == id
+        }
+        guard selected.count == 1,
+              let rowRevision = selected[0]["revision"] as? Int64,
+              rowRevision > 0,
+              (selected[0]["deleted"] as? Bool) == false,
+              let document = selected[0]["payload"] as? [String: Any] else {
+            throw StudyError.message("서버에 활성화된 대상 ID가 하나만 있어야 합니다.")
+        }
+        let payloadData = try JSONSerialization.data(withJSONObject: document)
+        let oldRecord = try JSONSerialization.data(withJSONObject: selected[0])
+        var remoteDescription: String
+        var localDescription: String
+        var candidate: Payload?
+        if kind == "task" {
+            guard let numeric = Int64(id), numeric > 0, String(numeric) == id else {
+                throw StudyError.message("일정 ID가 올바르지 않습니다.")
+            }
+            let remote = try JSONDecoder().decode(StudyTask.self, from: payloadData)
+            guard remote.id == numeric else { throw StudyError.message("서버 일정 ID 불일치") }
+            let local = localTasks.first(where: { $0.id == numeric })
+            remoteDescription = "[\(remote.subject)] \(remote.title) · \(remote.dueDate)"
+            if deleted {
+                guard local == nil else {
+                    throw StudyError.message("기기에 같은 ID가 남아 있어 서버 삭제를 차단합니다.")
+                }
+                localDescription = "이 기기에는 없는 기록 · 원격만 삭제"
+            } else {
+                guard let local else { throw StudyError.message("기기에 수정할 일정이 없습니다.") }
+                guard local != remote else { throw StudyError.message("서버와 동일한 일정입니다.") }
+                candidate = .task(local)
+                localDescription = "[\(local.subject)] \(local.title) · \(local.dueDate)"
+            }
+        } else {
+            guard UUID(uuidString: id) != nil else {
+                throw StudyError.message("진도 UUID가 올바르지 않습니다.")
+            }
+            let remote = try JSONDecoder().decode(StudyProgressItem.self, from: payloadData)
+            guard remote.id.lowercased() == id.lowercased(),
+                  remote.revision == rowRevision else {
+                throw StudyError.message("서버 진도 수정 버전이 올바르지 않습니다.")
+            }
+            let local = localProgress.first { $0.id.lowercased() == id.lowercased() }
+            remoteDescription = "[\(remote.subject)] \(remote.material) · \(remote.unit) · \(remote.status.rawValue)"
+            if deleted {
+                guard local == nil else {
+                    throw StudyError.message("기기에 같은 진도 UUID가 남아 있어 서버 삭제를 차단합니다.")
+                }
+                localDescription = "이 기기에는 없는 진도 · 원격만 삭제"
+            } else {
+                guard let local else { throw StudyError.message("기기에 수정할 진도가 없습니다.") }
+                guard local.subject != remote.subject ||
+                      local.material != remote.material ||
+                      local.unit != remote.unit ||
+                      local.status != remote.status ||
+                      local.inExamScope != remote.inExamScope else {
+                    throw StudyError.message("서버와 동일한 진도입니다.")
+                }
+                candidate = .progress(local)
+                localDescription = "[\(local.subject)] \(local.material) · \(local.unit) · \(local.status.rawValue)"
+            }
+        }
+        return ReviewedChange(
+            kind: kind, id: id, baseRevision: rowRevision, deleted: deleted,
+            payload: candidate, cursor: cursor,
+            remoteSummary: remoteDescription, localSummary: localDescription,
+            remoteRecord: oldRecord)
+    }
+
+    @MainActor
+    static func saveReviewedRecovery(_ review: ReviewedChange,
+                                     session: Session, endpoint: String) throws -> String {
+        let (_, prefix) = try checkedAddress(endpoint)
+        guard prefix == "v2/" else {
+            throw StudyError.message("HTTPS 계정 서버에서만 원격 복구본을 저장합니다.")
+        }
+        let folder = try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true)
+            .appendingPathComponent("StudyOne/SyncRemoteRecovery", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        guard let old = try JSONSerialization.jsonObject(with: review.remoteRecord) as? [String: Any] else {
+            throw StudyError.message("서버 원본 복구 파일을 읽을 수 없습니다.")
+        }
+        let contents: [String: Any] = [
+            "format": "studyone-remote-recovery", "schema": 1,
+            "accountId": session.accountId, "endpoint": endpoint,
+            "cursor": review.cursor, "record": old
+        ]
+        let bytes = try JSONSerialization.data(withJSONObject: contents)
+        guard bytes.count <= 2_000_000 else {
+            throw StudyError.message("서버 기록 복구본이 너무 큽니다.")
+        }
+        let name = UUID().uuidString.lowercased() + ".json"
+        let url = folder.appendingPathComponent(name)
+        try bytes.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: url.path)
+        return name
+    }
+
+    static func uploadReviewedChange(
+        token: String, address: String, reviewed: ReviewedChange) async throws {
+        let (_, prefix) = try checkedAddress(address)
+        guard prefix == "v2/", reviewed.baseRevision >= 1 else {
+            throw StudyError.message("HTTPS 계정 서버의 기존 수정 버전이 필요합니다.")
+        }
+        let packet = ReviewedRequest(requestId: UUID().uuidString.lowercased(),
+                                      mutations: [ReviewedMutation(change: reviewed)])
+        let bytes = try JSONEncoder().encode(packet)
+        let reply = try await request(token, endpoint: "changes",
+                                      body: bytes, address: address)
+        let ack = try JSONDecoder().decode(Ack.self, from: reply)
+        guard ack.schema == 1, ack.changes.count == 1,
+              let item = ack.changes.first,
+              item.seq > 0, ack.cursor == item.seq,
+              item.kind == reviewed.kind, item.id == reviewed.id,
+              item.revision == reviewed.baseRevision + 1,
+              item.deleted == reviewed.deleted, item.updatedAt >= 0 else {
+            throw StudyError.message("기존 기록 변경 서버 승인 내용을 확인할 수 없습니다.")
+        }
+    }
+
     static func newOnly(tasks: [StudyTask], progress: [StudyProgressItem],
                         snapshot: Snapshot) throws -> [Mutation] {
         guard snapshot.schema == 1, tasks.count <= 5000, progress.count <= 2000 else {
