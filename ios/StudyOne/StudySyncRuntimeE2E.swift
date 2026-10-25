@@ -15,6 +15,7 @@ enum StudySyncRuntimeE2E {
         let filename = requested == mode
             ? resultName : "studyone-ci-ios-crossclient-result.txt"
         let resultURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        var stage = "begin"
         do {
             let token = environment["STUDYONE_E2E_TOKEN"] ?? ""
             let address = "http://127.0.0.1:8765/"
@@ -46,6 +47,7 @@ enum StudySyncRuntimeE2E {
                     .write(to: resultURL, atomically: true, encoding: .utf8)
                 return
             }
+            stage = "read_initial_snapshot"
             let first = try await StudySyncClient.snapshot(token: token, address: address)
             guard first.records.isEmpty, first.cursor == 0 else {
                 throw StudyError.message("시험 서버가 초기 상태가 아닙니다.")
@@ -67,6 +69,7 @@ enum StudySyncRuntimeE2E {
                   pending.allSatisfy({ $0.baseRevision == 0 }) else {
                 throw StudyError.message("실제 iOS 클라이언트의 전송 후보가 다릅니다.")
             }
+            stage = "post_two_mutations"
             let applied = try await StudySyncClient.uploadNew(
                 token: token, pending: pending, address: address
             )
@@ -74,6 +77,7 @@ enum StudySyncRuntimeE2E {
                 throw StudyError.message("서버 저장 확인 항목 수가 일치하지 않습니다.")
             }
 
+            stage = "read_back_two_mutations"
             let second = try await StudySyncClient.snapshot(
                 token: token, address: address
             )
@@ -88,6 +92,7 @@ enum StudySyncRuntimeE2E {
 
             // The same app client must decode the actual received JSON and
             // stage BOTH records for a DIFFERENT, empty client store.
+            stage = "decode_two_incoming_records"
             let remote = try await StudySyncClient.previewIncoming(
                 token: token, address: address, localTasks: [], localProgress: []
             )
@@ -106,6 +111,7 @@ enum StudySyncRuntimeE2E {
                 title: "다른 기기에서 수정한 합성 기록", dueDate: task.dueDate,
                 importance: 2, completed: false
             )
+            stage = "classify_divergent_id"
             let conflict = try await StudySyncClient.previewIncoming(
                 token: token, address: address,
                 localTasks: [divergent], localProgress: [progress]
@@ -114,6 +120,7 @@ enum StudySyncRuntimeE2E {
                   conflict.newTasks.isEmpty, conflict.newProgress.isEmpty else {
                 throw StudyError.message("동일 ID 다른 내용 충돌을 감지하지 못했습니다.")
             }
+            stage = "recheck_conflict_read_only"
             let unchanged = try await StudySyncClient.snapshot(
                 token: token, address: address
             )
@@ -122,6 +129,7 @@ enum StudySyncRuntimeE2E {
             }
 
             // Explicit authentication failure: no false success for invalid token.
+            stage = "deny_wrong_bearer"
             do {
                 _ = try await StudySyncClient.snapshot(
                     token: "InvalidSyntheticBearerTokenOnlyForAppE2E0123456789",
@@ -136,11 +144,13 @@ enum StudySyncRuntimeE2E {
             }
 
             let result = "IOS_APP_V1_NETWORK_E2E_PASSED task=1 progress=1 "
-                + "cursor=2 conflict=1 denied=1 local_data_unchanged=1"
+                + "cursor=2 conflict=1 denied=1 local_data_unchanged=1\n"
             try result.write(to: resultURL, atomically: true, encoding: .utf8)
         } catch {
-            let safe = "IOS_APP_V1_NETWORK_E2E_FAILED "
-                + String(describing: type(of: error))
+            // No credentials or real learning data exist in this fixture.
+            // Only expose a short stage identifier and synthetic error reason.
+            let safe = "IOS_APP_V1_NETWORK_E2E_FAILED stage=" + stage
+                + " reason=" + String(error.localizedDescription.prefix(140)) + "\n"
             try? safe.write(to: resultURL, atomically: true, encoding: .utf8)
         }
     }
