@@ -62,6 +62,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(names, ["studyone_read_snapshot",
                                  "studyone_read_changes",
                                  "studyone_pending_study_plans",
+                                 "studyone_preview_paper_schedule",
                                  "studyone_propose_study_plan"])
         self.assertFalse(any("delete" in n or "apply" in n or "write_task" in n
                              for n in names))
@@ -92,6 +93,37 @@ class McpTests(unittest.TestCase):
         status, snapshot = self.api(self.assistant["token"], "/mcp",
                                     self.rpc("studyone_read_snapshot"))
         self.assertEqual(len(json.loads(snapshot["result"]["content"][0]["text"])["records"]), 1)
+
+    def test_read_only_paper_schedule_tool_does_not_mutate_tasks(self):
+        candidate = {
+            "startDate": "2026-10-25", "endDate": "2026-11-02",
+            "maxPerDay": 2, "firstReview": "학습지",
+            "lanes": [
+                {"label": "2단원", "items": [
+                    {"title": "2-1 소단원 평가", "total": 3},
+                    {"title": "2-2 소단원 평가", "total": 3},
+                    {"title": "2단원 대단원 평가", "total": 3}]},
+                {"label": "3단원", "items": [
+                    {"title": "3-1 소단원 평가", "total": 3},
+                    {"title": "3-2 소단원 평가", "total": 3},
+                    {"title": "3단원 대단원 평가", "total": 3}]}
+            ]
+        }
+        code, result = self.api(self.assistant["token"], "/mcp",
+                                self.rpc("studyone_preview_paper_schedule", candidate))
+        self.assertEqual(code, 200)
+        self.assertFalse(result["result"]["isError"])
+        plan = json.loads(result["result"]["content"][0]["text"])
+        self.assertEqual((plan["totalPapers"], len(plan["days"])), (18, 9))
+        self.assertEqual([len(day["papers"]) for day in plan["days"]], [2] * 9)
+        self.assertEqual(plan["days"][0]["review"], "학습지")
+        self.assertEqual(plan["days"][1]["review"], "교재")
+        self.assertEqual(plan["days"][-1]["date"], "2026-11-02")
+        self.assertEqual(self.registry.store(self.account).snapshot()["records"], [])
+        self.assertEqual(self.registry.store(self.account).snapshot()["cursor"], 0)
+        other, unauthorized = self.api("invalid", "/mcp",
+                                       self.rpc("studyone_preview_paper_schedule", candidate))
+        self.assertEqual(other, 401)
 
     def test_mcp_token_scope_and_account_isolation(self):
         noauth, _ = self.api("garbage", "/mcp", self.rpc("studyone_read_snapshot"))
