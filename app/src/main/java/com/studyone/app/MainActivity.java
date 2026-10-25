@@ -1054,6 +1054,94 @@ public class MainActivity extends Activity {
      * Development-only manual sync: never sends data until a second explicit
      * confirmation. It never mutates local tasks or progress records.
      */
+    /** User-selected existing-ID write, HTTPS account only; no background sync. */
+    private void reviewedRemoteChange(boolean delete, String address, String token,
+            String kind, String id, TextView result, AlertDialog dialog, Button trigger) {
+        if(!dialog.isShowing())return;
+        trigger.setEnabled(false);
+        io.execute(()->{
+            try {
+                String endpoint=StudySyncClient.checkedAccountAddress(address);
+                JSONObject session=StudySyncClient.accountSession(token,endpoint);
+                if(!"device".equals(session.getString("audience")) ||
+                        !"read-write".equals(session.getString("scope")))
+                    throw new IllegalStateException("서버에 쓰기 권한이 있는 계정 기기 토큰만 허용합니다.");
+                List<Models.StudyTask> localTasks=storage.checkedTasksForSync();
+                List<StudyProgressItem> localProgress=progressStorage.list();
+                JSONObject snapshot=StudySyncClient.snapshot(token,endpoint);
+                StudySyncClient.ReviewedChange reviewed=StudySyncClient.prepareReviewedChange(
+                        snapshot,localTasks,localProgress,kind,id,delete);
+                runOnUiThread(()->{
+                    if(!dialog.isShowing()){trigger.setEnabled(true);return;}
+                    String verb=delete?"서버에서 삭제":"현재 기기 내용으로 서버 수정";
+                    new AlertDialog.Builder(this)
+                        .setTitle("기존 기록 "+verb+" · 최종 승인")
+                        .setMessage("계정 "+session.optString("accountId")
+                                +"\\n대상 "+kind+" / "+id
+                                +"\\n서버 버전 "+reviewed.mutation.optLong("baseRevision")
+                                +"\\n현재 서버: "+reviewed.remoteSummary
+                                +"\\n현재 기기: "+reviewed.localSummary
+                                +"\\n\\n"+verb+"하시겠습니까? 서버 기록을 내부 복구 파일로 보관한 뒤 전송합니다. "
+                                +"승인 중 원본이 바뀌거나 충돌하면 전송하지 않습니다.")
+                        .setNegativeButton("취소",(d,w)->{
+                            result.setText("서버 기록 변경을 취소했습니다.");
+                            trigger.setEnabled(true);
+                        })
+                        .setPositiveButton("검증 후 서버 "+(delete?"삭제":"수정"),(d,w)->io.execute(()->{
+                            try {
+                                JSONObject secondSession=StudySyncClient.accountSession(token,endpoint);
+                                if(!session.getString("accountId").equals(
+                                        secondSession.getString("accountId")) ||
+                                        !"read-write".equals(secondSession.getString("scope")))
+                                    throw new IllegalStateException("승인 후 계정 또는 쓰기 권한이 변경됐습니다.");
+                                JSONObject latest=StudySyncClient.snapshot(token,endpoint);
+                                if(latest.getLong("cursor")!=reviewed.cursor)
+                                    throw new IllegalStateException("승인 중 서버 상태가 변경됐습니다.");
+                                StudySyncClient.ReviewedChange rechecked=
+                                        StudySyncClient.prepareReviewedChange(latest,
+                                                storage.checkedTasksForSync(),progressStorage.list(),
+                                                kind,id,delete);
+                                if(rechecked.mutation.getLong("baseRevision")!=
+                                        reviewed.mutation.getLong("baseRevision") ||
+                                        !rechecked.mutation.toString().equals(
+                                                reviewed.mutation.toString()))
+                                    throw new IllegalStateException("승인한 로컬 기록이 변경됐습니다.");
+                                JSONObject remote=null;
+                                JSONArray rows=latest.getJSONArray("records");
+                                for(int i=0;i<rows.length();i++){
+                                    JSONObject row=rows.getJSONObject(i);
+                                    if(kind.equals(row.getString("kind")) &&
+                                            id.equals(row.getString("id"))) {remote=row;break;}
+                                }
+                                if(remote==null)throw new IllegalStateException("서버 복구 대상이 없습니다.");
+                                String saved=StudySyncClient.saveReviewedRecovery(
+                                        getApplicationContext(),remote,secondSession,endpoint,
+                                        reviewed.cursor);
+                                StudySyncClient.uploadReviewed(token,endpoint,rechecked);
+                                runOnUiThread(()->{
+                                    result.setText("기존 "+kind+" ID "+id+" 서버 "
+                                        +(delete?"삭제":"수정")+" 확인. 복구 JSON: "+saved
+                                        +"\\n현재 기기의 기존 기록은 수정하지 않았습니다.");
+                                    trigger.setEnabled(true);
+                                });
+                            }catch(Exception error){
+                                runOnUiThread(()->{
+                                    result.setText("서버 변경 실패·결과 미확인. 재시도 전 서버를 다시 읽으세요: "
+                                            +error.getMessage());
+                                    trigger.setEnabled(true);
+                                });
+                            }
+                        })).show();
+                });
+            }catch(Exception error){
+                runOnUiThread(()->{
+                    result.setText("기존 기록 승인 준비 실패: "+error.getMessage());
+                    trigger.setEnabled(true);
+                });
+            }
+        });
+    }
+
     private void syncExperimentDialog() {
         LinearLayout form=column();
         form.setPadding(dp(20),dp(6),dp(20),dp(8));
@@ -1086,6 +1174,15 @@ public class MainActivity extends Activity {
         form.addView(pullTasks);
         form.addView(pullProgress);
         form.addView(pendingPlans);
+        form.addView(cardText("기존 서버 기록 변경·삭제는 한 번에 1개 ID만 처리합니다. HTTPS 쓰기 권한, 로컬·서버 값 비교, 승인 후 서버 커서 재검증, 원격 복구본 저장을 요구합니다.",12));
+        EditText changeKind=input("서버 기록 종류: task 또는 progress","task");
+        EditText changeId=input("수정·삭제할 일정 ID 또는 진도 UUID","");
+        form.addView(changeKind);
+        form.addView(changeId);
+        Button changeUpdate=secondary("선택 ID를 기기 내용으로 서버 수정 · 승인 필수");
+        Button changeDelete=secondary("선택 ID 서버 삭제 · 기기에 없는 경우만");
+        form.addView(changeUpdate);
+        form.addView(changeDelete);
         form.addView(cardText("오프라인 대기열은 토큰을 저장하지 않습니다. 과목·학습 기록은 앱 내부 JSON에 저장되므로 기기 잠금과 외부 백업이 필요합니다. 네트워크 전송에는 동일한 HTTPS 주소·계정·쓰기 권한 토큰과 별도 승인이 필요합니다.",12));
         form.addView(queueSave);
         form.addView(queueSend);
@@ -1099,6 +1196,15 @@ public class MainActivity extends Activity {
                 .create();
         dialog.setOnDismissListener(d->token.setText(""));
         dialog.show();
+
+        changeUpdate.setOnClickListener(v->reviewedRemoteChange(false,
+                address.getText().toString().trim(),token.getText().toString(),
+                changeKind.getText().toString().trim(),
+                changeId.getText().toString().trim(),result,dialog,changeUpdate));
+        changeDelete.setOnClickListener(v->reviewedRemoteChange(true,
+                address.getText().toString().trim(),token.getText().toString(),
+                changeKind.getText().toString().trim(),
+                changeId.getText().toString().trim(),result,dialog,changeDelete));
 
         pullTasks.setOnClickListener(v->
                 importNewRemote(true, token.getText().toString(),
