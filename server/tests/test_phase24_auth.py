@@ -154,6 +154,22 @@ class HttpAudienceTests(AuthenticationLifecycleTests):
         except HTTPError as failure:
             return failure.code, json.loads(failure.read())
 
+    def test_session_introspection_never_leaks_credentials(self):
+        status, info = self.fetch(self.device["token"], "/v2/session")
+        self.assertEqual(status, 200)
+        self.assertEqual(info["accountId"], self.alice)
+        self.assertEqual(info["deviceId"], self.device["deviceId"])
+        self.assertEqual(info["scope"], "read-write")
+        self.assertEqual(info["audience"], "device")
+        self.assertGreater(info["expiresAt"], info["serverTime"])
+        self.assertEqual(set(info), {"schema", "accountId", "deviceId",
+                                    "scope", "audience", "expiresAt", "serverTime"})
+        self.assertNotIn("token", json.dumps(info).lower())
+        self.assertNotIn(token_digest(self.device["token"]), json.dumps(info))
+        self.assertEqual(self.fetch(self.assistant["token"], "/v2/session")[0], 403)
+        self.registry.revoke(self.device["deviceId"])
+        self.assertEqual(self.fetch(self.device["token"], "/v2/session")[0], 401)
+
     def test_mcp_token_rejected_from_regular_sync_and_approval(self):
         ai = self.assistant["token"]
         self.assertEqual(self.fetch(ai, "/v2/snapshot")[0], 403)
