@@ -282,6 +282,29 @@ final class StudyOneStore: ObservableObject {
         try data.write(to: path, options: .atomic)
         return path
     }
+    /// Refresh all observable task fields after four-store rollback.
+    func reloadAfterFourStoreRecovery() throws {
+        if let raw = UserDefaults.standard.data(forKey: settingsKey) {
+            let decoded = try JSONDecoder().decode(Saved.self, from: raw)
+            guard decoded.grade >= 1 && decoded.grade <= 6,
+                  !decoded.className.isEmpty, decoded.className.count <= 3,
+                  decoded.className.allSatisfy({ $0.isNumber }),
+                  decoded.tasks.count <= 5000 else {
+                throw StudyError.message("복구된 일정 설정이 손상됐습니다.")
+            }
+            school = decoded.school
+            grade = decoded.grade
+            className = decoded.className
+            tasks = decoded.tasks
+        } else {
+            school = nil
+            grade = 1
+            className = "1"
+            tasks = []
+        }
+        restoreCache()
+    }
+
     func importBackup(from data: Data) throws {
         guard data.count < 5_000_000 else { throw StudyError.message("백업 파일이 너무 큽니다.") }
         let backup = try JSONDecoder().decode(StudyOneBackup.self, from: data)
