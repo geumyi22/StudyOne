@@ -1167,9 +1167,18 @@ public class MainActivity extends Activity {
                         if("task".equals(records.getJSONObject(i).getString("kind")))tasks++;
                         else progress++;
                     }
-                    final String message="로컬 서버 조회 완료 · 변경 cursor "
-                            +server.getLong("cursor")+"\n서버 일정 "+tasks+"개 · 진도 "+progress
-                            +"개\n기기에 저장된 데이터를 서버로 전송하지 않았습니다.";
+                    StudySyncClient.IncomingPlan local=StudySyncClient.previewInbound(
+                            storage.checkedTasksForSync(),progressStorage.list(),server);
+                    JSONArray outgoing=StudySyncClient.prepareNewOnly(
+                            storage.checkedTasksForSync(),progressStorage.list(),server);
+                    final String message="서버 대조 완료 · cursor "+server.getLong("cursor")
+                            +"\n서버 일정 "+tasks+"개 · 진도 "+progress+"개"
+                            +"\n서버에만 있는 일정 "+local.newTasks.size()+"개 · 진도 "
+                            +local.newProgress.size()+"개"
+                            +"\n기기에만 있는 신규 기록 "+outgoing.length()+"개"
+                            +"\n내용 일치 "+local.unchanged+"개 · 같은 ID의 내용 충돌 "
+                            +local.conflicts+"개"
+                            +"\n충돌은 자동으로 덮어쓰지 않습니다. 이 조회는 데이터를 전송하지 않았습니다.";
                     runOnUiThread(()->{
                         if(!isFinishing() && !isDestroyed() && dialog.isShowing()) {
                             result.setText(message);
@@ -1194,9 +1203,14 @@ public class MainActivity extends Activity {
             result.setText("서버·로컬 진도를 검증해 전송 후보를 확인 중…");
             io.execute(()->{
                 try {
+                    JSONObject reviewed=StudySyncClient.snapshot(secret,endpoint);
+                    StudySyncClient.IncomingPlan differences=StudySyncClient.previewInbound(
+                            storage.checkedTasksForSync(),progressStorage.list(),reviewed);
+                    if(differences.conflicts>0)
+                        throw new IllegalStateException("서로 다른 내용의 동일 ID "+
+                                differences.conflicts+"개가 있어 업로드하지 않습니다.");
                     JSONArray prepared=StudySyncClient.prepareNewOnly(
-                            storage.checkedTasksForSync(), progressStorage.list(),
-                            StudySyncClient.snapshot(secret,endpoint));
+                            storage.checkedTasksForSync(), progressStorage.list(),reviewed);
                     final int count=prepared.length();
                     runOnUiThread(()->{
                         if(isFinishing() || isDestroyed() || !dialog.isShowing()) return;
@@ -1217,9 +1231,15 @@ public class MainActivity extends Activity {
                                     result.setText("전송 직전 데이터 변경 여부를 다시 확인 중…");
                                     io.execute(()->{
                                         try {
+                                            JSONObject latest=StudySyncClient.snapshot(secret,endpoint);
+                                            if(reviewed.getLong("cursor")!=latest.getLong("cursor"))
+                                                throw new IllegalStateException("승인 중 서버 기록이 변경됐습니다.");
+                                            StudySyncClient.IncomingPlan verified=StudySyncClient.previewInbound(
+                                                    storage.checkedTasksForSync(),progressStorage.list(),latest);
+                                            if(verified.conflicts>0)
+                                                throw new IllegalStateException("동일 ID 충돌이 발생했습니다.");
                                             JSONArray confirmed=StudySyncClient.prepareNewOnly(
-                                                    storage.checkedTasksForSync(),progressStorage.list(),
-                                                    StudySyncClient.snapshot(secret,endpoint));
+                                                    storage.checkedTasksForSync(),progressStorage.list(),latest);
                                             if(!prepared.toString().equals(confirmed.toString())){
                                                 throw new IllegalStateException(
                                                     "확인 도중 데이터가 바뀌어 전송을 중단했습니다.");

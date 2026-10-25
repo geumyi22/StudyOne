@@ -113,9 +113,12 @@ enum StudySyncClient {
     }
 
     private struct AckItem: Decodable {
+        let seq: Int64
         let kind: String
         let id: String
         let revision: Int64
+        let deleted: Bool
+        let updatedAt: Int64
     }
 
     private final class RefuseRedirect: NSObject, URLSessionTaskDelegate {
@@ -231,6 +234,33 @@ enum StudySyncClient {
         return value
     }
 
+    /// A 200 OK alone is not proof that the server committed these records.
+    /// Fail closed on reordered, mismatched, truncated, forged or stale receipts.
+    static func verifyChangeAck(_ raw: Data, mutations: [Mutation]) throws {
+        guard (1...50).contains(mutations.count) else {
+            throw StudyError.message("서버 요청의 크기가 올바르지 않습니다.")
+        }
+        let reply = try JSONDecoder().decode(Ack.self, from: raw)
+        guard reply.schema == 1, reply.changes.count == mutations.count else {
+            throw StudyError.message("서버가 일부 변경만 확인했습니다.")
+        }
+        var last: Int64 = 0
+        for (requested, accepted) in zip(mutations, reply.changes) {
+            guard accepted.seq > last,
+                  accepted.kind == requested.kind,
+                  accepted.id == requested.id,
+                  accepted.revision == Int64(requested.baseRevision + 1),
+                  accepted.deleted == requested.deleted,
+                  accepted.updatedAt >= 0 else {
+                throw StudyError.message("서버 승인 ID·수정 버전·순서를 확인할 수 없습니다.")
+            }
+            last = accepted.seq
+        }
+        guard reply.cursor == last else {
+            throw StudyError.message("서버 승인 커서가 마지막 기록과 다릅니다.")
+        }
+    }
+
     /// A stable server request UUID is persisted outside this function.
     /// After a lost response, the same batch body can safely be retried.
     static func uploadQueuedBatch(token: String, address: String,
@@ -244,17 +274,7 @@ enum StudySyncClient {
         let data = try JSONEncoder().encode(Batch(requestId: batch.id, mutations: mutations))
         let result = try await request(token, endpoint: "changes",
                                        body: data, address: address)
-        let ack = try JSONDecoder().decode(Ack.self, from: result)
-        guard ack.schema == 1, ack.cursor >= 0,
-              ack.changes.count == mutations.count else {
-            throw StudyError.message("서버가 모든 대기 항목을 확인하지 않았습니다.")
-        }
-        for (left, right) in zip(mutations, ack.changes) {
-            guard left.kind == right.kind, left.id == right.id,
-                  right.revision == 1 else {
-                throw StudyError.message("서버 응답이 대기 항목과 다릅니다.")
-            }
-        }
+        try verifyChangeAck(result, mutations: mutations)
         return mutations.count
     }
 
@@ -313,11 +333,7 @@ enum StudySyncClient {
             do {
                 let result = try await request(token, endpoint: "changes",
                                                body: bytes, address: address)
-                let ack = try JSONDecoder().decode(Ack.self, from: result)
-                guard ack.schema == 1, ack.cursor >= 0,
-                      ack.changes.count == part.count else {
-                    throw StudyError.message("서버 저장 확인이 불완전합니다.")
-                }
+                try verifyChangeAck(result, mutations: part)
                 sent += part.count
             } catch {
                 throw StudyError.message("전송이 중단되었습니다. \(sent)개 전송 후 추가 저장이 "
@@ -507,6 +523,28 @@ enum StudySyncClient {
             let initial = try newOnly(tasks: [task], progress: [item], snapshot: empty)
             guard initial.count == 2, initial.allSatisfy({ $0.baseRevision == 0 }) else {
                 return false
+            }
+            func receipt(_ id: String, _ revision: Int, _ cursor: Int) throws -> Data {
+                try JSONSerialization.data(withJSONObject: [
+                    "schema": 1, "cursor": cursor,
+                    "changes": [
+                        ["seq": 1, "kind": "task", "id": String(task.id),
+                         "revision": 1, "deleted": false, "updatedAt": 1790000000000] as [String: Any],
+                        ["seq": 2, "kind": "progress", "id": id,
+                         "revision": revision, "deleted": false, "updatedAt": 1790000000000] as [String: Any]
+                    ]
+                ])
+            }
+            try verifyChangeAck(receipt(item.id, 1, 2), mutations: initial)
+            for (id, revision, cursor) in [
+                (UUID().uuidString.lowercased(), 1, 2),
+                (item.id, 9, 2),
+                (item.id, 1, 44)
+            ] {
+                do {
+                    try verifyChangeAck(receipt(id, revision, cursor), mutations: initial)
+                    return false
+                } catch { /* forged receipt correctly refused */ }
             }
             let one = Snapshot(schema: 1, cursor: 1,
                                records: [Record(kind: "task", id: String(task.id),

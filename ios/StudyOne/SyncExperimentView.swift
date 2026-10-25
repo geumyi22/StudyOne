@@ -13,6 +13,7 @@ struct SyncExperimentView: View {
     @State private var busy = false
     @State private var pending: [StudySyncClient.Mutation] = []
     @State private var showApproval = false
+    @State private var reviewedCursor: Int64?
     @State private var incomingPreview: StudySyncClient.IncomingPlan?
     @State private var incomingTasksBaseline: [StudyTask] = []
     @State private var incomingProgressBaseline: [StudyProgressItem] = []
@@ -163,9 +164,22 @@ struct SyncExperimentView: View {
                             let remote = try await StudySyncClient.snapshot(token: token, address: serverAddress)
                             let tasks = remote.records.filter { $0.kind == "task" }.count
                             let progress = remote.records.filter { $0.kind == "progress" }.count
-                            status = "서버 조회 성공 · 변경 cursor \(remote.cursor)\n"
-                                + "일정 \(tasks)개 · 진도 \(progress)개\n"
-                                + "개인 데이터를 전송하지 않았습니다."
+                            let local = try tasksStore.checkedTasksForSync()
+                            let store = StudyProgressStore()
+                            if let issue = store.loadError { throw StudyError.message(issue) }
+                            let comparison = try await StudySyncClient.previewIncoming(
+                                token: token, address: serverAddress,
+                                localTasks: local, localProgress: store.items)
+                            guard comparison.cursor == remote.cursor else {
+                                throw StudyError.message("서버가 대조 중 변경됐습니다. 다시 확인하세요.")
+                            }
+                            let outgoing = try StudySyncClient.newOnly(
+                                tasks: local, progress: store.items, snapshot: remote)
+                            status = "서버 cursor \(remote.cursor) · 일정 \(tasks)개 · 진도 \(progress)개\n"
+                                + "서버에만 있는 일정 \(comparison.newTasks.count)개 · 진도 \(comparison.newProgress.count)개\n"
+                                + "기기에만 있는 새 기록 \(outgoing.count)개\n"
+                                + "일치 \(comparison.unchanged)개 · 같은 ID의 내용 충돌 \(comparison.conflicts)개\n"
+                                + "충돌은 자동 변경하지 않습니다. 읽기 전용 조회입니다."
                         } catch {
                             status = "로컬 서버 연결 실패: \(error.localizedDescription)"
                         }
@@ -183,7 +197,21 @@ struct SyncExperimentView: View {
                         defer { busy = false }
                         do {
                             let remote = try await StudySyncClient.snapshot(token: token, address: serverAddress)
-                            let result = try candidates(snapshot: remote)
+                            let local = try tasksStore.checkedTasksForSync()
+                            let store = StudyProgressStore()
+                            if let issue = store.loadError { throw StudyError.message(issue) }
+                            let compared = try await StudySyncClient.previewIncoming(
+                                token: token, address: serverAddress,
+                                localTasks: local, localProgress: store.items)
+                            guard compared.cursor == remote.cursor else {
+                                throw StudyError.message("조회하는 동안 서버가 변경됐습니다.")
+                            }
+                            guard compared.conflicts == 0 else {
+                                throw StudyError.message("같은 ID의 다른 내용 \(compared.conflicts)개를 발견해 업로드를 중단했습니다.")
+                            }
+                            let result = try StudySyncClient.newOnly(
+                                tasks: local, progress: store.items, snapshot: remote)
+                            reviewedCursor = remote.cursor
                             pending = result
                             if result.isEmpty {
                                 status = "업로드할 새 항목이 없습니다. 기존 서버 데이터를 보존했습니다."
@@ -442,13 +470,15 @@ struct SyncExperimentView: View {
                 Task {
                     defer {
                         pending = []
+                        reviewedCursor = nil
                         busy = false
                     }
                     do {
                         let remote = try await StudySyncClient.snapshot(token: token, address: serverAddress)
                         let latest = try candidates(snapshot: remote)
                         let encoder = JSONEncoder()
-                        guard try encoder.encode(latest) == encoder.encode(expected) else {
+                        guard remote.cursor == reviewedCursor,
+                              try encoder.encode(latest) == encoder.encode(expected) else {
                             throw StudyError.message(
                                 "확인 중 기록이 변경되었습니다. 전송하지 않고 다시 조회합니다."
                             )

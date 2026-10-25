@@ -264,6 +264,37 @@ taskExists.Records.Add(new SyncClient.RemoteRecord {
 });
 Check(SyncClient.NewOnly(tasks, progress, taskExists).Count == 0,
       "Existing remote IDs never uploaded");
+// Phase30: every server-applied mutation MUST appear in the receipt by ID/revision/order.
+var ackRequests = SyncClient.NewOnly(tasks, progress,
+    new SyncClient.Snapshot { Schema = 1, Cursor = 0 });
+Check(ackRequests.Count == 2, "Synthetic ACK fixture has two new records");
+byte[] MakeReceipt(string firstId, string secondId, long finalCursor = 2,
+                   long firstRevision = 1, long secondSequence = 2) =>
+    System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new {
+        schema = 1, cursor = finalCursor,
+        changes = new object[] {
+            new { seq = 1L, kind = ackRequests[0].Kind, id = firstId,
+                  revision = firstRevision, deleted = false, updatedAt = 1790000000000L },
+            new { seq = secondSequence, kind = ackRequests[1].Kind, id = secondId,
+                  revision = 1L, deleted = false, updatedAt = 1790000000000L }
+        }
+    });
+var receipt = MakeReceipt(ackRequests[0].Id, ackRequests[1].Id);
+SyncClient.VerifyChangeAck(receipt, ackRequests);
+ExpectInvalid(() => SyncClient.VerifyChangeAck(
+    MakeReceipt(ackRequests[1].Id, ackRequests[0].Id), ackRequests),
+    "Swapped IDs must not count as successful sync");
+ExpectInvalid(() => SyncClient.VerifyChangeAck(
+    MakeReceipt(ackRequests[0].Id, ackRequests[1].Id, firstRevision: 9), ackRequests),
+    "Forged revision must be rejected");
+ExpectInvalid(() => SyncClient.VerifyChangeAck(
+    MakeReceipt(ackRequests[0].Id, ackRequests[1].Id, finalCursor: 77), ackRequests),
+    "Cursor mismatch must be rejected");
+ExpectInvalid(() => SyncClient.VerifyChangeAck(
+    MakeReceipt(ackRequests[0].Id, ackRequests[1].Id, secondSequence: 1), ackRequests),
+    "Duplicate sequence must be rejected");
+Console.WriteLine("StudyOne Windows complete server receipt verification: PASS");
+
 Console.WriteLine("StudyOne Windows local-only sync upload guard: PASS");
 
 Check(SyncClient.ParseEndpoint("http://127.0.0.1:8765/").Scheme == "http",
