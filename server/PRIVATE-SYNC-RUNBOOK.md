@@ -7,6 +7,10 @@
 - SQLite 계정 레지스트리: 계정 UUID, 기기 UUID, read/read-write 권한, 만료시각, 폐기 상태.
 - 사용자 UUID별 별도의 SQLite 데이터베이스: 일정·교재 진도·수정 로그·삭제 tombstone 및 요청 멱등성.
 - 48바이트 난수 기반 장치 토큰은 생성 직후 1번만 표시. 디스크에는 원본 토큰 대신 SHA-256 검증용 해시만 저장.
+- Phase24: MCP 전용 `audience=mcp` 토큰은 `read` 권한만 가능하며, **`POST /mcp`에서만** 사용할 수 있습니다. 일반 `/v2/snapshot`, `/v2/changes`, 계획 승인·거부 API는 **403**을 반환합니다.
+- 기기 토큰의 일회성 로테이션: 새 난수를 발급하고 기존 해시를 하나의 SQL 트랜잭션에서 교체합니다. 새 토큰이 노출되는 곳은 발급 당시 운영자 터미널뿐입니다.
+- 계정별 장치 조회는 기기 ID/라벨/범위/발급일/만료일/폐기 여부만 출력하고, 원본 토큰이나 토큰 해시는 공개하지 않습니다.
+- 기존 계정 DB는 `audience=device` 컬럼을 안전하게 추가하며, **기존 기기 토큰의 접근 권한이 사라지지 않습니다**.
 - 기기 토큰 폐기, 계정 비활성화, 만료·권한 분리.
 - TLS 인증서와 개인키 없이는 서버 시작 차단. 외부 바인딩은 별도 명시 플래그 필요.
 - HTTPS 헤더(HSTS 등), Origin/CORS 제한, 원본 학습 기록 및 인증정보의 로그 비출력.
@@ -21,6 +25,18 @@ Python 3.12+ 필요. 각 명령은 프로젝트 루트에서 개발 서버 소�
     python server/private_sync.py issue-device --account YOUR_ACCOUNT_UUID --label windows --scope read-write --days 30
     python server/private_sync.py revoke-device --device YOUR_DEVICE_UUID
     python server/private_sync.py disable-account --account YOUR_ACCOUNT_UUID
+
+Phase24 로컬 운영자용 명령 (아래 명령은 실제 학습 데이터를 업로드하지 않음):
+
+    python server/private_sync.py issue-assistant --account YOUR_ACCOUNT_UUID --label chatgpt-canary --days 7
+    python server/private_sync.py list-devices --account YOUR_ACCOUNT_UUID
+    python server/private_sync.py rotate-device --device YOUR_DEVICE_UUID --days 30
+    python server/private_sync.py revoke-device --device YOUR_DEVICE_UUID
+
+- `issue-assistant`는 MCP 전용 읽기/계획 제안 토큰을 발급합니다. **ChatGPT 실제 연동 OAuth 토큰이나 사용자 로그인 자격증명은 아닙니다**.
+- `rotate-device`를 실행하면 기존 토큰이 즉시 무효화됩니다. 새 토큰을 안전하게 보관한 뒤 기기 설정을 업데이트하세요. 기존 클라이언트는 재인증 전까지 연결이 끊깁니다.
+- 이미 폐기·만료된 기기 또는 비활성화한 계정의 토큰은 로테이션으로 되살리지 않습니다. 새 기기를 명시적으로 발급하세요.
+- 토큰은 채팅, GitHub, 로그, 스크린샷, 공유 문서에 붙여 넣지 마세요.
 
 기본 인증 DB는 홈 디렉터리의 .studyone/accounts.sqlite3이며 사용자별 데이터는 .studyone/accounts/UUID.sqlite3입니다.
 발급된 토큰은 한 번만 출력됩니다. 채팅, GitHub, 스크린샷에 공유하지 마세요.
@@ -39,7 +55,9 @@ Python 3.12+ 필요. 각 명령은 프로젝트 루트에서 개발 서버 소�
 - TLS 인증서 자동 갱신, 인증/요청 속도 제한, DDoS 대응, 감사/운영 지표 및 정기 백업
 - 실기기 클라이언트의 v2 API, 서버 변경사항 로컬 적용, 오프라인 큐, 충돌 UI
 - 실제 개인정보 처리·계정 보안 심사, 복원·재해 복구 실험, 앱 릴리즈 전 데이터 검증
-- ChatGPT용 읽기/쓰기 OAuth 권한 승인, MCP 연결 및 사용자 데이터 분리
+- **실제 OAuth 2.1/OpenID Connect 로그인, PKCE, 승인 화면, 토큰 발급·갱신 및 MCP 보호 리소스 메타데이터(RFC 9728)는 미구현**입니다. 현재 `issue-assistant`는 운영자 수동 발급용 Canary MCP 토큰이며 OAuth라고 부르지 않습니다.
+- 외부 OpenID Connect/OAuth 제공자를 사용할 경우 발급자·수신자(audience)·만료·권한·사용자 소유 관계 검증 및 `/.well-known/oauth-protected-resource`와 WWW-Authenticate 인증 방식 구현이 선행되어야 합니다.
+- MCP 연결 공개 전 사용자별 동의, 본인 인증/계정 복구, 최소 권한 정책, 토큰 갱신·폐기 및 실제 ChatGPT 연결 테스트가 필요합니다.
 - UI/UX 및 기기별 실기기 테스트, 기존 버전 호환 마이그레이션
 
 현재 구현은 서버 측 계정 격리를 검증하는 Canary 기반이며 Android·iOS·Windows 자동 동기화 완료 상태가 아닙니다. 기존 앱/기기 데이터와 GitHub 공개 Beta 릴리즈는 보존합니다.
