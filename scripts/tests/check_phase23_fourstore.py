@@ -84,6 +84,21 @@ class FourStoreContract(unittest.TestCase):
         self.assertIn("if let recoveryError", app)
         self.assertLess(app.index("try StudyFourStoreImport.recoverIfNeeded()"),
                         app.index("var body: some Scene"))
+        self.assertIn("UserDefaults.standard.synchronize()", importer)
+        runtime = file("ios/StudyOne/StudyFourStoreRuntimeE2E.swift")
+        runner = file("ios/scripts/run_simulator_sync_e2e.sh")
+        self.assertIn("for step in 1...4", runtime)
+        self.assertIn("syntheticFailureAfterSection = step", runtime)
+        self.assertIn("IOS_FOURSTORE_RUNTIME_E2E_PASSED", runtime)
+        self.assertIn("IOS_FOURSTORE_RUNTIME_E2E_PASSED", runner)
+        self.assertIn("StudyFourStoreRuntimeE2E.runIfRequested()", app)
+        for path, marker in [
+            ("ios/StudyOne/StudyProgress.swift", "다른 화면에서 진도가 변경"),
+            ("ios/StudyOne/StudyTaskDetail.swift", "학습 상세가 다른 화면에서 변경"),
+            ("ios/StudyOne/StudyWrongAnswers.swift", "오답이 다른 화면에서 변경"),
+            ("ios/StudyOne/ModelsAndStore.swift", "lastSettingsBytes"),
+        ]:
+            self.assertIn(marker, file(path))
         self.assertIn("store.checkedTasksForSync()", view)
         self.assertIn("fourStoreProgress.exportBackup()", view)
         self.assertIn("fourStoreDetails.exportBackup()", view)
