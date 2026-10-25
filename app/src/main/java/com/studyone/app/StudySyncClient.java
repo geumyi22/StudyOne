@@ -172,6 +172,35 @@ public final class StudySyncClient {
         return session;
     }
 
+    /** Strictly verify every server receipt, not merely HTTP 200 and batch length.
+     *  A forged, reordered, truncated, duplicated, or mismatched response is NOT
+     *  proof of success. Retain the original requestId for safe reconciliation. */
+    public static void verifyChangeAck(JSONObject reply,JSONArray mutations)
+            throws JSONException {
+        if(reply.getInt("schema")!=1 || mutations.length()<1 ||
+                mutations.length()>50)
+            throw new IllegalStateException("서버 요청 승인 형식을 확인할 수 없습니다.");
+        JSONArray changes=reply.getJSONArray("changes");
+        if(changes.length()!=mutations.length())
+            throw new IllegalStateException("서버가 일부 요청만 확인했습니다.");
+        long previous=-1;
+        for(int i=0;i<mutations.length();i++){
+            JSONObject source=mutations.getJSONObject(i),ack=changes.getJSONObject(i);
+            exactly(ack,"seq","kind","id","revision","deleted","updatedAt");
+            long seq=ack.getLong("seq");
+            if(seq<=previous || seq<1 ||
+                    !source.getString("kind").equals(ack.getString("kind")) ||
+                    !source.getString("id").equals(ack.getString("id")) ||
+                    ack.getLong("revision")!=source.getLong("baseRevision")+1 ||
+                    ack.getBoolean("deleted")!=source.getBoolean("deleted") ||
+                    ack.getLong("updatedAt")<0)
+                throw new IllegalStateException("서버 응답의 기록 ID 또는 수정 버전이 다릅니다.");
+            previous=seq;
+        }
+        if(reply.getLong("cursor")!=previous)
+            throw new IllegalStateException("서버 커서가 마지막 승인 기록과 다릅니다.");
+    }
+
     /** Retry exactly the same queued JSON with the original requestId; no new UUID. */
     public static int uploadQueued(String token, String address, JSONObject queued)
             throws Exception {
@@ -182,17 +211,7 @@ public final class StudySyncClient {
         if(mutations.length()<1 || mutations.length()>50)
             throw new IllegalArgumentException("대기열 크기 제한");
         JSONObject response=call(token,"changes",queued,address);
-        JSONArray acknowledged=response.getJSONArray("changes");
-        if(response.getInt("schema")!=1 || acknowledged.length()!=mutations.length())
-            throw new IllegalStateException("서버 승인 결과가 불완전해 대기열을 보존합니다.");
-        for(int i=0;i<mutations.length();i++){
-            JSONObject mutation=mutations.getJSONObject(i);
-            JSONObject ack=acknowledged.getJSONObject(i);
-            if(!mutation.getString("kind").equals(ack.getString("kind")) ||
-                    !mutation.getString("id").equals(ack.getString("id")) ||
-                    ack.getLong("revision")!=1)
-                throw new IllegalStateException("서버 요청 결과가 다릅니다. 대기열을 보존합니다.");
-        }
+        verifyChangeAck(response,mutations);
         return mutations.length();
     }
 
@@ -477,9 +496,7 @@ public final class StudySyncClient {
             payload.put("mutations",batch);
             try {
                 JSONObject response=call(token,"changes",payload,address);
-                if(response.getInt("schema")!=1 ||
-                        response.getJSONArray("changes").length()!=batch.length())
-                    throw new IllegalStateException("서버 저장 결과를 확인하지 못했습니다.");
+                verifyChangeAck(response,batch);
                 sent+=batch.length();
             } catch(Exception error) {
                 throw new IllegalStateException("전송이 중단되었습니다. "+
