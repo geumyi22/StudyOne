@@ -51,13 +51,39 @@ class FourStoreContract(unittest.TestCase):
         self.assertIn("verifyRestored.run()", helper)
         self.assertIn("for (int failing = 0; failing < 4; failing++)", smoke)
 
-    def test_ios_read_only_export_no_unprotected_bundle_import(self):
+    def test_ios_four_store_import_has_verified_consent_and_recovery(self):
         bundle = file("ios/StudyOne/StudyFourStoreBundle.swift")
+        importer = file("ios/StudyOne/StudyFourStoreImport.swift")
         view = file("ios/StudyOne/ContentView.swift")
+        app = file("ios/StudyOne/StudyOneApp.swift")
         self.assertIn("static func export(tasks: URL, progress: URL, details: URL, wrong: URL)", bundle)
         self.assertIn("static func inspect(_ data: Data)", bundle)
         self.assertNotIn("static func import", bundle)
-        self.assertIn("4종 통합 백업 · 내보내기 전용", view)
+        for key in ("tasks", "progress", "details", "wrongAnswers"):
+            self.assertIn(f'"{key}"', importer)
+        for safeguard in (
+            "StudyFourStoreBundle.inspect(data)",
+            "StudyFourStoreBundle.inspect(source)",
+            "guard try current() == approved.originals",
+            "try saveJournal(approved.originals)",
+            "try recoverIfNeeded()",
+            "try FileManager.default.removeItem(at: pendingURL)",
+            "FourStorePendingImport-v1.json",
+            "StudyOne-fourstore-recovery",
+            "digest(original) == checksum",
+        ):
+            self.assertIn(safeguard, importer)
+        self.assertLess(importer.index("try saveJournal(approved.originals)"),
+                        importer.index("try tasks.importBackup(from: incoming"))
+        self.assertIn("4종 통합 백업 · 내보내기 및 안전 복원", view)
+        self.assertIn("4종 통합 JSON 복원 파일 선택", view)
+        self.assertIn("원본 복구 기록을 보관하고 4종 교체", view)
+        self.assertIn("StudyFourStoreImport.prepare(", view)
+        self.assertIn("StudyFourStoreImport.apply(", view)
+        self.assertIn("StudyFourStoreImport.recoverIfNeeded()", app)
+        self.assertIn("if let recoveryError", app)
+        self.assertLess(app.index("try StudyFourStoreImport.recoverIfNeeded()"),
+                        app.index("var body: some Scene"))
         self.assertIn("store.checkedTasksForSync()", view)
         self.assertIn("fourStoreProgress.exportBackup()", view)
         self.assertIn("fourStoreDetails.exportBackup()", view)
