@@ -263,6 +263,135 @@ internal static class SyncClient
     }
 
     /// <summary>
+    /// Construct exactly one *reviewable* existing-ID mutation.
+    /// Never infer deletion from an absent local ID without a user-selected
+    /// operation; the UI must require a separate, explicit confirmation.
+    /// </summary>
+    internal sealed class ReviewedChange
+    {
+        internal Mutation Mutation { get; init; } = new();
+        internal long Cursor { get; init; }
+        internal string ServerSummary { get; init; } = "";
+        internal string LocalSummary { get; init; } = "";
+    }
+
+    internal static ReviewedChange PrepareReviewedChange(
+        TaskBackup tasks, ProgressBackup progress, Snapshot snapshot,
+        string kind, string id, bool delete)
+    {
+        if (kind is not ("task" or "progress") || string.IsNullOrWhiteSpace(id))
+            throw new InvalidDataException("변경할 일정/진도 종류와 ID를 지정하세요.");
+        // This validates EVERY remote item, including the requested payload,
+        // before constructing any mutation. Invalid remote snapshots fail closed.
+        _ = PreviewNewRemote(tasks, progress, snapshot);
+        var matching = snapshot.Records.Where(r => r.Kind == kind && r.Id == id).ToList();
+        if (matching.Count != 1)
+            throw new InvalidDataException("서버에 해당 활성 ID가 하나만 있어야 합니다.");
+        RemoteRecord row = matching[0];
+        if (row.Deleted || row.Revision < 1)
+            throw new InvalidDataException("이미 삭제됐거나 잘못된 수정 버전입니다.");
+        object? payload = null;
+        string source, target;
+        if (kind == "task")
+        {
+            if (!long.TryParse(id, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out long number) ||
+                number < 1 || number.ToString(System.Globalization.CultureInfo.InvariantCulture) != id)
+                throw new InvalidDataException("서버 일정 ID가 올바르지 않습니다.");
+            var remote = row.Payload.Deserialize<StudyTask>(StudyData.JsonOptions)
+                         ?? throw new InvalidDataException("서버 일정이 비어 있습니다.");
+            var local = tasks.Tasks.SingleOrDefault(t => t.Id == number);
+            target = $"[{remote.Subject}] {remote.Title} · {remote.DueDate} · 완료 {remote.Completed}";
+            if (delete)
+            {
+                if (local is not null)
+                    throw new InvalidOperationException(
+                        "PC에 같은 ID가 남아 있어 서버 삭제를 차단했습니다. 먼저 PC 기록을 별도 보관하고 제거해야 합니다.");
+                source = "(이 PC에는 이 ID가 없음: 원격 기록만 삭제)";
+            }
+            else
+            {
+                if (local is null)
+                    throw new InvalidOperationException("수정할 로컬 일정이 없습니다.");
+                if (TaskContentEquals(local, remote))
+                    throw new InvalidOperationException("서버와 동일한 일정이라 수정할 내용이 없습니다.");
+                payload = local;
+                source = $"[{local.Subject}] {local.Title} · {local.DueDate} · 완료 {local.Completed}";
+            }
+        }
+        else
+        {
+            if (!Guid.TryParse(id, out Guid guid) ||
+                guid.ToString("D") != id.ToLowerInvariant())
+                throw new InvalidDataException("서버 진도 UUID가 올바르지 않습니다.");
+            var remote = row.Payload.Deserialize<StudyProgressItem>(StudyData.JsonOptions)
+                         ?? throw new InvalidDataException("서버 진도가 비어 있습니다.");
+            var local = progress.Items.SingleOrDefault(p =>
+                p.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            target = $"[{remote.Subject}] {remote.Material} · {remote.Unit} · {remote.Status}";
+            if (delete)
+            {
+                if (local is not null)
+                    throw new InvalidOperationException(
+                        "PC에 같은 ID가 남아 있어 서버 삭제를 차단했습니다. 로컬 기록을 별도로 확인하세요.");
+                source = "(이 PC에는 이 ID가 없음: 원격 기록만 삭제)";
+            }
+            else
+            {
+                if (local is null)
+                    throw new InvalidOperationException("수정할 로컬 진도가 없습니다.");
+                if (ProgressContentEquals(local, remote))
+                    throw new InvalidOperationException("서버와 동일한 진도라 수정할 내용이 없습니다.");
+                payload = local;
+                source = $"[{local.Subject}] {local.Material} · {local.Unit} · {local.Status}";
+            }
+        }
+        return new ReviewedChange {
+            Cursor = snapshot.Cursor, ServerSummary = target, LocalSummary = source,
+            Mutation = new Mutation {
+                Kind = kind, Id = id, BaseRevision = row.Revision,
+                Deleted = delete, Payload = payload
+            }
+        };
+    }
+
+    /// <summary>
+    /// Send exactly one previously reviewed, revision-guarded update/tombstone.
+    /// No automatic merging and no scheduled background write.
+    /// </summary>
+    internal static async Task<int> UploadApprovedChange(
+        string token, Uri endpoint, Mutation reviewed,
+        CancellationToken cancel = default)
+    {
+        if (ParseEndpoint(endpoint.AbsoluteUri).Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("기존 기록 변경·삭제는 HTTPS 계정 서버에서만 허용합니다.");
+        if (reviewed.BaseRevision < 1 ||
+            reviewed.Kind is not ("task" or "progress") ||
+            (reviewed.Deleted ? reviewed.Payload is not null : reviewed.Payload is null))
+            throw new InvalidDataException("기존 기록 수정·삭제 요청이 올바르지 않습니다.");
+        using var http = OpenClient(token, endpoint);
+        var requestBody = new {
+            requestId = Guid.NewGuid().ToString("D"),
+            mutations = new[] { reviewed }
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "v2/changes") {
+            Content = new ByteArrayContent(StudyData.Serialize(requestBody))
+        };
+        request.Content.Headers.ContentType =
+            new MediaTypeHeaderValue("application/json");
+        using var response = await http.SendAsync(request, cancel);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(response.StatusCode switch {
+                HttpStatusCode.Conflict => "다른 기기가 먼저 변경했습니다(409). 서버와 PC를 다시 비교하세요.",
+                HttpStatusCode.Forbidden => "이 기기 토큰에는 서버 쓰기 권한이 없습니다.",
+                HttpStatusCode.Unauthorized => "기기 인증이 만료되거나 거부됐습니다.",
+                _ => $"기존 기록 변경 전송 HTTP {(int)response.StatusCode} 오류."
+            });
+        VerifyChangeAck(await ReadLimited(response, cancel), new[] { reviewed });
+        return 1;
+    }
+
+    /// <summary>
     /// Upload *new items only*. No remote existing records are overwritten.
     /// Any conflict halts the batch; safe retry re-reads current server IDs.
     /// </summary>
