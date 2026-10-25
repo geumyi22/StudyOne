@@ -82,6 +82,8 @@ jobs:
             app/src/main/java/com/studyone/app/StudyFourStoreRollback.java \
             scripts/tests/StudyFourStoreRollbackSmoke.java
           java -cp /tmp/studyone-fourstore-classes StudyFourStoreRollbackSmoke
+      - name: Audit Phase27 mobile offline queue parity and consent guards
+        run: python3 scripts/tests/check_phase27_mobile_outbox.py
       - name: Verify Samsung Reminder daily-plan contract on Android and iOS
         run: python3 scripts/tests/check_daily_reminder.py
       - name: Compile and smoke-test read-only five-role daily checklist export
