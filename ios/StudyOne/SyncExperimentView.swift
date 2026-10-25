@@ -353,7 +353,7 @@ struct SyncExperimentView: View {
                     Label("첫 대기 요청 폐기 · 별도 승인", systemImage: "trash")
                 }
                 .disabled(busy)
-                Text("기존 서버 ID 변경·삭제는 지원하지 않습니다. 기록이 변경됐거나 계정이 다르면 대기열을 보존하고 전송을 중단합니다.")
+                Text("이 대기열은 신규 기록 전용입니다. 기존 서버 ID의 변경·삭제는 위의 별도 건별 검토·승인 메뉴에서만 수행합니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
