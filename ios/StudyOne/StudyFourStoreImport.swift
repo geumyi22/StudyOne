@@ -20,7 +20,7 @@ enum StudyFourStoreImport {
         let sha256: [String: String]
     }
 
-    private struct Original: Codable, Equatable {
+    fileprivate struct Original: Codable, Equatable {
         let existed: Bool
         let bytes: Data
 
@@ -236,7 +236,7 @@ enum StudyFourStoreImport {
         try saveJournal(approved.originals)
         do {
             try tasks.importBackup(from: incoming["tasks"]!)
-            try progress.importBackup(data: incoming["progress"]!,
+            _ = try progress.importBackup(data: incoming["progress"]!,
                                       original: progress.items)
             try details.importBackup(incoming["details"]!,
                                      expectedOriginal: approved.originals["details"]!.existed
