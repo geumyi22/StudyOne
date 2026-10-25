@@ -10,6 +10,7 @@
     <Compile Include="../StudyOne.Desktop/StudyOnlinePractice.cs" Link="StudyOnlinePractice.cs"/>
     <Compile Include="../StudyOne.Desktop/StudyPortableBundle.cs" Link="StudyPortableBundle.cs"/>
     <Compile Include="../StudyOne.Desktop/SyncClient.cs" Link="SyncClient.cs"/>
+    <Compile Include="../StudyOne.Desktop/StudySyncOutbox.cs" Link="StudySyncOutbox.cs"/>
     <Compile Include="../StudyOne.Desktop/StudyChecklistText.cs" Link="StudyChecklistText.cs"/>
     <Compile Include="../StudyOne.Desktop/StudyTaskViews.cs" Link="StudyTaskViews.cs"/>
     <Compile Include="../StudyOne.Desktop/StudyTaskDetails.cs" Link="StudyTaskDetails.cs"/>
