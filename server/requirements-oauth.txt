@@ -1,0 +1,2 @@
+# Optional OAuth MCP resource-server verification only. Not an authorization server.
+PyJWT[crypto]==2.10.1
