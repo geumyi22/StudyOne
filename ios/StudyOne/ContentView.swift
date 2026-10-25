@@ -624,6 +624,10 @@ struct SettingsView: View {
     @State private var importPicker = false
     @State private var confirmingImport = false
     @State private var importedBackup: Data?
+    @StateObject private var fourStoreProgress = StudyProgressStore()
+    @StateObject private var fourStoreDetails = StudyTaskDetailStore()
+    @StateObject private var fourStoreWrong = StudyWrongAnswersStore()
+    @State private var fourStoreExportURL: URL?
     var body: some View {
         NavigationStack {
             Form {
@@ -678,6 +682,36 @@ struct SettingsView: View {
                         }
                     }
                     Button("JSON 백업 불러오기") { importPicker = true }
+                }
+                Section("4종 통합 백업 · 내보내기 전용") {
+                    Button("일정·진도·상세·오답 통합 JSON 준비") {
+                        do {
+                            // Reject any corrupt or stale local store instead of
+                            // exporting an empty stand-in for lost study records.
+                            _ = try store.checkedTasksForSync()
+                            guard fourStoreProgress.loadError == nil,
+                                  fourStoreDetails.loadError == nil,
+                                  fourStoreWrong.loadError == nil else {
+                                throw StudyError.message("4종 데이터 중 읽기 오류가 있어 내보내기를 중단했습니다.")
+                            }
+                            fourStoreExportURL = try StudyFourStoreBundle.export(
+                                tasks: store.exportBackup(),
+                                progress: fourStoreProgress.exportBackup(),
+                                details: fourStoreDetails.exportBackup(),
+                                wrong: fourStoreWrong.exportBackup())
+                            notice = "4종 SHA-256 통합 백업을 준비했습니다. Files에 별도 저장하세요."
+                        } catch {
+                            fourStoreExportURL = nil
+                            notice = error.localizedDescription
+                        }
+                    }
+                    if let fourStoreExportURL {
+                        ShareLink(item: fourStoreExportURL) {
+                            Label("4종 통합 JSON 공유·저장", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    Text("Android/Windows와 호환되는 백업 형식입니다. iOS에서 4종 전체 자동 복원은 아직 지원하지 않으며, 실제 계정 동기화도 아닙니다.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("보안 HTTPS 계정 동기화 실험 · Canary") {
                     NavigationLink {
