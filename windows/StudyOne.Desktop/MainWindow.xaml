@@ -405,6 +405,30 @@
                                     Content="서버의 신규 진도만 가져오기 · 확인 필수"
                                     Click="SyncPullProgress_Click"/>
                         </WrapPanel>
+                        <Separator Margin="0,10,0,14"/>
+                        <TextBlock Text="오프라인 전송 대기열 · 신규 항목만" FontWeight="SemiBold" FontSize="16"/>
+                        <TextBlock Text="받을 계정 UUID (v2/session의 accountId)" FontSize="12"
+                                   Foreground="#64748B" Margin="0,7,0,3"/>
+                        <TextBox x:Name="SyncQueueAccountInput" Width="430" HorizontalAlignment="Left"
+                                 ToolTip="전송할 계정 UUID를 정확히 입력하세요. 기기 토큰과 계정은 재전송 시 반드시 일치해야 합니다."/>
+                        <WrapPanel Margin="0,10,0,8">
+                            <Button x:Name="SyncQueueSaveButton"
+                                    Content="신규 일정·진도를 오프라인 대기열에 보관 · 승인 필요"
+                                    Click="SyncQueueSave_Click"/>
+                            <Button x:Name="SyncQueueSendButton"
+                                    Content="대기열 HTTPS 수동 재전송 · 승인 필요"
+                                    Click="SyncQueueSend_Click"/>
+                        </WrapPanel>
+                        <WrapPanel Margin="0,0,0,8">
+                            <Button x:Name="SyncQueueDiscardButton"
+                                    Content="첫 대기 요청 취소 · 승인 필요"
+                                    Click="SyncQueueDiscard_Click"/>
+                            <Button x:Name="SyncQueueStatusButton"
+                                    Content="대기열 상태 확인"
+                                    Click="SyncQueueStatus_Click"/>
+                        </WrapPanel>
+                        <TextBlock Text="대기열은 기기 내부에 암호화되지 않은 학습 기록을 저장하며 토큰은 보관하지 않습니다. 사용자가 재전송을 승인하지 않으면 서버에 업로드하지 않습니다. 서버 기존 ID 충돌·로컬 수정·계정 불일치 시 전송을 차단하고 대기열을 보존합니다. 개인정보가 있는 PC는 기기 저장소 보호가 필요합니다."
+                                   FontSize="12" Foreground="#765724" TextWrapping="Wrap" Margin="0,2,0,12"/>
                         <TextBlock Text="안전 정책" FontWeight="SemiBold" Margin="0,14,0,7"/>
                         <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#64748B"
                                    Text="기존 서버 ID는 수정하지 않고 신규 기록만 수동 업로드합니다. 서버에서 가져올 때도 로컬에 없는 ID만 사용자 승인 뒤 병합하며 기존 기록은 자동 덮어쓰거나 삭제하지 않습니다. 충돌 ID는 건너뜁니다. 변경사항 자동 실시간 반영·백그라운드 동기화는 이후 구현 대상입니다."/>
