@@ -265,6 +265,25 @@ class Registry:
             raise ApiProblem(403, "WRITE_FORBIDDEN")
         return record["account_id"], record["device_id"]
 
+    def session(self, raw_token):
+        """Read-only, device-audience-only authenticated session diagnostics.
+
+        No raw token/digest or private account label is included. Used by
+        client connection checks instead of the unauthenticated /v2/health.
+        """
+        account, device = self.authorize(raw_token, allowed_audiences=("device",))
+        with self.connect() as db:
+            row = db.execute("""
+                SELECT d.scope,d.audience,d.expires_at,d.revoked,a.disabled
+                FROM devices d JOIN accounts a ON a.id=d.account_id
+                WHERE d.id=? AND a.id=?
+            """, (device, account)).fetchone()
+        if row is None or row["revoked"] or row["disabled"] or row["expires_at"] <= int(time.time()):
+            raise ApiProblem(401, "UNAUTHORIZED")
+        return {"schema": 1, "accountId": account, "deviceId": device,
+                "scope": row["scope"], "audience": row["audience"],
+                "expiresAt": row["expires_at"], "serverTime": int(time.time())}
+
     def store(self, account_id):
         # Account IDs must originate from the registry, not a client supplied path.
         if not uuid_valid(account_id):
@@ -347,7 +366,8 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                     proposal_id = parts[3]
                     proposal_action = parts[4]
                 if (endpoint.path not in
-                        ("/v2/snapshot", "/v2/changes", "/v2/proposals")
+                        ("/v2/snapshot", "/v2/changes", "/v2/proposals",
+                         "/v2/session")
                         and proposal_action is None):
                     raise ApiProblem(404, "NOT_FOUND")
                 if method == "GET" and proposal_action is not None:
@@ -376,6 +396,8 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                 account, device = registry.authorize(auth[7:], write=requires_write)
                 store = registry.store(account)
                 if method == "GET":
+                    if endpoint.path == "/v2/session":
+                        return self.send_json(200, registry.session(auth[7:]))
                     if endpoint.path == "/v2/snapshot":
                         return self.send_json(200, store.snapshot())
                     if endpoint.path == "/v2/proposals":
