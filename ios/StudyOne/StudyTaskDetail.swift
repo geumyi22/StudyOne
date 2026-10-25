@@ -170,6 +170,13 @@ final class StudyTaskDetailStore: ObservableObject {
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "상세 저장소 오류")
         }
+        if let original = try currentData() {
+            guard try Self.parseBackup(original) == items else {
+                throw StudyError.message("상세 원본이 변경됐습니다. 다시 열어 백업하세요.")
+            }
+        } else if !items.isEmpty {
+            throw StudyError.message("상세 원본을 찾을 수 없습니다.")
+        }
         let bytes = try encode(items)
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("StudyOne-task-details-\(UUID().uuidString).json")
