@@ -657,4 +657,57 @@ Check(StudyExamFocus.Summarize(Array.Empty<StudyProgressItem>()).Count == 0,
       "No fake completion count for empty progress");
 Console.WriteLine("StudyOne subject exam dashboard prioritization: PASS");
 
+// Phase31 opt-in: run the real portable .NET SyncClient against the SAME
+// ephemeral loopback SQLite server that the real iOS Simulator app wrote to.
+// Not a fake .NET HTTP layer. No WPF UI, personal records or stored credentials.
+if (Environment.GetEnvironmentVariable("STUDYONE_PHASE31_MAC_CROSSCLIENT") == "1")
+{
+    string raw = Environment.GetEnvironmentVariable("STUDYONE_E2E_BASE") ??
+        throw new InvalidOperationException("Synthetic test server address missing");
+    string token = Environment.GetEnvironmentVariable("STUDYONE_SYNC_TOKEN") ??
+        throw new InvalidOperationException("Synthetic test token missing");
+    var address = SyncClient.ParseEndpoint(raw);
+    Check(address.Host == "127.0.0.1" && address.Port == 8765 &&
+          address.Scheme == "http", "Only disposable loopback server allowed");
+    var iOSResult = await SyncClient.GetSnapshot(token, endpoint: address);
+    Check(iOSResult.Cursor == 2 && iOSResult.Records.Count == 2,
+          "Actual iOS app mutations must be visible to Windows .NET client");
+    var original = SyncClient.PreviewNewRemote(
+        new TaskBackup { Grade = 3, ClassName = "1" },
+        new ProgressBackup(), iOSResult);
+    Check(original.NewTasks.Count == 1 && original.NewProgress.Count == 1,
+          "Portable Windows inbound parser must decode real iOS app records");
+    Check(original.NewTasks[0].Id == 1790093110001 &&
+          original.NewProgress[0].Material == "합성 시험 교재",
+          "iOS app-origin data must preserve identity and payload");
+    var fromWindows = new StudyTask {
+        Id = 1790093110002, Type = "숙제 항목",
+        Subject = "수학", Title = "Windows .NET 실제 클라이언트 합성 과제",
+        DueDate = "2026-11-06", Importance = 3, Completed = false
+    };
+    var outbound = SyncClient.NewOnly(
+        new TaskBackup { Grade = 3, ClassName = "1", Tasks = { fromWindows } },
+        new ProgressBackup(), iOSResult);
+    Check(outbound.Count == 1 && outbound[0].Id == fromWindows.Id.ToString(),
+          "Windows sends only its new synthetic record");
+    Check(await SyncClient.UploadNew(token, outbound, endpoint: address) == 1,
+          "Windows HTTP request must receive validated server acknowledgement");
+    var shared = await SyncClient.GetSnapshot(token, endpoint: address);
+    Check(shared.Cursor == 3 && shared.Records.Count == 3,
+          "Server has both iOS and .NET records with no duplicates");
+    var different = new StudyTask {
+        Id = fromWindows.Id, Type = fromWindows.Type, Subject = "수학",
+        Title = "로컬 충돌 가상 텍스트", DueDate = fromWindows.DueDate,
+        Importance = 3, Completed = false
+    };
+    var guarded = SyncClient.PreviewNewRemote(
+        new TaskBackup { Grade = 3, ClassName = "1", Tasks = { different } },
+        new ProgressBackup(), shared);
+    Check(guarded.Conflicts == 1 &&
+          guarded.NewTasks.Count == 1 && guarded.NewProgress.Count == 1,
+          "Existing Windows same-ID divergence remains conflict, not overwrite");
+    Console.WriteLine("DOTNET_ACTUAL_CLIENT_CROSS_IOS_E2E_PASSED " +
+        "inbound=2 outbound=1 server_cursor=3 conflicts=1");
+}
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
