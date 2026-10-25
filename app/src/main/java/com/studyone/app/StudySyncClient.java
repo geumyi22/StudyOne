@@ -719,6 +719,43 @@ public final class StudySyncClient {
             forged.getJSONArray("changes").getJSONObject(1).put("seq",1);
             try { verifyChangeAck(forged,first);return false; }
             catch(IllegalStateException expected){/* duplicate sequence rejected */}
+            // Phase33: real Android client-side revision selection and
+            // deletion guards on wholly synthetic JSON; no server writes.
+            JSONObject divergentServer=new JSONObject(inbound.toString());
+            divergentServer.getJSONArray("records").getJSONObject(0)
+                    .getJSONObject("payload").put("title","다른 기기가 가진 내용");
+            ReviewedChange reviewed=prepareReviewedChange(divergentServer,
+                    java.util.Collections.singletonList(task),
+                    java.util.Collections.singletonList(item),
+                    "task",Long.toString(task.id),false);
+            if(reviewed.mutation.getLong("baseRevision")!=1 ||
+                    reviewed.mutation.getBoolean("deleted") ||
+                    !"테스트 문제".equals(reviewed.mutation.getJSONObject("payload")
+                            .getString("title")))return false;
+            ReviewedChange deleteTask=prepareReviewedChange(divergentServer,
+                    java.util.Collections.emptyList(),java.util.Collections.emptyList(),
+                    "task",Long.toString(task.id),true);
+            if(!deleteTask.mutation.getBoolean("deleted") ||
+                    !deleteTask.mutation.isNull("payload"))return false;
+            try {
+                prepareReviewedChange(divergentServer,
+                        java.util.Collections.singletonList(task),
+                        java.util.Collections.singletonList(item),
+                        "task",Long.toString(task.id),true);
+                return false;
+            }catch(IllegalStateException expected){/* local ID cannot be deleted remotely */}
+            try {
+                prepareReviewedChange(inbound,
+                        java.util.Collections.singletonList(task),
+                        java.util.Collections.singletonList(item),
+                        "task",Long.toString(task.id),false);
+                return false;
+            }catch(IllegalStateException expected){/* identical: no write */}
+            ReviewedChange deleteProgress=prepareReviewedChange(inbound,
+                    java.util.Collections.emptyList(),java.util.Collections.emptyList(),
+                    "progress",item.id,true);
+            if(!deleteProgress.mutation.getBoolean("deleted") ||
+                    !deleteProgress.mutation.isNull("payload"))return false;
             return true;
         }catch(Exception ignored){return false;}
     }
