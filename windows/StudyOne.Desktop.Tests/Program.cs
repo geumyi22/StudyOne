@@ -484,4 +484,111 @@ try
 }
 finally { if (Directory.Exists(phase23)) Directory.Delete(phase23, recursive: true); }
 
+// Phase26: durable, credential-free local HTTPS outbox. Synthetic data only.
+string outboxDir = Path.Combine(Path.GetTempPath(),
+    "studyone-outbox-qa-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(outboxDir);
+try
+{
+    var endpoint = new Uri("https://sync.example.org/");
+    string account = Guid.NewGuid().ToString("D");
+    TaskBackup sourceTasks = new()
+    {
+        Grade = 3, ClassName = "1",
+        Tasks = { new StudyTask
+        {
+            Id = 1790000000001, Type = "숙제 항목", Subject = "영어",
+            Title = "합성 영어 문제", DueDate = "2026-11-01",
+            Importance = 2, Completed = false
+        }}
+    };
+    ProgressBackup sourceProgress = new() {
+        Items = { new StudyProgressItem {
+            Id = Guid.NewGuid().ToString("D"), Subject = "과학",
+            Material = "오투", Unit = "5단원", Status = "미완료",
+            InExamScope = true, Revision = 1, UpdatedAt = 1790000000000
+        }}
+    };
+    int added = StudySyncOutbox.Enqueue(sourceTasks, sourceProgress,
+                                          account, endpoint, outboxDir);
+    Check(added == 2, "Create-only queue stores two new records");
+    var queued = StudySyncOutbox.Read(outboxDir);
+    Check(queued.Batches.Count == 1 && queued.Batches[0].Mutations.Count == 2,
+          "Queued mutations survive strict portable JSON read");
+    string requestId = queued.Batches[0].RequestId;
+    Check(Guid.TryParse(requestId, out _), "Stable idempotency UUID saved");
+    string localJson = File.ReadAllText(StudySyncOutbox.FilePath(outboxDir));
+    Check(!localJson.Contains("Bearer") && !localJson.Contains("password") &&
+          !localJson.Contains("token", StringComparison.OrdinalIgnoreCase),
+          "Queued payload never includes bearer credentials");
+    Check(StudySyncOutbox.Enqueue(sourceTasks, sourceProgress,
+                                  account, endpoint, outboxDir) == 0 &&
+          StudySyncOutbox.Read(outboxDir).Batches[0].RequestId == requestId,
+          "Repeated offline enqueue is idempotent");
+    StudySyncOutbox.ValidateCurrent(queued.Batches[0], sourceTasks, sourceProgress);
+    var verified = new SyncClient.Session {
+        Schema = 1, AccountId = account, DeviceId = Guid.NewGuid().ToString("D"),
+        Scope = "read-write", Audience = "device", ServerTime = 100, ExpiresAt = 200
+    };
+    StudySyncOutbox.ConfirmAccount(queued.Batches[0], verified, endpoint);
+    try {
+        StudySyncOutbox.ConfirmAccount(queued.Batches[0],
+            new SyncClient.Session {
+                Schema = 1, AccountId = Guid.NewGuid().ToString("D"),
+                Scope = "read-write", Audience = "device", ServerTime = 100, ExpiresAt = 200
+            }, endpoint);
+        throw new InvalidOperationException("Wrong account accepted");
+    } catch (InvalidOperationException e) when (e.Message.Contains("일치하지")) {}
+    try {
+        StudySyncOutbox.ConfirmAccount(queued.Batches[0],
+            new SyncClient.Session {
+                Schema = 1, AccountId = account, Scope = "read",
+                Audience = "device", ServerTime = 100, ExpiresAt = 200
+            }, endpoint);
+        throw new InvalidOperationException("Read-only token accepted");
+    } catch (InvalidOperationException e) when (e.Message.Contains("일치하지")) {}
+    try {
+        var edit = new TaskBackup {
+            Tasks = { new StudyTask {
+                Id = sourceTasks.Tasks[0].Id, Type = "숙제 항목", Subject = "영어",
+                Title = "사용자가 오프라인에서 제목 변경", DueDate = "2026-11-01",
+                Importance = 2, Completed = false
+            }}
+        };
+        StudySyncOutbox.ValidateCurrent(queued.Batches[0], edit, sourceProgress);
+        throw new InvalidOperationException("Stale local record accepted");
+    } catch (InvalidDataException) {}
+    Check(StudySyncOutbox.Read(outboxDir).Batches[0].RequestId == requestId,
+          "Stale source preserves original request and queue");
+    string originalQueue = File.ReadAllText(StudySyncOutbox.FilePath(outboxDir));
+    var forged = System.Text.Json.Nodes.JsonNode.Parse(originalQueue)!;
+    forged["batches"]![0]!["mutations"]![0]!["deleted"] = true;
+    File.WriteAllText(StudySyncOutbox.FilePath(outboxDir), forged.ToJsonString());
+    ExpectInvalid(() => StudySyncOutbox.Read(outboxDir), "Deleted remote operation rejected");
+    File.WriteAllText(StudySyncOutbox.FilePath(outboxDir), originalQueue);
+    StudySyncOutbox.Acknowledge(outboxDir, requestId);
+    Check(StudySyncOutbox.Read(outboxDir).Batches.Count == 0,
+          "Only confirmed request removes durable queue entry");
+    Check(sourceTasks.Tasks[0].Title == "합성 영어 문제" &&
+          sourceProgress.Items[0].Status == "미완료",
+          "Outbox tests never modify local study sources");
+    // Chunk 55 records into bounded requests with immutable UUIDs.
+    var many = new TaskBackup { Grade = 3, ClassName = "1" };
+    for (int i = 0; i < 55; i++)
+        many.Tasks.Add(new StudyTask {
+            Id = 1790000100000 + i, Type = "숙제 항목", Subject = "수학",
+            Title = "합성 " + i, DueDate = "2026-11-02",
+            Importance = 2, Completed = false
+        });
+    added = StudySyncOutbox.Enqueue(many, new ProgressBackup(),
+                                      account, endpoint, outboxDir);
+    var batched = StudySyncOutbox.Read(outboxDir);
+    Check(added == 55 && batched.Batches.Count == 2 &&
+          batched.Batches[0].Mutations.Count == 50 &&
+          batched.Batches[1].Mutations.Count == 5,
+          "Queue splits writes into server-safe 50 record chunks");
+    Console.WriteLine("StudyOne Windows offline outbox, idempotency, stale-account and tamper QA: PASS");
+}
+finally { if (Directory.Exists(outboxDir)) Directory.Delete(outboxDir, recursive: true); }
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
