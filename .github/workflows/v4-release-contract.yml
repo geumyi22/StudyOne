@@ -1,0 +1,37 @@
+name: StudyOne v4 release contract (nonpublishing)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'version.json'
+      - 'ios/version.json'
+      - 'ios/project.yml'
+      - 'app/build.gradle.kts'
+      - 'windows/StudyOne.Desktop/StudyOne.Desktop.csproj'
+      - 'scripts/tests/check_v4_release_contract.py'
+      - '.github/workflows/v4-release-contract.yml'
+      - 'docs/RELEASE-4.0.0-ACCEPTANCE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studyone-v4-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-v4-version-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate exactly as proposed
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check release candidate metadata without publishing
+        run: python3 scripts/tests/check_v4_release_contract.py
