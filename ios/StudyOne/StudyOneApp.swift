@@ -5,15 +5,20 @@ import SwiftUI
 struct StudyOneApp: App {
     // Pending four-store imports are recovered BEFORE the normal study
     // stores/view are used. Failure blocks normal editing until recovery.
-    @StateObject private var state = StudyOneStore()
+    @StateObject private var state: StudyOneStore
     @State private var recoveryError: String?
 
     init() {
+        var failure: String?
         do {
             try StudyFourStoreImport.recoverIfNeeded()
         } catch {
-            _recoveryError = State(initialValue: error.localizedDescription)
+            failure = error.localizedDescription
         }
+        // Explicit initialization order: a crash journal is recovered before
+        // StudyOneStore reads any previously half-written UserDefaults data.
+        _state = StateObject(wrappedValue: StudyOneStore())
+        _recoveryError = State(initialValue: failure)
     }
 
     var body: some Scene {
@@ -35,7 +40,9 @@ struct StudyOneApp: App {
                         Button("원본 복구 다시 시도") {
                             do {
                                 try StudyFourStoreImport.recoverIfNeeded()
-                                // Reopen only after the journal has disappeared.
+                                // A retry must refresh the already-created store
+                                // before reopening the regular editing screens.
+                                try state.reloadAfterFourStoreRecovery()
                                 self.recoveryError = nil
                             } catch {
                                 self.recoveryError = error.localizedDescription
