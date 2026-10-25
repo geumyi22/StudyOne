@@ -296,7 +296,7 @@ class Registry:
                         str(count))
 
 
-def handler_for(registry: Registry, *, tls_enabled=True):
+def handler_for(registry: Registry, *, tls_enabled=True, oauth=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "StudyOnePrivateSync/0.2"
         sys_version = ""
@@ -309,6 +309,8 @@ def handler_for(registry: Registry, *, tls_enabled=True):
         def send_json(self, status, payload):
             blob = json_bytes(payload)
             self.send_response(status)
+            if status == 401 and oauth is not None and urlsplit(self.path).path == "/mcp":
+                self.send_header("WWW-Authenticate", oauth.challenge())
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(blob)))
             self.send_header("Cache-Control", "no-store")
@@ -327,14 +329,28 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                 if self.headers.get("Origin"):
                     raise ApiProblem(403, "BROWSER_ORIGIN_UNSUPPORTED")
                 endpoint = urlsplit(self.path)
+                if (oauth is not None and method == "GET" and
+                        endpoint.path in ("/.well-known/oauth-protected-resource/mcp",
+                                          "/.well-known/oauth-protected-resource")):
+                    if endpoint.query:
+                        raise ApiProblem(400, "INVALID_QUERY")
+                    return self.send_json(200, oauth.metadata())
                 if endpoint.path == "/mcp" and method == "POST":
                     if endpoint.query:
                         raise ApiProblem(400, "INVALID_QUERY")
                     auth = self.headers.get("Authorization", "")
                     if not auth.startswith("Bearer ") or auth.count(" ") != 1:
                         raise ApiProblem(401, "UNAUTHORIZED")
-                    account, _ = registry.authorize(
-                        auth[7:], write=False, allowed_audiences=("device", "mcp"))
+                    oauth_scopes = None
+                    # OAuth JWTs NEVER fall back to an old device token if
+                    # issuer, signature, audience, expiry or account link fails.
+                    if auth[7:].count(".") == 2:
+                        if oauth is None:
+                            raise ApiProblem(401, "UNAUTHORIZED")
+                        account, oauth_scopes = oauth.authorize(auth[7:])
+                    else:
+                        account, _ = registry.authorize(
+                            auth[7:], write=False, allowed_audiences=("device", "mcp"))
                     if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
                         raise ApiProblem(415, "JSON_REQUIRED")
                     try:
@@ -348,7 +364,24 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                         from .studyone_mcp import dispatch
                     except ImportError:
                         from studyone_mcp import dispatch
+                    if oauth_scopes is not None:
+                        # A read-only OAuth grant may inspect active progress,
+                        # but must never create a proposal without extra scope.
+                        method_name = request.get("method") if isinstance(request, dict) else None
+                        params = request.get("params") if isinstance(request, dict) else None
+                        if (method_name == "tools/call" and isinstance(params, dict)
+                                and params.get("name") == "studyone_propose_study_plan"
+                                and "studyone.propose" not in oauth_scopes):
+                            raise ApiProblem(403, "INSUFFICIENT_SCOPE")
                     response = dispatch(registry, account, request)
+                    if (oauth_scopes is not None and
+                            "studyone.propose" not in oauth_scopes and
+                            isinstance(response, dict) and
+                            request.get("method") == "tools/list" and
+                            isinstance(response.get("result"), dict)):
+                        response["result"]["tools"] = [
+                            item for item in response["result"]["tools"]
+                            if item["name"] != "studyone_propose_study_plan"]
                     if response is None:
                         self.send_response(202)
                         self.send_header("Content-Length", "0")
@@ -392,6 +425,11 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                 auth = self.headers.get("Authorization", "")
                 if not auth.startswith("Bearer ") or auth.count(" ") != 1:
                     raise ApiProblem(401, "UNAUTHORIZED")
+                # OAuth JWT access is strictly limited to the MCP resource.
+                # Reject JWT-shaped credentials on /v2 before the device
+                # digest lookup, so callers receive a clear audience error.
+                if auth[7:].count(".") == 2:
+                    raise ApiProblem(403, "TOKEN_AUDIENCE_FORBIDDEN")
                 requires_write = method == "POST" and endpoint.path != "/v2/proposals"
                 account, device = registry.authorize(auth[7:], write=requires_write)
                 if method == "GET" and endpoint.path == "/v2/session":
@@ -451,7 +489,7 @@ def handler_for(registry: Registry, *, tls_enabled=True):
     return Handler
 
 
-def serve(registry, address, port, certificate, key, allow_remote=False):
+def serve(registry, address, port, certificate, key, allow_remote=False, oauth=None):
     if not certificate or not key:
         raise RuntimeError("TLS certificate and private key are required even on loopback")
     if address not in ("127.0.0.1", "::1", "localhost") and not allow_remote:
@@ -459,7 +497,7 @@ def serve(registry, address, port, certificate, key, allow_remote=False):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certfile=certificate, keyfile=key)
-    server = ThreadingHTTPServer((address, port), handler_for(registry))
+    server = ThreadingHTTPServer((address, port), handler_for(registry, oauth=oauth))
     server.daemon_threads = True
     server.socket = context.wrap_socket(server.socket, server_side=True)
     print("StudyOne private HTTPS server ready; per-device bearer authentication enabled",
@@ -501,6 +539,15 @@ def main():
     run.add_argument("--cert", required=True)
     run.add_argument("--key", required=True)
     run.add_argument("--allow-remote", action="store_true")
+    run.add_argument("--oauth-config",
+                     help="Pinned public RS256 JWKS + OAuth issuer resource; optional")
+    link = commands.add_parser("link-oauth")
+    link.add_argument("--oauth-config", required=True)
+    link.add_argument("--account", required=True)
+    link.add_argument("--subject", required=True)
+    unlink = commands.add_parser("unlink-oauth")
+    unlink.add_argument("--oauth-config", required=True)
+    unlink.add_argument("--subject", required=True)
     args = parser.parse_args()
     registry = Registry(args.registry, args.data_root)
     if args.command == "create-account":
@@ -526,8 +573,23 @@ def main():
     elif args.command == "disable-account":
         registry.disable(args.account)
         print("Account disabled")
-    elif args.command == "serve":
-        serve(registry, args.bind, args.port, args.cert, args.key, args.allow_remote)
+    elif args.command in ("serve", "link-oauth", "unlink-oauth"):
+        oauth = None
+        if args.oauth_config:
+            try:
+                from .oauth_resource import OAuthResourceGateway
+            except ImportError:
+                from oauth_resource import OAuthResourceGateway
+            oauth = OAuthResourceGateway.from_config(registry, args.oauth_config)
+        if args.command == "link-oauth":
+            oauth.link(args.account, args.subject)
+            print("OAuth issuer/subject linked to the selected account")
+        elif args.command == "unlink-oauth":
+            oauth.unlink(args.subject)
+            print("OAuth subject link revoked")
+        else:
+            serve(registry, args.bind, args.port, args.cert, args.key,
+                  args.allow_remote, oauth=oauth)
 
 
 if __name__ == "__main__":
