@@ -760,6 +760,35 @@ enum StudySyncClient {
                     return false
                 } catch { /* forged receipt correctly refused */ }
             }
+            // Phase33: a normal edit serializes the user's task, while an
+            // explicitly approved server tombstone MUST emit payload:null.
+            let revisionReview = ReviewedChange(
+                kind: "task", id: String(task.id), baseRevision: 7, deleted: false,
+                payload: .task(task), cursor: 9, remoteSummary: "old",
+                localSummary: "new", remoteRecord: Data("{}".utf8))
+            let encodedUpdate = try JSONEncoder().encode(
+                ReviewedMutation(change: revisionReview))
+            guard let updateObject = try JSONSerialization.jsonObject(
+                with: encodedUpdate) as? [String: Any],
+                  (updateObject["baseRevision"] as? Int) == 7,
+                  (updateObject["deleted"] as? Bool) == false,
+                  updateObject["payload"] as? [String: Any] != nil else {
+                return false
+            }
+            let deletionReview = ReviewedChange(
+                kind: "task", id: String(task.id), baseRevision: 7, deleted: true,
+                payload: nil, cursor: 9, remoteSummary: "old",
+                localSummary: "(absent)", remoteRecord: Data("{}".utf8))
+            let encodedDelete = try JSONEncoder().encode(
+                ReviewedMutation(change: deletionReview))
+            guard let deleteObject = try JSONSerialization.jsonObject(
+                with: encodedDelete) as? [String: Any],
+                  (deleteObject["deleted"] as? Bool) == true,
+                  deleteObject["payload"] is NSNull,
+                  try revisionReview.sameApprovedMutation(as: revisionReview),
+                  !(try revisionReview.sameApprovedMutation(as: deletionReview)) else {
+                return false
+            }
             let one = Snapshot(schema: 1, cursor: 1,
                                records: [Record(kind: "task", id: String(task.id),
                                                 revision: 9, deleted: false)])
