@@ -22,6 +22,9 @@ struct SyncExperimentView: View {
     @State private var selectedPlan: StudySyncClient.PendingPlan?
     @State private var planActionApprove = false
     @State private var showPlanDecision = false
+    @State private var queueAccount = ""
+    @State private var queueMode = ""
+    @State private var showQueueConfirmation = false
 
     private func candidates(snapshot: StudySyncClient.Snapshot) throws
             -> [StudySyncClient.Mutation] {
@@ -220,6 +223,50 @@ struct SyncExperimentView: View {
                 .disabled(busy || token.count < 32)
             }
 
+            Section("오프라인 신규 학습 기록 대기열") {
+                TextField("대상 계정 UUID (v2/session accountId)", text: $queueAccount)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("HTTPS 서버 주소와 계정 UUID를 대기열에 고정합니다. 토큰은 파일에 저장하지 않으며, 보관된 과목·진도 내용은 iOS 앱 내부에서 기기 잠금으로 보호합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button {
+                    queueMode = "save"
+                    showQueueConfirmation = true
+                } label: {
+                    Label("새 기록을 오프라인 대기열에 보관",
+                          systemImage: "tray.and.arrow.down")
+                }
+                .disabled(busy)
+                Button {
+                    queueMode = "send"
+                    showQueueConfirmation = true
+                } label: {
+                    Label("첫 대기 요청 HTTPS 수동 재전송", systemImage: "paperplane")
+                }
+                .disabled(busy || token.count < 32)
+                Button {
+                    do {
+                        let batches = try StudySyncOutbox.read()
+                        status = "대기열: \(batches.count)개 요청 · "
+                            + "\(batches.reduce(0) { $0 + $1.items.count })개 신규 기록"
+                    } catch {
+                        status = "대기열 읽기 실패: \(error.localizedDescription)"
+                    }
+                } label: {
+                    Label("대기열 상태 확인", systemImage: "list.number")
+                }
+                .disabled(busy)
+                Button(role: .destructive) {
+                    queueMode = "discard"
+                    showQueueConfirmation = true
+                } label: {
+                    Label("첫 대기 요청 폐기 · 별도 승인", systemImage: "trash")
+                }
+                .disabled(busy)
+                Text("기존 서버 ID 변경·삭제는 지원하지 않습니다. 기록이 변경됐거나 계정이 다르면 대기열을 보존하고 전송을 중단합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("AI 공부 계획 승인 대기함") {
                 Text("AI가 제안한 계획은 기기에서 승인하기 전까지 실제 일정으로 등록되지 않습니다. HTTPS 계정 서버에서만 이용할 수 있습니다.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -301,6 +348,89 @@ struct SyncExperimentView: View {
         }
         .navigationTitle("로컬 동기화 실험")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            queueMode == "save" ? "학습 기록을 기기에 보관하시겠습니까?"
+            : queueMode == "send" ? "첫 대기 요청을 서버에 전송하시겠습니까?"
+            : "첫 대기 요청을 폐기하시겠습니까?",
+            isPresented: $showQueueConfirmation, titleVisibility: .visible
+        ) {
+            Button(queueMode == "save" ? "로컬 대기열 보관"
+                   : queueMode == "send" ? "HTTPS 계정 확인 후 수동 전송"
+                   : "대기 요청만 폐기",
+                   role: queueMode == "discard" ? .destructive : nil) {
+                let mode = queueMode
+                busy = true
+                Task {
+                    defer { busy = false }
+                    do {
+                        switch mode {
+                        case "save":
+                            let tasks = try tasksStore.checkedTasksForSync()
+                            let progress = StudyProgressStore()
+                            if let issue = progress.loadError {
+                                throw StudyError.message(issue)
+                            }
+                            let amount = try StudySyncOutbox.enqueue(
+                                tasks: tasks, progress: progress.items,
+                                account: queueAccount, endpoint: serverAddress)
+                            status = "새 기록 \(amount)개를 기기 대기열에 보관했습니다. 서버로 전송하지 않았습니다."
+                        case "send":
+                            guard let first = try StudySyncOutbox.read().first else {
+                                throw StudyError.message("오프라인 대기열이 비어 있습니다.")
+                            }
+                            guard first.accountId == queueAccount.lowercased() else {
+                                throw StudyError.message("입력한 계정이 첫 대기 요청과 다릅니다.")
+                            }
+                            let localTasks = try tasksStore.checkedTasksForSync()
+                            let progress = StudyProgressStore()
+                            if let issue = progress.loadError {
+                                throw StudyError.message(issue)
+                            }
+                            try StudySyncOutbox.validateCurrent(first,
+                                tasks: localTasks, progress: progress.items)
+                            let session = try await StudySyncClient.authenticatedSession(
+                                token: token, address: serverAddress)
+                            try StudySyncOutbox.validateSession(first,
+                                session: session, endpoint: serverAddress)
+                            // Recheck local contents and authenticated identity
+                            // after the network call and before any write.
+                            let latest = try tasksStore.checkedTasksForSync()
+                            let latestProgress = StudyProgressStore()
+                            if let issue = latestProgress.loadError {
+                                throw StudyError.message(issue)
+                            }
+                            try StudySyncOutbox.validateCurrent(first,
+                                tasks: latest, progress: latestProgress.items)
+                            guard try StudySyncOutbox.read().first?.id == first.id else {
+                                throw StudyError.message("대기열이 변경되어 전송을 차단했습니다.")
+                            }
+                            let sent = try await StudySyncClient.uploadQueuedBatch(
+                                token: token, address: serverAddress, batch: first)
+                            try StudySyncOutbox.acknowledge(first.id)
+                            status = "서버에서 신규 기록 \(sent)개를 확인했습니다. 처리한 대기 요청은 삭제했습니다."
+                        case "discard":
+                            guard let first = try StudySyncOutbox.read().first else {
+                                throw StudyError.message("대기열이 비어 있습니다.")
+                            }
+                            try StudySyncOutbox.acknowledge(first.id)
+                            status = "첫 대기 요청을 폐기했습니다. 실제 일정·진도는 보존했습니다."
+                        default:
+                            throw StudyError.message("지원하지 않는 대기열 동작입니다.")
+                        }
+                    } catch {
+                        status = "요청이 실패했거나 서버 결과를 확인하지 못했습니다. "
+                            + "대기열·요청 ID는 보존합니다: \(error.localizedDescription)"
+                    }
+                }
+            }
+            Button("취소", role: .cancel) { queueMode = "" }
+        } message: {
+            Text(queueMode == "send"
+                ? "동일 계정·HTTPS 서버·쓰기 권한을 확인하고 신규 항목만 전송합니다. 서버가 응답하지 않으면 같은 요청 ID를 보존합니다."
+                : queueMode == "save"
+                ? "기기 내부에 암호화된 토큰 없이 개인 학습 기록을 저장합니다. 외부 서버 업로드는 하지 않습니다."
+                : "대기열의 첫 요청만 제거합니다. 현재 학습 원본은 삭제되지 않습니다.")
+        }
         .confirmationDialog(
             "새 학습 기록 \(pending.count)개를 로컬 서버로 보낼까요?",
             isPresented: $showApproval, titleVisibility: .visible
