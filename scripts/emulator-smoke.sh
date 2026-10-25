@@ -87,6 +87,63 @@ for attempt in $(seq 1 16); do
 done
 adb logcat -d -s StudyOneSync:I | grep -q 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
 echo 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
+
+# The Android application PROCESS has written two synthetic records. Launch
+# StudyOne's actual portable Windows .NET SyncClient implementation (not a
+# Python mock) against the very same ephemeral SQLite-backed loopback server.
+export STUDYONE_PHASE31_ANDROID_CROSSCLIENT=1
+export STUDYONE_E2E_BASE='http://127.0.0.1:8765/'
+if ! dotnet run --project windows/StudyOne.Desktop.Tests/StudyOne.Desktop.Tests.csproj \
+    --configuration Release > "$SYNC_TMP_DIR/dotnet-crossclient.log" 2>&1; then
+  tail -n 90 "$SYNC_TMP_DIR/dotnet-crossclient.log"
+  exit 1
+fi
+grep -F 'DOTNET_ACTUAL_CLIENT_CROSS_ANDROID_E2E_PASSED' "$SYNC_TMP_DIR/dotnet-crossclient.log"
+unset STUDYONE_PHASE31_ANDROID_CROSSCLIENT STUDYONE_E2E_BASE
+
+# Cold-start Android again: read the .NET-origin task through the real Java
+# StudySyncClient parser, detect a same-ID divergent local record as conflict,
+# and explicitly reject a bad bearer without changing app study stores.
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" \
+  --ez studyone_sync_crossclient_self_test true \
+  --es studyone_sync_test_token "$STUDYONE_SYNC_TOKEN"
+for attempt in $(seq 1 20); do
+  if adb logcat -d -s StudyOneSync:I StudyOneSync:E |
+      grep -q 'ANDROID_DOTNET_CROSSCLIENT_E2E_PASSED'; then
+    break
+  fi
+  if adb logcat -d -s StudyOneSync:I StudyOneSync:E |
+      grep -q 'ANDROID_DOTNET_CROSSCLIENT_E2E_FAILED'; then
+    echo 'Android app rejected cross-client fixture'
+    adb logcat -d -s StudyOneSync:I StudyOneSync:E
+    exit 1
+  fi
+  sleep 1
+done
+adb logcat -d -s StudyOneSync:I |
+    grep -q 'ANDROID_DOTNET_CROSSCLIENT_E2E_PASSED'
+echo 'ANDROID_DOTNET_CROSSCLIENT_E2E_PASSED'
+
+# Independent server observer checks both actual clients left exactly
+# two tasks and one progress item, and the SQLite cursor has no extra writes.
+python3 - <<'PY'
+import json,os,urllib.request
+request=urllib.request.Request(
+    'http://127.0.0.1:8765/v1/snapshot',
+    headers={'Authorization': 'Bearer '+os.environ['STUDYONE_SYNC_TOKEN']})
+with urllib.request.urlopen(request, timeout=5) as response:
+    result=json.load(response)
+assert result['cursor']==3, result['cursor']
+assert len(result['records'])==3, len(result['records'])
+assert {r['id'] for r in result['records'] if r['kind']=='task'}=={
+    '1730000001234','1730000005678'
+}
+assert len([r for r in result['records'] if r['kind']=='progress'])==1
+print('ANDROID_DOTNET_SERVER_PERSISTENCE_VERIFIED cursor=3 synthetic_records=3')
+PY
+echo 'ANDROID_DOTNET_ACTUAL_CROSSCLIENT_NETWORK_E2E_PASSED'
+
 # The offline outbox QA uses an isolated synthetic app-private file only.
 adb shell am force-stop "$APP_PACKAGE"
 adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" \
