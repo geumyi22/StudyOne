@@ -591,4 +591,39 @@ try
 }
 finally { if (Directory.Exists(outboxDir)) Directory.Delete(outboxDir, recursive: true); }
 
+// Phase28: subject-first study action, distinct from transport/backup scenarios.
+var focusData = new[] {
+    new StudyProgressItem { Id=Guid.NewGuid().ToString("D"), Subject="역사",
+        Material="체크체크", Unit="시험대비 10장", Status="진행 중", InExamScope=true },
+    new StudyProgressItem { Id=Guid.NewGuid().ToString("D"), Subject="역사",
+        Material="온라인 문제풀이", Unit=StudyOnlinePractice.Unit, Status="미완료", InExamScope=true },
+    new StudyProgressItem { Id=Guid.NewGuid().ToString("D"), Subject="국어",
+        Material="자습서", Unit="전체 개념 복습", Status="완료", InExamScope=true },
+    new StudyProgressItem { Id=Guid.NewGuid().ToString("D"), Subject="국어",
+        Material="온라인 문제풀이", Unit=StudyOnlinePractice.Unit, Status="미완료", InExamScope=true },
+    new StudyProgressItem { Id=Guid.NewGuid().ToString("D"), Subject="과학",
+        Material="오투", Unit="시험 대비 자료", Status="미완료", InExamScope=true },
+    new StudyProgressItem { Id=Guid.NewGuid().ToString("D"), Subject="과학",
+        Material="기출", Unit="시험범위 외", Status="완료", InExamScope=false }
+};
+var focus = StudyExamFocus.Summarize(focusData);
+Check(focus.Count == 3 && focus[0].Name == "국어" &&
+      focus[1].Name == "역사" && focus[2].Name == "과학",
+      "Subjects always use common StudyOne exam order");
+Check(focus[0].Total == 2 && focus[0].Done == 1 &&
+      focus[0].Percent == 50 && focus[0].Next.Contains(StudyOnlinePractice.Unit),
+      "Online practice recommended only when no other unfinished exam records");
+Check(focus[1].Total == 2 && focus[1].Started == 1 &&
+      focus[1].OnlineWaiting == 1 && focus[1].Next.Contains("10장") &&
+      !focus[1].Next.Contains(StudyOnlinePractice.Unit),
+      "History real 10-page exam packet suggested before online problems");
+Check(focus[2].Total == 1 && focus[2].Todo == 1 &&
+      focus[2].Next.Contains("시험 대비 자료"),
+      "Exclude non-exam scope from science dashboard");
+Check(focusData[0].Status == "진행 중" && focusData[1].Status == "미완료",
+      "Exam dashboard must never silently mark work completed");
+Check(StudyExamFocus.Summarize(Array.Empty<StudyProgressItem>()).Count == 0,
+      "No fake completion count for empty progress");
+Console.WriteLine("StudyOne subject exam dashboard prioritization: PASS");
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
