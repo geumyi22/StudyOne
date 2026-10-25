@@ -113,6 +113,76 @@ class CrossDeviceEndToEnd(unittest.TestCase):
         return {"requestId": request_id or str(uuid4()),
                 "mutations": list(mutations)}
 
+    def test_phase32_explicit_update_and_tombstone_https_owner_cas(self):
+        """Real TLS v2, two owner devices, readonly and tenant isolation.
+
+        The user-facing client must explicitly approve the selected mutation;
+        the server enforces the approved authoritative baseRevision atomically.
+        """
+        task_id = 1790032000001
+        progress_id = str(uuid4())
+        created = self.batch(
+            self.mutation("task", task_id, self.task(task_id, "원래 수행평가")),
+            self.mutation("progress", progress_id, self.progress(progress_id)))
+        status, created_ack = self.send(self.windows, "POST", "/v2/changes", created)
+        self.assertEqual(status, 200)
+        self.assertEqual(created_ack["cursor"], 2)
+        status, before = self.send(self.ios, "GET", "/v2/snapshot")
+        self.assertEqual(status, 200)
+        self.assertEqual(before["cursor"], 2)
+        original = {x["id"]: x for x in before["records"]}
+        self.assertEqual(original[str(task_id)]["revision"], 1)
+        self.assertEqual(original[progress_id]["revision"], 1)
+
+        corrected = self.batch(self.mutation(
+            "task", task_id, self.task(task_id, "직접 승인한 변경"), base=1))
+        status, ack = self.send(self.ios, "POST", "/v2/changes", corrected)
+        self.assertEqual(status, 200)
+        self.assertEqual((ack["cursor"], ack["changes"][0]["revision"]), (3, 2))
+        self.assertEqual(self.send(self.ios, "POST", "/v2/changes", corrected)[1],
+                         ack, "Lost response can reuse exactly one requestId")
+
+        stale = self.batch(self.mutation(
+            "task", task_id, self.task(task_id, "승인 전 오래된 상태"), base=1))
+        status, denial = self.send(self.windows, "POST", "/v2/changes", stale)
+        self.assertEqual((status, denial["error"]), (409, "REVISION_CONFLICT"))
+        self.assertEqual(self.send(self.readonly, "POST", "/v2/changes", stale)[0], 403)
+        self.assertEqual(self.send(self.stranger, "POST", "/v2/changes", stale)[0], 409)
+
+        removed = self.batch(self.mutation(
+            "progress", progress_id, None, base=1, deleted=True))
+        status, tombstone = self.send(self.windows, "POST", "/v2/changes", removed)
+        self.assertEqual(status, 200)
+        self.assertEqual((tombstone["changes"][0]["revision"],
+                          tombstone["changes"][0]["deleted"]), (2, True))
+        self.assertEqual(self.send(self.windows, "POST", "/v2/changes", removed)[1],
+                         tombstone)
+
+        status, final = self.send(self.android, "GET", "/v2/snapshot")
+        self.assertEqual(status, 200)
+        self.assertEqual(final["cursor"], 4)
+        self.assertEqual([x["id"] for x in final["records"]], [str(task_id)])
+        self.assertEqual(final["records"][0]["payload"]["title"], "직접 승인한 변경")
+        status, history = self.send(self.android, "GET",
+                                    "/v2/changes?after=0&limit=20")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(history["changes"]), 4)
+        self.assertTrue(history["changes"][-1]["deleted"])
+        self.assertEqual(history["changes"][-1]["id"], progress_id)
+
+        deleted_again = self.batch(self.mutation(
+            "progress", progress_id, None, base=1, deleted=True))
+        self.assertEqual(self.send(self.ios, "POST",
+                                   "/v2/changes", deleted_again)[0], 409)
+        recreated = self.batch(self.mutation(
+            "progress", progress_id, self.progress(progress_id), base=0))
+        self.assertEqual(self.send(self.ios, "POST",
+                                   "/v2/changes", recreated)[0], 409)
+        self.assertEqual(self.send(self.windows, "GET",
+                                   "/v2/snapshot")[1]["cursor"], 4)
+        self.assertEqual(self.send(self.stranger, "GET",
+                                   "/v2/snapshot")[1]["records"], [])
+
     def test_3_devices_1_account_update_conflict_retry_reboot_and_isolation(self):
         # All three independent client identities authenticate for one account.
         for identity in (self.android, self.ios, self.windows):
