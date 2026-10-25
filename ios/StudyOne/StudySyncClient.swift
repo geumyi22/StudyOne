@@ -297,8 +297,13 @@ enum StudySyncClient {
                   cursor == other.cursor,
                   remoteSummary == other.remoteSummary,
                   localSummary == other.localSummary else { return false }
-            let old = try JSONEncoder().encode(ReviewedMutation(change: self))
-            let new = try JSONEncoder().encode(ReviewedMutation(change: other))
+            // JSONEncoder's default object-key ordering is not a stable
+            // equality contract. Compare canonical encodings so an unchanged
+            // approval cannot fail validation due only to key order.
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let old = try encoder.encode(ReviewedMutation(change: self))
+            let new = try encoder.encode(ReviewedMutation(change: other))
             return old == new
         }
     }
@@ -785,7 +790,9 @@ enum StudySyncClient {
                 with: encodedDelete) as? [String: Any],
                   (deleteObject["deleted"] as? Bool) == true,
                   deleteObject["payload"] is NSNull,
-                  try revisionReview.sameApprovedMutation(as: revisionReview),
+                  (try (0..<32).allSatisfy { _ in
+                      try revisionReview.sameApprovedMutation(as: revisionReview)
+                  }),
                   !(try revisionReview.sameApprovedMutation(as: deletionReview)) else {
                 return false
             }
