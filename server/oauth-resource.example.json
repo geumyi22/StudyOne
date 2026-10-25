@@ -1,0 +1,5 @@
+{
+  "issuer": "https://identity.example.org/tenant",
+  "resource": "https://studyone.example.org/mcp",
+  "jwksFile": "/secure/studyone-public-issuer-jwks.json"
+}
