@@ -10,11 +10,42 @@ enum StudySyncRuntimeE2E {
 
     static func runIfRequested() async {
         let environment = ProcessInfo.processInfo.environment
-        guard environment["STUDYONE_RUN_APP_NETWORK_E2E"] == mode else { return }
-        let resultURL = FileManager.default.temporaryDirectory.appendingPathComponent(resultName)
+        let requested = environment["STUDYONE_RUN_APP_NETWORK_E2E"]
+        guard requested == mode || requested == "verify-dotnet-crossclient" else { return }
+        let filename = requested == mode
+            ? resultName : "studyone-ci-ios-crossclient-result.txt"
+        let resultURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
             let token = environment["STUDYONE_E2E_TOKEN"] ?? ""
             let address = "http://127.0.0.1:8765/"
+            if requested == "verify-dotnet-crossclient" {
+                let shared = try await StudySyncClient.snapshot(
+                    token: token, address: address
+                )
+                let expectedIDs: Set<String> = [
+                    "1790093110001", "1790093110002"
+                ]
+                guard shared.cursor == 3, shared.records.count == 3,
+                      Set(shared.records.filter { $0.kind == "task" }.map { $0.id })
+                          == expectedIDs else {
+                    throw StudyError.message("Windows 클라이언트가 보낸 기록을 iOS가 찾지 못했습니다.")
+                }
+                let incoming = try await StudySyncClient.previewIncoming(
+                    token: token, address: address,
+                    localTasks: [], localProgress: []
+                )
+                guard incoming.cursor == 3, incoming.newTasks.count == 2,
+                      incoming.newProgress.count == 1,
+                      incoming.newTasks.contains(where: {
+                          $0.id == 1790093110002 &&
+                          $0.title == "Windows .NET 실제 클라이언트 합성 과제"
+                      }) else {
+                    throw StudyError.message("iOS가 Windows .NET 기록을 올바르게 해석하지 못했습니다.")
+                }
+                try "IOS_APP_WINDOWS_CROSSCLIENT_E2E_PASSED inbound_tasks=2 progress=1 cursor=3"
+                    .write(to: resultURL, atomically: true, encoding: .utf8)
+                return
+            }
             let first = try await StudySyncClient.snapshot(token: token, address: address)
             guard first.records.isEmpty, first.cursor == 0 else {
                 throw StudyError.message("시험 서버가 초기 상태가 아닙니다.")
