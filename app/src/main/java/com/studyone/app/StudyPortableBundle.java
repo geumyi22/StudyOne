@@ -15,7 +15,8 @@ import java.util.UUID;
  *
  * IMPORTANT: Existing section-1 importers are kept unmodified. Cross-store writes are
  * NOT an ACID transaction; before applying any section a complete original bundle is
- * persisted as an app-private recovery file. Caller must report partial failures.
+ * persisted as an app-private recovery file. On failure a best-effort compensating
+ * rollback is attempted and any errors remain visible to the caller.
  */
 public final class StudyPortableBundle {
     private static final String FORMAT = "studyone-transfer-bundle";
@@ -121,8 +122,8 @@ public final class StudyPortableBundle {
 
     /**
      * Every section is validated BEFORE writing and originals are backed up privately.
-     * The user explicitly approves this replacement. On partial errors, saved original
-     * recovery bundle is preserved and the error is propagated (never report success).
+     * The user explicitly approves this replacement. On partial errors, attempt to
+     * restore all originals; preserve the recovery bundle even after a successful rollback.
      */
     public static String restoreWithRecovery(Context context,
             Storage tasks, StudyProgressStorage progress, StudyTaskDetailStorage details,
@@ -142,12 +143,26 @@ public final class StudyPortableBundle {
             out.write(backup.getBytes(StandardCharsets.UTF_8));
             out.getFD().sync();
         }
-        // Each established importer has its own validation. Restore all, not selectively.
-        // Partial failure is NOT silently rolled back: original private recovery stays intact.
-        progress.restoreBackup(verified.progressRecords);
-        details.restoreBackup(verified.detailRecords);
-        wrong.restore(verified.wrongRecords);
-        BackupIo.restore(tasks,verified.taskRecords);
+        // The four independently persisted sections cannot commit atomically.
+        // On a write error attempt compensating rollback from the durable original.
+        // If rollback fails, the original recovery file remains for manual repair.
+        Checked previous=validate(original);
+        StudyFourStoreRollback.Work[] forward={
+                ()->progress.restoreBackup(verified.progressRecords),
+                ()->details.restoreBackup(verified.detailRecords),
+                ()->wrong.restore(verified.wrongRecords),
+                ()->BackupIo.restore(tasks,verified.taskRecords)
+        };
+        StudyFourStoreRollback.Work[] rollback={
+                ()->progress.restoreBackup(previous.progressRecords),
+                ()->details.restoreBackup(previous.detailRecords),
+                ()->wrong.restore(previous.wrongRecords),
+                ()->BackupIo.restore(tasks,previous.taskRecords)
+        };
+        StudyFourStoreRollback.apply(forward,rollback,()->{
+            if(!capture(tasks,progress,details,wrong).identical(original))
+                throw new IllegalStateException("복원 후 원본 데이터 확인에 실패했습니다.");
+        });
         return name;
     }
 

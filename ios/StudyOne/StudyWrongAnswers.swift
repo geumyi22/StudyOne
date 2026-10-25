@@ -140,6 +140,13 @@ final class StudyWrongAnswersStore: ObservableObject {
 
     func exportBackup() throws -> URL {
         guard loadError == nil else { throw StudyError.message("오답 원본 오류") }
+        if let original = try originalBytes() {
+            guard try Self.parse(original) == entries else {
+                throw StudyError.message("오답 원본이 변경됐습니다. 다시 열어 백업하세요.")
+            }
+        } else if !entries.isEmpty {
+            throw StudyError.message("오답 원본을 찾을 수 없습니다.")
+        }
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("StudyOne-wrong-answers-\(UUID().uuidString).json")
         try encoded(entries).write(to: output, options: .atomic)

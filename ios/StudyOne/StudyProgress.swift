@@ -191,6 +191,16 @@ final class StudyProgressStore: ObservableObject {
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "진도 데이터를 읽을 수 없습니다.")
         }
+        // Other tabs can edit progress after this view's store was constructed.
+        // Refuse to export a stale or corrupt in-memory snapshot.
+        if let disk = UserDefaults.standard.data(forKey: storeKey) {
+            let stored = try JSONDecoder().decode(StudyProgressEnvelope.self, from: disk)
+            guard stored.schema == 1, stored.items == items else {
+                throw StudyError.message("기기 진도가 변경됐습니다. 화면을 다시 열어 백업하세요.")
+            }
+        } else if !items.isEmpty {
+            throw StudyError.message("진도 원본 파일을 찾을 수 없습니다.")
+        }
         let document = StudyProgressTransfer(format: "studyone-progress",
                                              schema: 1, items: items)
         let encoder = JSONEncoder()

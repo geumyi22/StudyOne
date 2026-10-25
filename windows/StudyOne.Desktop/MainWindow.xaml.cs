@@ -69,9 +69,17 @@ public partial class MainWindow : Window
         ClearWrongForm();
         ClearTaskForm();
         ClearProgressForm();
-        HeaderStatus.Text = tasksLocked || progressLocked || detailsLocked
+        HeaderStatus.Text = tasksLocked || progressLocked || detailsLocked || wrongLocked
             ? "로컬 데이터 확인 필요 · 오류 항목 저장 차단"
             : "로컬 저장 · 자동 기기 동기화 없음";
+        // A process could have stopped halfway through replacing four files.
+        // Block local edits until the user explicitly repairs the original snapshot.
+        if (StudyPortableBundle.Pending(StudyData.DataDirectory).Count > 0)
+        {
+            tasksLocked = progressLocked = detailsLocked = wrongLocked = true;
+            HeaderStatus.Text = "4종 통합 가져오기 중단 감지 · 백업 탭에서 원본 복구 필요";
+            ShowError("이전 4종 통합 가져오기가 중단됐습니다. 기존 기록을 보호하려면 '백업 · 가져오기' 탭에서 원본 복구를 실행하세요.");
+        }
     }
 
     private static string Clean(string value, int max, string field)
@@ -504,6 +512,102 @@ public partial class MainWindow : Window
             CheckFileExists = true, Multiselect = false
         };
         return picker.ShowDialog() == true ? picker.FileName : null;
+    }
+
+    private void ExportTransfer_Click(object sender, RoutedEventArgs e)
+    {
+        if (tasksLocked || progressLocked || detailsLocked || wrongLocked ||
+            StudyPortableBundle.Pending(StudyData.DataDirectory).Count != 0)
+        {
+            ShowError("4종 데이터 중 손상 또는 미완료 복구가 있어 통합 내보내기를 차단했습니다.");
+            return;
+        }
+        string? path = ChooseSave("StudyOne-fourstore-transfer.json");
+        if (path is null) return;
+        try
+        {
+            string localRoot = Path.GetFullPath(StudyData.DataDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (Path.GetFullPath(path).StartsWith(localRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("StudyOne 내부 데이터 경로에는 외부 통합 백업을 저장할 수 없습니다.");
+            string serialized = StudyPortableBundle.Encode(
+                StudyPortableBundle.Capture(StudyData.DataDirectory));
+            StudyData.SaveAtomic(path, System.Text.Encoding.UTF8.GetBytes(serialized));
+            HeaderStatus.Text = "4종 통합 백업 저장 완료 · 비밀키는 포함되지 않음";
+        }
+        catch (Exception error) { ShowError(error.Message); }
+    }
+
+    private void ImportTransfer_Click(object sender, RoutedEventArgs e)
+    {
+        if (tasksLocked || progressLocked || detailsLocked || wrongLocked)
+        {
+            ShowError("현재 원본이 손상되었거나 복구가 필요합니다. 통합 가져오기를 차단합니다.");
+            return;
+        }
+        string? path = ChooseOpen();
+        if (path is null) return;
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length > 8_200_000)
+                throw new InvalidDataException("4종 통합 백업은 최대 8.2MB입니다.");
+            string source = File.ReadAllText(path, System.Text.Encoding.UTF8);
+            var incoming = StudyPortableBundle.Parse(source);
+            var approved = StudyPortableBundle.Capture(StudyData.DataDirectory);
+            if (MessageBox.Show(this,
+                incoming.Summary + "\n4종 기록 모두 이 파일의 내용으로 교체합니다.\n"
+                + "원본 4종을 Recovery 폴더에 저장한 후 진행합니다.\n"
+                + "기록을 외부 파일에도 따로 백업했는지 확인하세요. 계속할까요?",
+                "4종 통합 가져오기", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                != MessageBoxResult.Yes) return;
+            string recovery = StudyPortableBundle.Apply(
+                incoming, approved, StudyData.DataDirectory);
+            taskBackup = StudyData.LoadTasks();
+            progressBackup = StudyData.LoadProgress();
+            detailBackup = StudyTaskDetailsData.Load();
+            wrongBackup = StudyWrongAnswersData.Load();
+            RefreshTasks(); RefreshProgress(); RefreshWrong();
+            ClearTaskForm(); ClearProgressForm(); ClearWrongForm();
+            HeaderStatus.Text = "4종 통합 복구 완료 · 이전 원본 보존: " + recovery;
+        }
+        catch (Exception error)
+        {
+            if (StudyPortableBundle.Pending(StudyData.DataDirectory).Count > 0)
+                tasksLocked = progressLocked = detailsLocked = wrongLocked = true;
+            ShowError(error.Message);
+        }
+    }
+
+    private void RecoverTransfer_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var pending = StudyPortableBundle.Pending(StudyData.DataDirectory);
+            if (pending.Count == 0)
+            {
+                MessageBox.Show(this, "중단된 4종 통합 가져오기 작업이 없습니다.");
+                return;
+            }
+            if (pending.Count != 1)
+                throw new InvalidDataException("미완료 복구 작업이 여러 개입니다. 관리자가 원본을 확인해야 합니다.");
+            if (MessageBox.Show(this,
+                "중단된 통합 가져오기 이전의 4종 원본 파일로 복원합니다.\n"
+                + "현재 일부 파일에 반영된 가져오기 결과는 덮어써집니다.\n"
+                + pending[0] + "\n계속할까요?",
+                "원본 4종 복구 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                != MessageBoxResult.Yes) return;
+            StudyPortableBundle.Recover(pending[0], StudyData.DataDirectory);
+            taskBackup = StudyData.LoadTasks();
+            progressBackup = StudyData.LoadProgress();
+            detailBackup = StudyTaskDetailsData.Load();
+            wrongBackup = StudyWrongAnswersData.Load();
+            tasksLocked = progressLocked = detailsLocked = wrongLocked = false;
+            RefreshTasks(); RefreshProgress(); RefreshWrong();
+            ClearTaskForm(); ClearProgressForm(); ClearWrongForm();
+            HeaderStatus.Text = "중단된 4종 가져오기 이전 원본 복구 완료";
+        }
+        catch (Exception error) { ShowError(error.Message); }
     }
 
     private void ExportTasks_Click(object sender, RoutedEventArgs e)
