@@ -87,6 +87,12 @@ for attempt in $(seq 1 16); do
 done
 adb logcat -d -s StudyOneSync:I | grep -q 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
 echo 'LOCAL_SYNC_HTTP_ROUNDTRIP_PASSED'
+# The offline outbox QA uses an isolated synthetic app-private file only.
+adb shell am force-stop "$APP_PACKAGE"
+adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity" \
+  --ez studyone_outbox_self_test true
+adb logcat -d -s StudyOneOutbox:I | grep -q 'ANDROID_OUTBOX_ISOLATED_E2E_PASSED'
+echo 'ANDROID_OUTBOX_ISOLATED_E2E_PASSED'
 adb shell am force-stop "$APP_PACKAGE"
 adb shell am start -W -n "$APP_PACKAGE/com.studyone.app.MainActivity"
 adb shell pidof "$APP_PACKAGE" | grep -E '[0-9]+'

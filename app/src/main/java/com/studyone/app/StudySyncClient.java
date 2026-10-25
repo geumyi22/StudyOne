@@ -84,13 +84,13 @@ public final class StudySyncClient {
                                    String address) throws Exception {
         validateToken(token);
         String base=checkedAddress(address);
-        boolean ordinary=endpoint.equals("snapshot") || endpoint.equals("changes");
+        boolean ordinary=endpoint.equals("snapshot") || endpoint.equals("changes") || endpoint.equals("session");
         boolean pending=endpoint.equals("proposals");
         boolean decision=endpoint.matches(
                 "proposals/[a-fA-F0-9-]{36}/(approve|reject)");
         if(!ordinary && !pending && !decision)
             throw new IllegalArgumentException("허용되지 않은 서버 경로입니다.");
-        if((pending || decision) && !base.startsWith("https://"))
+        if((pending || decision || endpoint.equals("session")) && !base.startsWith("https://"))
             throw new IllegalArgumentException("AI 학습 계획 승인은 HTTPS 계정 서버가 필요합니다.");
         HttpURLConnection connection=(HttpURLConnection)
                 new URL(base + apiPrefix(base) + endpoint).openConnection(Proxy.NO_PROXY);
@@ -157,6 +157,43 @@ public final class StudySyncClient {
                 throw new IllegalStateException("서버 스냅샷을 확인할 수 없습니다.");
         }
         return root;
+    }
+
+    /** Authenticated device account identity: never inferred from a public /health. */
+    public static JSONObject accountSession(String token, String address) throws Exception {
+        String base=checkedAccountAddress(address);
+        JSONObject session=call(token,"session",null,base);
+        if(session.getInt("schema")!=1 ||
+                !canonicalUuid(session.getString("accountId")) ||
+                !canonicalUuid(session.getString("deviceId")) ||
+                session.getLong("expiresAt")<=session.getLong("serverTime") ||
+                !"device".equals(session.getString("audience")))
+            throw new IllegalStateException("계정 인증 응답이 올바르지 않습니다.");
+        return session;
+    }
+
+    /** Retry exactly the same queued JSON with the original requestId; no new UUID. */
+    public static int uploadQueued(String token, String address, JSONObject queued)
+            throws Exception {
+        checkedAccountAddress(address);
+        String request=queued.getString("requestId");
+        if(!canonicalUuid(request))throw new IllegalArgumentException("대기열 요청 ID 오류");
+        JSONArray mutations=queued.getJSONArray("mutations");
+        if(mutations.length()<1 || mutations.length()>50)
+            throw new IllegalArgumentException("대기열 크기 제한");
+        JSONObject response=call(token,"changes",queued,address);
+        JSONArray acknowledged=response.getJSONArray("changes");
+        if(response.getInt("schema")!=1 || acknowledged.length()!=mutations.length())
+            throw new IllegalStateException("서버 승인 결과가 불완전해 대기열을 보존합니다.");
+        for(int i=0;i<mutations.length();i++){
+            JSONObject mutation=mutations.getJSONObject(i);
+            JSONObject ack=acknowledged.getJSONObject(i);
+            if(!mutation.getString("kind").equals(ack.getString("kind")) ||
+                    !mutation.getString("id").equals(ack.getString("id")) ||
+                    ack.getLong("revision")!=1)
+                throw new IllegalStateException("서버 요청 결과가 다릅니다. 대기열을 보존합니다.");
+        }
+        return mutations.length();
     }
 
     private static JSONObject taskJson(Models.StudyTask t) throws JSONException {

@@ -111,6 +111,13 @@ public class MainActivity extends Activity {
             if(!AiClient.selfTest())throw new IllegalStateException("AI fixture parser test failed");
             android.util.Log.i("StudyOneAI","AI_OFFLINE_FIXTURE_TEST_PASSED");
         }
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0
+                && getIntent()!=null
+                && getIntent().getBooleanExtra("studyone_outbox_self_test",false)) {
+            if(!StudySyncOutbox.selfTest(getApplicationContext()))
+                throw new IllegalStateException("Isolated mobile outbox fixture failed");
+            android.util.Log.i("StudyOneOutbox","ANDROID_OUTBOX_ISOLATED_E2E_PASSED");
+        }
         if(getIntent()!=null && getIntent().getBooleanExtra("studyone_sync_self_test",false)){
             if(!StudySyncClient.selfTest())throw new IllegalStateException("Sync client fixture failed");
             android.util.Log.i("StudyOneSync","SYNC_CREATE_ONLY_GUARDS_PASSED");
@@ -991,6 +998,8 @@ public class MainActivity extends Activity {
         EditText token=input("로컬 테스트 Bearer 토큰 (저장 안 함)","");
         token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         form.addView(token);
+        EditText account=input("대기열 대상 계정 UUID (v2/session accountId)","");
+        form.addView(account);
         TextView result=tv("서버를 읽기 전입니다. 서버 프로그램을 별도로 실행해야 합니다.",13,MUTED,false);
         result.setPadding(dp(4),dp(12),dp(4),dp(12));
         Button preview=secondary("서버 기록 수 확인 · 전송 없음");
@@ -998,11 +1007,20 @@ public class MainActivity extends Activity {
         Button pendingPlans=secondary("AI 공부 계획 승인 대기함");
         Button pullTasks=secondary("서버의 신규 일정만 안전하게 가져오기");
         Button pullProgress=secondary("서버의 신규 진도만 안전하게 가져오기");
+        Button queueSave=secondary("오프라인 새 기록 보관 · 승인 필요");
+        Button queueSend=secondary("대기 기록 HTTPS 수동 재전송 · 승인 필요");
+        Button queueStatus=secondary("대기열 상태 확인");
+        Button queueDiscard=secondary("첫 대기 요청 폐기 · 승인 필요");
         form.addView(preview);
         form.addView(upload);
         form.addView(pullTasks);
         form.addView(pullProgress);
         form.addView(pendingPlans);
+        form.addView(cardText("오프라인 대기열은 토큰을 저장하지 않습니다. 과목·학습 기록은 앱 내부 JSON에 저장되므로 기기 잠금과 외부 백업이 필요합니다. 네트워크 전송에는 동일한 HTTPS 주소·계정·쓰기 권한 토큰과 별도 승인이 필요합니다.",12));
+        form.addView(queueSave);
+        form.addView(queueSend);
+        form.addView(queueStatus);
+        form.addView(queueDiscard);
         form.addView(result);
         AlertDialog dialog=new AlertDialog.Builder(this)
                 .setTitle("StudyOne 로컬 동기화 실험")
@@ -1018,6 +1036,104 @@ public class MainActivity extends Activity {
         pullProgress.setOnClickListener(v->
                 importNewRemote(false,token.getText().toString(),
                         address.getText().toString().trim(),result,dialog));
+
+        StudySyncOutbox outbox=new StudySyncOutbox(getApplicationContext());
+        queueStatus.setOnClickListener(v->{
+            try{
+                JSONArray rows=outbox.read().getJSONArray("batches");
+                int count=0;
+                for(int i=0;i<rows.length();i++)
+                    count+=rows.getJSONObject(i).getJSONArray("mutations").length();
+                result.setText("오프라인 대기 요청 "+rows.length()+"개 · 신규 기록 "+count
+                        +"개. 토큰은 로컬 파일에 저장하지 않습니다.");
+            }catch(Exception error){result.setText("대기열 읽기 실패. 원본 보존: "+error.getMessage());}
+        });
+        queueSave.setOnClickListener(v->{
+            final String target=account.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            final String endpoint=address.getText().toString().trim();
+            new AlertDialog.Builder(this)
+                .setTitle("오프라인 기록 보관 확인")
+                .setMessage("일정·진도 신규 기록을 서버 전송 없이 앱 내부 JSON에 저장합니다. "
+                    +"해당 파일은 암호화되지 않은 개인 학습 내용이므로 휴대전화 저장소를 보호하세요. 계속할까요?")
+                .setNegativeButton("취소",null)
+                .setPositiveButton("로컬 대기열 저장",(d,w)->{
+                    queueSave.setEnabled(false);
+                    io.execute(()->{
+                        try {
+                            int saved=outbox.enqueue(target,endpoint,
+                                storage.checkedTasksForSync(),progressStorage.list());
+                            runOnUiThread(()->{
+                                if(dialog.isShowing())result.setText(
+                                    "새 기록 "+saved+"개를 기기에 보관했습니다. 서버 전송은 하지 않았습니다.");
+                                queueSave.setEnabled(true);
+                            });
+                        }catch(Exception ex){
+                            runOnUiThread(()->{result.setText("대기열 보관 실패: "+ex.getMessage());
+                                queueSave.setEnabled(true);});
+                        }
+                    });
+                }).show();
+        });
+        queueSend.setOnClickListener(v->{
+            final String target=account.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            final String endpoint=address.getText().toString().trim();
+            final String secret=token.getText().toString();
+            queueSend.setEnabled(false);
+            io.execute(()->{
+                try{
+                    JSONArray rows=outbox.read().getJSONArray("batches");
+                    if(rows.length()==0)throw new IllegalStateException("대기열이 비어 있습니다.");
+                    final JSONObject first=rows.getJSONObject(0);
+                    if(!target.equals(first.getString("accountId")))
+                        throw new IllegalStateException("대상 계정 UUID가 다릅니다.");
+                    outbox.validateLocal(first,storage.checkedTasksForSync(),progressStorage.list());
+                    JSONObject session=StudySyncClient.accountSession(secret,endpoint);
+                    StudySyncOutbox.checkSession(first,session,endpoint);
+                    runOnUiThread(()->{
+                        if(!dialog.isShowing()){queueSend.setEnabled(true);return;}
+                        new AlertDialog.Builder(this)
+                            .setTitle("HTTPS 계정 확인 · 수동 재전송")
+                            .setMessage("인증된 계정 "+target+"에 신규 항목 "
+                                +first.optJSONArray("mutations").length()+"개를 전송합니다. "
+                                +"기존 ID를 수정하거나 삭제하지 않습니다. 승인하시겠습니까?")
+                            .setNegativeButton("취소",(d,w)->queueSend.setEnabled(true))
+                            .setPositiveButton("대기 요청 전송",(d,w)->io.execute(()->{
+                                try{
+                                    outbox.validateLocal(first,storage.checkedTasksForSync(),
+                                        progressStorage.list());
+                                    JSONObject latest=StudySyncClient.accountSession(secret,endpoint);
+                                    StudySyncOutbox.checkSession(first,latest,endpoint);
+                                    int sent=StudySyncClient.uploadQueued(secret,endpoint,first);
+                                    outbox.removeFirst(first.getString("requestId"));
+                                    runOnUiThread(()->{result.setText("새 기록 "+sent
+                                        +"개 전송 확인. 첫 대기 요청을 삭제했습니다.");
+                                        queueSend.setEnabled(true);});
+                                }catch(Exception ex){
+                                    runOnUiThread(()->{result.setText("전송 실패·결과 미확인. 같은 요청 ID를 보존했습니다: "
+                                        +ex.getMessage());queueSend.setEnabled(true);});
+                                }
+                            })).show();
+                    });
+                }catch(Exception ex){
+                    runOnUiThread(()->{result.setText("대기 요청 확인 실패: "+ex.getMessage());
+                        queueSend.setEnabled(true);});
+                }
+            });
+        });
+        queueDiscard.setOnClickListener(v->{
+            try {
+                JSONArray rows=outbox.read().getJSONArray("batches");
+                if(rows.length()==0){result.setText("폐기할 요청이 없습니다.");return;}
+                String id=rows.getJSONObject(0).getString("requestId");
+                new AlertDialog.Builder(this).setTitle("첫 대기 요청 폐기")
+                    .setMessage("서버로 보내지 않은 첫 대기 요청을 폐기합니다. 실제 학습 기록은 보존됩니다.")
+                    .setNegativeButton("취소",null)
+                    .setPositiveButton("대기 요청만 폐기",(d,w)->{
+                        try{outbox.removeFirst(id);result.setText("첫 요청을 폐기했습니다.");}
+                        catch(Exception ex){result.setText("폐기 실패: "+ex.getMessage());}
+                    }).show();
+            }catch(Exception ex){result.setText("대기열 확인 실패: "+ex.getMessage());}
+        });
 
         pendingPlans.setOnClickListener(v->{
             final String secret=token.getText().toString();

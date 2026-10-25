@@ -38,6 +38,16 @@ enum StudySyncClient {
     static let statuses: Set<String> = ["확인 필요", "미완료", "진행 중", "완료"]
     private static let maxResponse = 4_000_000
 
+    struct Session: Decodable {
+        let schema: Int
+        let accountId: String
+        let deviceId: String
+        let scope: String
+        let audience: String
+        let expiresAt: Int64
+        let serverTime: Int64
+    }
+
     struct Record: Decodable {
         let kind: String
         let id: String
@@ -131,7 +141,7 @@ enum StudySyncClient {
                                 address: String = defaultAddress) async throws -> Data {
         let safeToken = try checkedToken(token)
         let (base, prefix) = try checkedAddress(address)
-        let normal = endpoint == "snapshot" || endpoint == "changes"
+        let normal = endpoint == "snapshot" || endpoint == "changes" || endpoint == "session"
         let inbox = endpoint == "proposals"
         let actionParts = endpoint.split(separator: "/").map(String.init)
         let decision = actionParts.count == 3 && actionParts[0] == "proposals"
@@ -140,7 +150,7 @@ enum StudySyncClient {
         guard normal || inbox || decision else {
             throw StudyError.message("지원되지 않는 동기화 경로입니다.")
         }
-        if (inbox || decision) && prefix != "v2/" {
+        if (inbox || decision || endpoint == "session") && prefix != "v2/" {
             throw StudyError.message("AI 학습 계획 승인은 HTTPS 계정 서버에서만 지원됩니다.")
         }
         if let body, body.count > 262_144 {
@@ -203,6 +213,49 @@ enum StudySyncClient {
             }
         }
         return snapshot
+    }
+
+    static func authenticatedSession(token: String, address: String) async throws -> Session {
+        let (_, prefix) = try checkedAddress(address)
+        guard prefix == "v2/" else {
+            throw StudyError.message("실제 계정 연결에는 HTTPS 서버가 필요합니다.")
+        }
+        let result = try await request(token, endpoint: "session", address: address)
+        let value = try JSONDecoder().decode(Session.self, from: result)
+        guard value.schema == 1, UUID(uuidString: value.accountId) != nil,
+              UUID(uuidString: value.deviceId) != nil,
+              value.expiresAt > value.serverTime,
+              value.audience == "device" else {
+            throw StudyError.message("계정 인증 응답을 확인할 수 없습니다.")
+        }
+        return value
+    }
+
+    /// A stable server request UUID is persisted outside this function.
+    /// After a lost response, the same batch body can safely be retried.
+    static func uploadQueuedBatch(token: String, address: String,
+                                  batch: StudySyncOutbox.Batch) async throws -> Int {
+        let (_, prefix) = try checkedAddress(address)
+        guard prefix == "v2/", UUID(uuidString: batch.id) != nil,
+              (1...50).contains(batch.items.count) else {
+            throw StudyError.message("올바르지 않은 HTTPS 대기 요청입니다.")
+        }
+        let mutations = try batch.items.map { try $0.mutation() }
+        let data = try JSONEncoder().encode(Batch(requestId: batch.id, mutations: mutations))
+        let result = try await request(token, endpoint: "changes",
+                                       body: data, address: address)
+        let ack = try JSONDecoder().decode(Ack.self, from: result)
+        guard ack.schema == 1, ack.cursor >= 0,
+              ack.changes.count == mutations.count else {
+            throw StudyError.message("서버가 모든 대기 항목을 확인하지 않았습니다.")
+        }
+        for (left, right) in zip(mutations, ack.changes) {
+            guard left.kind == right.kind, left.id == right.id,
+                  right.revision == 1 else {
+                throw StudyError.message("서버 응답이 대기 항목과 다릅니다.")
+            }
+        }
+        return mutations.count
     }
 
     static func newOnly(tasks: [StudyTask], progress: [StudyProgressItem],
