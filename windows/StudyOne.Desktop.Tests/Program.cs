@@ -726,13 +726,13 @@ if (Environment.GetEnvironmentVariable("STUDYONE_PHASE31_ANDROID_CROSSCLIENT") =
     var received = await SyncClient.GetSnapshot(token, endpoint: endpoint);
     Check(received.Cursor == 2 && received.Records.Count == 2,
           "Actual Android app must have sent two records to SQLite server");
-    var inbound = SyncClient.PreviewNewRemote(
+    var androidIncoming = SyncClient.PreviewNewRemote(
         new TaskBackup { Grade = 3, ClassName = "1" },
         new ProgressBackup(), received);
-    Check(inbound.NewTasks.Count == 1 && inbound.NewProgress.Count == 1 &&
-          inbound.NewTasks[0].Id == 1730000001234L &&
-          inbound.NewTasks[0].Title == "CI 실험 문제" &&
-          inbound.NewProgress[0].Unit == "7-2",
+    Check(androidIncoming.NewTasks.Count == 1 && androidIncoming.NewProgress.Count == 1 &&
+          androidIncoming.NewTasks[0].Id == 1730000001234L &&
+          androidIncoming.NewTasks[0].Title == "CI 실험 문제" &&
+          androidIncoming.NewProgress[0].Unit == "7-2",
           "Windows .NET client must decode Android-origin study records");
     var fromDotnet = new StudyTask
     {
