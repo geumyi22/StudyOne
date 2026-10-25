@@ -73,6 +73,8 @@ jobs:
           java -cp /tmp/studyone-online-practice-classes StudyOnlinePracticeSmoke
       - name: Audit cross-platform online practice parity and recovery import safeguards
         run: python3 scripts/tests/check_online_practice_parity.py
+      - name: Audit Android iOS Windows four-store transfer and recovery contract
+        run: python3 scripts/tests/check_phase23_fourstore.py
       - name: Fault-inject every four-store Android rollback stage
         run: |
           mkdir -p /tmp/studyone-fourstore-classes
