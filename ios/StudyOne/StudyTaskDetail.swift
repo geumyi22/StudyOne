@@ -184,6 +184,16 @@ final class StudyTaskDetailStore: ObservableObject {
         return path
     }
 
+    /// Reload exact recovered detail data into the active screen after rollback.
+    func reloadAfterFourStoreRecovery() throws {
+        if let raw = try currentData() {
+            items = try Self.parseBackup(raw)
+        } else {
+            items = [:]
+        }
+        loadError = nil
+    }
+
     /// Explicit replace only after confirmation, original-byte backup, and stale-read check.
     @discardableResult
     func importBackup(_ data: Data, expectedOriginal: Data?) throws -> URL {
