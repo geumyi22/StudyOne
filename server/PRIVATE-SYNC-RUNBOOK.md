@@ -14,7 +14,8 @@
 - 기기 토큰 폐기, 계정 비활성화, 만료·권한 분리.
 - TLS 인증서와 개인키 없이는 서버 시작 차단. 외부 바인딩은 별도 명시 플래그 필요.
 - HTTPS 헤더(HSTS 등), Origin/CORS 제한, 원본 학습 기록 및 인증정보의 로그 비출력.
-- 서버 변경 API: GET /v2/health, GET /v2/snapshot, GET /v2/changes?after=0, POST /v2/changes.
+- 서버 변경 API: GET /v2/health (공개 상태 확인), **GET /v2/session (실제 기기 인증·권한·만료 점검)**, GET /v2/snapshot, GET /v2/changes?after=0, POST /v2/changes.
+- `/v2/session`은 디바이스 전용 토큰만 허용하며 계정 UUID·기기 UUID·권한·토큰 만료 시각만 돌려줍니다. 토큰 본문/토큰 해시/계정 라벨은 응답하지 않습니다. `/v2/health`는 공개 헬스 체크이므로 로그인 성공의 증거로 사용하지 마세요.
 - 이전 단일 사용자 서버의 revision/409 충돌/원자성/idempotency를 계정별 데이터에 재사용.
 
 ## 로컬 개발용 운영 절차
@@ -47,6 +48,21 @@ Phase24 로컬 운영자용 명령 (아래 명령은 실제 학습 데이터를 
 
 기본 주소는 127.0.0.1:9443. 원격 바인딩에는 별도 명시 허용 및 네트워크 보안 정책이 필요합니다.
 코드를 만들었다고 실제 공개 HTTPS 서비스가 배포되거나 도메인·인증서가 생성된 것은 아닙니다.
+
+## OAuth 연결 준비 사항 및 오프라인 사전 점검
+
+제3자 인증 제공자(Azure AD, Auth0, Keycloak 등) 도입 전에 **로그인/동의 페이지가 갖춰졌는지, 토큰의 사용 대상이 MCP 서버인지, 실제 JWT 서명·issuer·audience·scope를 확인할 수 있는지**를 검증해야 합니다.
+
+운영자가 별도로 획득한 공개 OIDC/OAuth 메타데이터를 JSON 파일로 저장한 후 아래의 오프라인 *사전 점검*을 실행할 수 있습니다.
+
+    python -m server.oauth_preflight \
+      --issuer https://identity.example.org/tenant \
+      --resource https://studyone.example.org/mcp \
+      --metadata /path/to/provider-metadata.json
+
+이는 **공개 HTTPS URL, 정확한 issuer, OAuth authorization-code+PKCE S256, refresh token, offline_access 지원의 형식 검사만** 수행합니다. 토큰을 발급하거나 네트워크에 접근하지 않으며 공개 MCP 서버를 시작하지도 않습니다. 성공하더라도 OAuth 인증이 구현·연결·검증된 것은 아닙니다. 예시 주소는 실제 도메인이 아닙니다.
+
+MCP 인증 사양과 RFC 9728에 맞게 향후 구현할 때에는 올바른 보호 리소스 메타데이터, `WWW-Authenticate` 챌린지, 외부 인증 서버의 코드 교환 및 사용자 승인, 권한 분리, 토큰 갱신·폐기 등을 추가하고 실제 ChatGPT 워크스페이스 연결 및 사용자별 데이터 격리를 검증해야 합니다.
 
 ## 배포 차단 조건
 
