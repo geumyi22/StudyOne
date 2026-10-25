@@ -215,6 +215,128 @@ public final class StudySyncClient {
         return mutations.length();
     }
 
+    /** Single existing-ID review. No inferred deletes, no automatic merge. */
+    public static final class ReviewedChange {
+        public final JSONObject mutation;
+        public final long cursor;
+        public final String remoteSummary, localSummary;
+        ReviewedChange(JSONObject m,long cursor,String remote,String local) {
+            this.mutation=m;this.cursor=cursor;remoteSummary=remote;localSummary=local;
+        }
+    }
+
+    public static ReviewedChange prepareReviewedChange(
+            JSONObject snapshot,List<Models.StudyTask> localTasks,
+            List<StudyProgressItem> localProgress,String kind,String id,boolean deleted)
+            throws Exception {
+        // Validates both complete local stores and every remote record in the
+        // snapshot before considering any existing-ID server mutation.
+        previewInbound(localTasks,localProgress,snapshot);
+        if(!"task".equals(kind) && !"progress".equals(kind))
+            throw new IllegalArgumentException("수정할 기록의 종류를 선택하세요.");
+        JSONArray records=snapshot.getJSONArray("records");
+        JSONObject matching=null;
+        for(int i=0;i<records.length();i++){
+            JSONObject row=records.getJSONObject(i);
+            if(kind.equals(row.getString("kind")) && id.equals(row.getString("id"))){
+                if(matching!=null)throw new IllegalArgumentException("동일 서버 ID 중복");
+                matching=row;
+            }
+        }
+        if(matching==null || matching.getBoolean("deleted"))
+            throw new IllegalStateException("서버에 활성화된 해당 ID가 없습니다.");
+        long revision=matching.getLong("revision");
+        if(revision<1)throw new IllegalStateException("서버 수정 버전이 올바르지 않습니다.");
+        JSONObject remotePayload=matching.getJSONObject("payload");
+        JSONObject newPayload=null;
+        String source, target;
+        if("task".equals(kind)){
+            Models.StudyTask remote=checkedRemoteTask(remotePayload,id);
+            Models.StudyTask local=null;
+            for(Models.StudyTask t:localTasks)
+                if(Long.toString(t.id).equals(id)){local=t;break;}
+            target="["+remote.subject+"] "+remote.title+" · "+remote.dueDate;
+            if(deleted){
+                if(local!=null)throw new IllegalStateException(
+                        "이 기기에 같은 ID가 남아 있어 서버 삭제할 수 없습니다.");
+                source="(기기에는 없는 기록: 원격에서만 삭제)";
+            }else{
+                if(local==null)throw new IllegalStateException("수정할 기기 일정이 없습니다.");
+                newPayload=taskJson(local);
+                if(local.type.equals(remote.type)&&local.subject.equals(remote.subject)&&
+                        local.title.equals(remote.title)&&local.dueDate.equals(remote.dueDate)&&
+                        local.importance==remote.importance&&local.completed==remote.completed)
+                    throw new IllegalStateException("서버와 동일해 수정할 내용이 없습니다.");
+                source="["+local.subject+"] "+local.title+" · "+local.dueDate;
+            }
+        }else{
+            StudyProgressItem remote=checkedRemoteProgress(remotePayload,id,revision);
+            StudyProgressItem local=null;
+            for(StudyProgressItem p:localProgress)
+                if(id.equalsIgnoreCase(p.id)){local=p;break;}
+            target="["+remote.subject+"] "+remote.material+" · "+remote.unit+
+                    " · "+remote.status;
+            if(deleted){
+                if(local!=null)throw new IllegalStateException(
+                        "이 기기에 같은 진도 UUID가 남아 있어 서버 삭제할 수 없습니다.");
+                source="(기기에는 없는 진도: 원격에서만 삭제)";
+            }else{
+                if(local==null)throw new IllegalStateException("수정할 기기 진도가 없습니다.");
+                newPayload=progressJson(local);
+                if(local.subject.equals(remote.subject)&&local.material.equals(remote.material)&&
+                        local.unit.equals(remote.unit)&&local.status.equals(remote.status)&&
+                        local.inExamScope==remote.inExamScope)
+                    throw new IllegalStateException("서버와 동일해 수정할 진도가 없습니다.");
+                source="["+local.subject+"] "+local.material+" · "+local.unit+
+                        " · "+local.status;
+            }
+        }
+        JSONObject change=new JSONObject()
+                .put("kind",kind).put("id",id).put("baseRevision",revision)
+                .put("deleted",deleted).put("payload",
+                        deleted?JSONObject.NULL:newPayload);
+        return new ReviewedChange(change,snapshot.getLong("cursor"),target,source);
+    }
+
+    /** Requires an externally verified read-write device session and user consent. */
+    public static void uploadReviewed(String token,String address,ReviewedChange change)
+            throws Exception {
+        checkedAccountAddress(address);
+        if(change.mutation.getLong("baseRevision")<1)
+            throw new IllegalArgumentException("기존 기록의 수정 버전이 필요합니다.");
+        JSONObject body=new JSONObject().put("requestId",UUID.randomUUID().toString())
+                .put("mutations",new JSONArray().put(change.mutation));
+        verifyChangeAck(call(token,"changes",body,address),body.getJSONArray("mutations"));
+    }
+
+    /** Recovery evidence is written before a server write, never after. */
+    public static String saveReviewedRecovery(android.content.Context context,
+            JSONObject oldServerRecord,JSONObject session,String endpoint,long cursor)
+            throws Exception {
+        JSONObject report=new JSONObject().put("format","studyone-remote-recovery")
+                .put("schema",1).put("accountId",session.getString("accountId"))
+                .put("endpoint",checkedAccountAddress(endpoint))
+                .put("cursor",cursor).put("record",oldServerRecord);
+        byte[] bytes=report.toString().getBytes(StandardCharsets.UTF_8);
+        if(bytes.length>2_000_000)throw new IllegalStateException("복구본이 너무 큽니다.");
+        java.io.File directory=new java.io.File(context.getFilesDir(),"SyncRemoteRecovery");
+        if(!directory.exists()&&!directory.mkdirs())
+            throw new java.io.IOException("복구 폴더를 생성하지 못했습니다.");
+        String filename=UUID.randomUUID()+".json";
+        android.util.AtomicFile output=new android.util.AtomicFile(
+                new java.io.File(directory,filename));
+        java.io.FileOutputStream stream=null;
+        try {
+            stream=output.startWrite();
+            stream.write(bytes);
+            output.finishWrite(stream);
+        }catch(Exception error){
+            if(stream!=null)output.failWrite(stream);
+            throw error;
+        }
+        return filename; // Never disclose user directory or bearer credentials.
+    }
+
     private static JSONObject taskJson(Models.StudyTask t) throws JSONException {
         if (t.id <= 0 || t.importance<1 || t.importance>3 ||
                 t.type == null || t.type.trim().isEmpty() || t.type.length()>100 ||
