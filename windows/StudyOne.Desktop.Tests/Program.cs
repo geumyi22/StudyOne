@@ -382,4 +382,106 @@ ExpectInvalid(() => SyncClient.ValidateProposals(proposals),
               "Malformed AI plan task");
 Console.WriteLine("StudyOne Windows ChatGPT proposal approval gate: PASS");
 
+// Phase23: four-store Android wire compatibility and guarded recovery on
+// synthetic files; never reads the developer's real StudyOne profile.
+string phase23 = Path.Combine(Path.GetTempPath(), "studyone-fourstore-qa-" +
+    Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(phase23);
+try
+{
+    byte[] fourTasks = StudyData.SerializeAndValidateTasks(tasks);
+    byte[] fourProgress = StudyData.SerializeAndValidateProgress(progress);
+    byte[] fourDetails = StudyTaskDetailsData.Serialize(details);
+    byte[] fourWrong = StudyWrongAnswersData.Serialize(wrongBook);
+    string[] paths = { "tasks.json", "progress.json", "task-details.json", "wrong-answers.json" };
+    byte[][] originals = { fourTasks, fourProgress, fourDetails, fourWrong };
+    for (int i = 0; i < 4; i++)
+        StudyData.SaveAtomic(Path.Combine(phase23, paths[i]), originals[i]);
+
+    var reviewed = StudyPortableBundle.Capture(phase23);
+    string encoded = StudyPortableBundle.Encode(reviewed);
+    var checkedBundle = StudyPortableBundle.Parse(encoded);
+    Check(checkedBundle.Summary.Contains("일정 1개") &&
+          checkedBundle.Summary.Contains("진도 1개") &&
+          checkedBundle.Summary.Contains("학습 상세 1개") &&
+          checkedBundle.Summary.Contains("오답 1개"), "Four-store count preview");
+    Check(checkedBundle.Original.Same(reviewed), "Android four-store envelope roundtrip");
+
+    var tampered = System.Text.Json.Nodes.JsonNode.Parse(encoded)!;
+    tampered["sections"]!["progress"] = "{\\"format\\":\\"studyone-progress\\",\\"schema\\":1,\\"items\\":[]}";
+    ExpectInvalid(() => StudyPortableBundle.Parse(tampered.ToJsonString()),
+                  "Checksum tampering must be rejected");
+    var unsupported = System.Text.Json.Nodes.JsonNode.Parse(encoded)!;
+    unsupported["schema"] = 2;
+    ExpectInvalid(() => StudyPortableBundle.Parse(unsupported.ToJsonString()),
+                  "Unknown bundle schema must be rejected");
+
+    var changedProgress = new ProgressBackup { Items = onlineKnown.Concat(onlineCreated).ToList() };
+    var incoming = StudyPortableBundle.Parse(StudyPortableBundle.Encode(
+        new StudyPortableBundle.Snapshot(fourTasks,
+            StudyData.SerializeAndValidateProgress(changedProgress),
+            fourDetails, fourWrong)));
+    string recoveryFolder = StudyPortableBundle.Apply(incoming, reviewed, phase23);
+    Check(StudyPortableBundle.Pending(phase23).Count == 0, "Successful import clears pending");
+    Check(File.Exists(Path.Combine(recoveryFolder, "manifest.json")),
+          "Successful import retains original recovery journal");
+    Check(StudyPortableBundle.Capture(phase23).Progress is byte[] savedProgress &&
+          StudyData.ParseProgress(savedProgress).Items.Count == 7,
+          "Approved four-store import writes all sections");
+
+    var now = StudyPortableBundle.Capture(phase23);
+    // This stale review is rejected without any local write, journal, or rollback.
+    ExpectInvalid(() => StudyPortableBundle.Apply(checkedBundle, reviewed, phase23),
+                  "Stale approved four-store preview");
+    Check(StudyPortableBundle.Capture(phase23).Same(now),
+          "Rejected stale import preserves all original bytes");
+    // Simulated failure immediately after writing section 2; compensating
+    // rollback should restore all four originally captured sections.
+    try
+    {
+        StudyPortableBundle.Apply(checkedBundle, now, phase23, i => {
+            if (i == 1) throw new IOException("Synthetic section-2 failure");
+        });
+        throw new InvalidOperationException("Injected four-store failure was swallowed");
+    }
+    catch (IOException error)
+    {
+        Check(error.Message.Contains("복구했습니다"),
+              "Expected automatic compensating rollback");
+    }
+    Check(StudyPortableBundle.Capture(phase23).Same(now),
+          "Partial import rolls all four files back to exact bytes");
+    Check(StudyPortableBundle.Pending(phase23).Count == 0,
+          "Successful rollback clears incomplete journal");
+
+    // Rehearse power-loss recovery: a trusted journal already exists from
+    // a previous operation, and one target has been partially replaced.
+    string crashFolder = Path.Combine(phase23, "Recovery",
+        "StudyOne-fourstore-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(crashFolder);
+    var digests = new Dictionary<string, string?>();
+    string[] keys = { "tasks", "progress", "details", "wrongAnswers" };
+    byte[][] nowValues = now.Values.Select((x, i) => x!).ToArray();
+    for (int i = 0; i < 4; i++)
+    {
+        digests.Add(keys[i], Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(nowValues[i])).ToLowerInvariant());
+        StudyData.SaveAtomic(Path.Combine(crashFolder, keys[i] + ".bak"), nowValues[i]);
+    }
+    StudyData.SaveAtomic(Path.Combine(crashFolder, "manifest.json"),
+        System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(digests));
+    StudyData.SaveAtomic(Path.Combine(crashFolder, ".pending"), Encoding.UTF8.GetBytes("1"));
+    StudyData.SaveAtomic(Path.Combine(phase23, "progress.json"), fourProgress);
+    Check(StudyPortableBundle.Pending(phase23).Count == 1, "Crash journal detected");
+    ExpectInvalid(() => StudyPortableBundle.Apply(incoming,
+        StudyPortableBundle.Capture(phase23), phase23), "Incomplete transaction blocks new import");
+    StudyPortableBundle.Recover(crashFolder, phase23);
+    Check(StudyPortableBundle.Capture(phase23).Same(now),
+          "Explicit interrupted journal recovery restores all 4 original stores");
+    Check(StudyPortableBundle.Pending(phase23).Count == 0,
+          "Explicit recovery clears pending marker");
+    Console.WriteLine("StudyOne Windows four-store checksums, stale guard, rollback and crash recovery: PASS");
+}
+finally { if (Directory.Exists(phase23)) Directory.Delete(phase23, recursive: true); }
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");
