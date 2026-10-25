@@ -59,6 +59,17 @@ jobs:
             -derivedDataPath build/DerivedData-Debug \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
+      - name: Set up .NET 8 portable StudyOne desktop client
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run real iOS Simulator app-to-server network E2E
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: bash ios/scripts/run_simulator_sync_e2e.sh
+
       - name: Upload IPA and SHA-256
         uses: actions/upload-artifact@v4
         with:
