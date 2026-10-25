@@ -217,6 +217,9 @@ enum StudyFourStoreImport {
         }
         // Restore every store; keep the journal if any individual write fails.
         for kind in keys { try restore(kind, from: journal.originals[kind]!) }
+        guard UserDefaults.standard.synchronize() else {
+            throw StudyError.message("복구된 일정·진도 설정이 디스크에 저장되지 않았습니다.")
+        }
         guard try current() == journal.originals else {
             throw StudyError.message("원본 4종 재검증 실패. 복구 기록은 보존됐습니다.")
         }
@@ -265,6 +268,9 @@ enum StudyFourStoreImport {
                 StudyOneBackup.self, from: incoming["tasks"]!)
             let expectedProgress = try JSONDecoder().decode(
                 StudyProgressTransfer.self, from: incoming["progress"]!)
+            guard UserDefaults.standard.synchronize() else {
+                throw StudyError.message("일정·진도 저장을 디스크에 기록하지 못했습니다.")
+            }
             guard try tasks.checkedTasksForSync() == expectedTasks.tasks,
                   tasks.grade == expectedTasks.grade,
                   tasks.className == expectedTasks.className,
