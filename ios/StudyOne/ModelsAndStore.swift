@@ -104,6 +104,8 @@ final class StudyOneStore: ObservableObject {
     @Published var loadingSchool = false
     private let settingsKey = "studyone_ios_settings_v1"
     private let cacheKey = "studyone_ios_neis_cache_v1"
+    private var lastSettingsBytes: Data?
+    private var settingsLoadError = false
     private var lastAttempt: Date?
     private struct Saved: Codable {
         var school: School?
@@ -112,12 +114,19 @@ final class StudyOneStore: ObservableObject {
         var tasks: [StudyTask]
     }
     init() {
-        if let data = UserDefaults.standard.data(forKey: settingsKey),
-           let value = try? JSONDecoder().decode(Saved.self, from: data) {
-            school = value.school
-            grade = value.grade
-            className = value.className
-            tasks = value.tasks
+        let raw = UserDefaults.standard.data(forKey: settingsKey)
+        lastSettingsBytes = raw
+        if let raw {
+            if let value = try? JSONDecoder().decode(Saved.self, from: raw) {
+                school = value.school
+                grade = value.grade
+                className = value.className
+                tasks = value.tasks
+            } else {
+                // Never let an ordinary edit erase an unreadable original.
+                settingsLoadError = true
+                schoolError = "저장된 일정 원본을 읽지 못했습니다. 기존 내용을 보존하고 변경을 차단했습니다."
+            }
         }
         restoreCache()
     }
@@ -182,13 +191,30 @@ final class StudyOneStore: ObservableObject {
             throw StudyError.message("동기화 일정 저장에 실패했습니다. 이전 백업은 보존됩니다.")
         }
         tasks = merged
+        lastSettingsBytes = blob
         return backup
     }
 
     func persist() {
+        guard !settingsLoadError else {
+            schoolError = "손상된 일정 원본을 보존하기 위해 변경을 저장하지 않았습니다."
+            return
+        }
+        guard UserDefaults.standard.data(forKey: settingsKey) == lastSettingsBytes else {
+            // Another tab or a restored backup changed the original data.
+            // Restore what is actually on disk rather than overwriting it.
+            try? reloadAfterFourStoreRecovery()
+            schoolError = "일정이 다른 화면에서 변경됐습니다. 다시 확인한 후 수정하세요."
+            return
+        }
         let saved = Saved(school: school, grade: grade, className: className, tasks: tasks)
         if let bytes = try? JSONEncoder().encode(saved) {
             UserDefaults.standard.set(bytes, forKey: settingsKey)
+            if UserDefaults.standard.data(forKey: settingsKey) == bytes {
+                lastSettingsBytes = bytes
+            } else {
+                schoolError = "일정 저장 검증 실패. 기존 기록을 확인하세요."
+            }
         }
     }
     func setSchool(_ value: School) {
@@ -302,6 +328,8 @@ final class StudyOneStore: ObservableObject {
             className = "1"
             tasks = []
         }
+        lastSettingsBytes = UserDefaults.standard.data(forKey: settingsKey)
+        settingsLoadError = false
         restoreCache()
     }
 
@@ -316,11 +344,42 @@ final class StudyOneStore: ObservableObject {
               backup.school.map({ !$0.eduCode.isEmpty && !$0.schoolCode.isEmpty }) ?? true else {
             throw StudyError.message("지원되지 않거나 손상된 StudyOne 백업 파일입니다.")
         }
+        // Validate duplicate IDs and required task fields, not just count.
+        var ids = Set<Int64>()
+        guard backup.tasks.allSatisfy({
+            $0.id > 0 && ids.insert($0.id).inserted &&
+            !$0.type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            $0.type.count <= 100 && $0.subject.count <= 60 &&
+            !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            $0.dueDate.range(of: #"^\d{4}-\d{2}-\d{2}$"#,
+                             options: .regularExpression) != nil
+        }) else {
+            throw StudyError.message("중복된 일정 ID 또는 손상된 백업 항목이 있습니다.")
+        }
+        guard !settingsLoadError,
+              UserDefaults.standard.data(forKey: settingsKey) == lastSettingsBytes else {
+            throw StudyError.message("기기 원본을 확인할 수 없거나 다른 화면에서 변경됐습니다.")
+        }
+        let original = lastSettingsBytes
+        let saved = Saved(school: backup.school, grade: backup.grade,
+                          className: backup.className, tasks: backup.tasks)
+        let bytes = try JSONEncoder().encode(saved)
+        // Even the legacy one-store importer now retains exact original bytes.
+        _ = try StudySyncBackup.save(original, kind: "tasks")
+        UserDefaults.standard.set(bytes, forKey: settingsKey)
+        guard UserDefaults.standard.data(forKey: settingsKey) == bytes else {
+            if let original {
+                UserDefaults.standard.set(original, forKey: settingsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: settingsKey)
+            }
+            throw StudyError.message("일정 복원 저장 검증 실패. 원본을 복구했습니다.")
+        }
         school = backup.school
         grade = backup.grade
         className = backup.className
         tasks = backup.tasks
+        lastSettingsBytes = bytes
         invalidateCache()
-        persist()
     }
 }
