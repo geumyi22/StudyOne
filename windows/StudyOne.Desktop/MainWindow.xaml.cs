@@ -136,6 +136,21 @@ public partial class MainWindow : Window
             ? "진도 데이터 읽기 오류 · 원본 보존 중 · 유효한 JSON을 다시 가져와 복구하세요."
             : $"시험범위 {scoped}개 · 완료 {done} · 진행 중 {started} · 미완료 {todo} · 확인 필요 {unknown} · 시험범위 제외 {progress.Count - scoped}";
         ExamProgressBar.Value = scoped == 0 ? 0 : 100.0 * done / scoped;
+        if (progressLocked)
+        {
+            ExamSubjectSummary.Text = "진도 원본을 읽지 못했습니다. 복구 전까지 추천을 표시하지 않습니다.";
+        }
+        else
+        {
+            var focus = StudyExamFocus.Summarize(progressBackup.Items);
+            ExamSubjectSummary.Text = focus.Count == 0
+                ? "시험범위에 포함된 진도 항목이 없습니다."
+                : string.Join(Environment.NewLine + Environment.NewLine,
+                    focus.Select(row => row.Summary + Environment.NewLine + row.NextText))
+                  + Environment.NewLine + Environment.NewLine
+                  + "온라인 내신 문제는 같은 과목의 다른 시험범위 학습이 남아 있으면 "
+                  + "우선 추천하지 않습니다. 실제 시험대비 자료 완료 여부는 직접 확인하세요.";
+        }
     }
 
     private void ClearTaskForm()
