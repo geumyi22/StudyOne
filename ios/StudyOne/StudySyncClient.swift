@@ -441,7 +441,17 @@ enum StudySyncClient {
                     throw StudyError.message("서버 진도 ID 또는 수정 이력이 유효하지 않습니다.")
                 }
                 if let existing = progressIds[candidate.id.lowercased()] {
-                    if existing == candidate { unchanged += 1 }
+                    // Server updates revision/updatedAt when it accepts a write.
+                    // Those transport metadata values do NOT imply a meaningful
+                    // conflicting user edit. Android and Windows already compare
+                    // the five user-controlled fields instead of timestamps.
+                    let sameUserContent =
+                        existing.subject == candidate.subject &&
+                        existing.material == candidate.material &&
+                        existing.unit == candidate.unit &&
+                        existing.status == candidate.status &&
+                        existing.inExamScope == candidate.inExamScope
+                    if sameUserContent { unchanged += 1 }
                     else { conflicts += 1 }
                 } else {
                     newProgress.append(candidate)
