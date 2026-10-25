@@ -51,6 +51,14 @@
 
 **개인 학습 파일 주의:** `StudyOne_4종_재구성_참고자료_복원금지_2026-10-25.zip`은 복원용 백업이 아니다. 재구성 진행 기록만 참고하며 실제 기기의 tasks/details/wrongAnswers 원본을 대체하지 않는다. 어떤 사용자 진도 JSON도 GitHub에 커밋하지 않는다.
 
+## v4 iOS 4종 통합 복원 개발 변경 (미출시)
+
+Draft PR #60에서는 기존 iOS 내보내기 전용 4종 백업에 대해 **명시 승인형 일괄 복원, 원본 바이트 journal, 중단 시 앱 시작 단계 복구, 4종 순차 실패 원복**, 다른 화면의 오래된 데이터 덮어쓰기 방어를 추가했다. DEBUG iOS Simulator에만 존재하는 합성 E2E가 네 저장 단계의 오류 주입·SHA-256 위조 차단·정상 왕복을 검사하도록 연결됐다.
+
+- **구현 = 출시 검증 완료가 아님**. Swift Release/Debug 컴파일, 실제 iOS Simulator E2E, 원본 부재·중간 프로세스 종료·저장 실패·물리 기기에서의 추가 검증이 필요하다.
+- 이 개발로 운영 HTTPS/OAuth/ChatGPT 계정 연결, Android↔iOS↔Windows 자동 동기화가 구현되는 것은 아니다.
+- [iOS 4종 복원 구현과 남은 장애 시험](IMPLEMENTATION-V4-IOS-FOURSTORE-RESTORE.md)을 먼저 검토한다.
+
 ## 출하 검토 기록
 
 `2026-10-25` 기준 출시 상태는 **NOT READY**. 모든 작업을 반복적 '완료'로 표현하지 않고, 다음 값으로만 기록한다: `IMPLEMENTED` / `CI_VERIFIED` / `DEVICE_VERIFIED` / `PRODUCTION_VERIFIED` / `RELEASED`. 서로 다른 수준을 혼용하지 않는다.
