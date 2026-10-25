@@ -231,6 +231,7 @@ class CrossDeviceEndToEnd(unittest.TestCase):
         assistant = self.registry.device(self.owner, "ai-sim", "read", audience="mcp")
         proposal_body = {
             "requestId": str(uuid4()),
+            "baseCursor": 0,
             "title": "합성 내일 공부",
             "tasks": [{"type": "숙제 항목", "subject": "국어",
                        "title": "합성 시험 대비 자료", "dueDate": "2026-11-03",
