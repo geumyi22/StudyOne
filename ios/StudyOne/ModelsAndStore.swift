@@ -163,6 +163,7 @@ final class StudyOneStore: ObservableObject {
     /// Existing school, NEIS keys, tasks and study completion states are retained.
     func mergeNewTasksFromServer(_ added: [StudyTask],
                                  original expected: [StudyTask]) throws -> URL {
+        try StudyFourStoreImport.requireSafeWrite()
         let verified = try checkedTasksForSync()
         guard verified == expected else {
             throw StudyError.message("승인 도중 iPhone 일정이 변경되어 가져오기를 중단했습니다.")
@@ -196,6 +197,12 @@ final class StudyOneStore: ObservableObject {
     }
 
     func persist() {
+        do {
+            try StudyFourStoreImport.requireSafeWrite()
+        } catch {
+            schoolError = error.localizedDescription
+            return
+        }
         guard !settingsLoadError else {
             schoolError = "손상된 일정 원본을 보존하기 위해 변경을 저장하지 않았습니다."
             return
@@ -334,6 +341,7 @@ final class StudyOneStore: ObservableObject {
     }
 
     func importBackup(from data: Data) throws {
+        try StudyFourStoreImport.requireSafeWrite()
         guard data.count < 5_000_000 else { throw StudyError.message("백업 파일이 너무 큽니다.") }
         let backup = try JSONDecoder().decode(StudyOneBackup.self, from: data)
         guard backup.format == "studyone-backup", backup.schema == 1,
