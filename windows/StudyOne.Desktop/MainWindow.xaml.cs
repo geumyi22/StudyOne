@@ -526,6 +526,10 @@ public partial class MainWindow : Window
         if (path is null) return;
         try
         {
+            string localRoot = Path.GetFullPath(StudyData.DataDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (Path.GetFullPath(path).StartsWith(localRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("StudyOne 내부 데이터 경로에는 외부 통합 백업을 저장할 수 없습니다.");
             string serialized = StudyPortableBundle.Encode(
                 StudyPortableBundle.Capture(StudyData.DataDirectory));
             StudyData.SaveAtomic(path, System.Text.Encoding.UTF8.GetBytes(serialized));
