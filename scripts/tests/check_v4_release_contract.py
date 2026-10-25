@@ -51,6 +51,8 @@ class V4ReleaseContract(unittest.TestCase):
         ios = metadata("ios/version.json")
         self.assertEqual(str(ios["versionCode"]), project_field("CURRENT_PROJECT_VERSION"))
         self.assertEqual(ios["versionName"].split("-")[0], project_field("MARKETING_VERSION"))
+        self.assertEqual(ios["versionName"], project_field("INFOPLIST_KEY_StudyOneVersionName"))
+        self.assertIn('value: displayedAppVersion', read("ios/StudyOne/ContentView.swift"))
         self.assertEqual("com.studyone.ios", project_field("PRODUCT_BUNDLE_IDENTIFIER"))
         self.assertGreater(ios["versionCode"], 30001)
         self.assertIn(ios["channel"], ("canary", "beta", "stable"))
