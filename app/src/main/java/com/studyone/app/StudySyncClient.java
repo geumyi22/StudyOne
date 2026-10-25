@@ -573,6 +573,30 @@ public final class StudySyncClient {
                 previewInbound(new ArrayList<>(),new ArrayList<>(),changed);
                 return false;
             }catch(IllegalArgumentException expected){/* safe rejection */}
+            JSONObject good=new JSONObject().put("schema",1).put("cursor",2)
+                    .put("changes",new JSONArray()
+                            .put(new JSONObject().put("seq",1).put("kind","task")
+                                    .put("id",Long.toString(task.id)).put("revision",1)
+                                    .put("deleted",false).put("updatedAt",1790000000000L))
+                            .put(new JSONObject().put("seq",2).put("kind","progress")
+                                    .put("id",item.id).put("revision",1)
+                                    .put("deleted",false).put("updatedAt",1790000000000L)));
+            verifyChangeAck(good,first);
+            JSONObject forged=new JSONObject(good.toString());
+            forged.getJSONArray("changes").getJSONObject(1).put("id",UUID.randomUUID().toString());
+            try { verifyChangeAck(forged,first);return false; }
+            catch(IllegalStateException expected){/* mismatched id rejected */}
+            forged=new JSONObject(good.toString());
+            forged.getJSONArray("changes").getJSONObject(1).put("revision",5);
+            try { verifyChangeAck(forged,first);return false; }
+            catch(IllegalStateException expected){/* revision mismatch rejected */}
+            forged=new JSONObject(good.toString()).put("cursor",999);
+            try { verifyChangeAck(forged,first);return false; }
+            catch(IllegalStateException expected){/* cursor mismatch rejected */}
+            forged=new JSONObject(good.toString());
+            forged.getJSONArray("changes").getJSONObject(1).put("seq",1);
+            try { verifyChangeAck(forged,first);return false; }
+            catch(IllegalStateException expected){/* duplicate sequence rejected */}
             return true;
         }catch(Exception ignored){return false;}
     }
