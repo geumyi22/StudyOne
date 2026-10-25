@@ -115,6 +115,7 @@ final class StudyProgressStore: ObservableObject {
     }
 
     private func persist(_ entries: [StudyProgressItem]) throws {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "저장소를 읽을 수 없습니다.")
         }
@@ -139,6 +140,7 @@ final class StudyProgressStore: ObservableObject {
     /// Save a protected local copy and append only server IDs not already present.
     func mergeNewProgressFromServer(_ additions: [StudyProgressItem],
                                     original expected: [StudyProgressItem]) throws -> URL {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "진도 저장소를 읽을 수 없습니다.")
         }
