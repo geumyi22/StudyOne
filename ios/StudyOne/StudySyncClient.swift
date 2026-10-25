@@ -524,6 +524,28 @@ enum StudySyncClient {
             guard initial.count == 2, initial.allSatisfy({ $0.baseRevision == 0 }) else {
                 return false
             }
+            func receipt(_ id: String, _ revision: Int, _ cursor: Int) throws -> Data {
+                try JSONSerialization.data(withJSONObject: [
+                    "schema": 1, "cursor": cursor,
+                    "changes": [
+                        ["seq": 1, "kind": "task", "id": String(task.id),
+                         "revision": 1, "deleted": false, "updatedAt": 1790000000000] as [String: Any],
+                        ["seq": 2, "kind": "progress", "id": id,
+                         "revision": revision, "deleted": false, "updatedAt": 1790000000000] as [String: Any]
+                    ]
+                ])
+            }
+            try verifyChangeAck(receipt(item.id, 1, 2), mutations: initial)
+            for (id, revision, cursor) in [
+                (UUID().uuidString.lowercased(), 1, 2),
+                (item.id, 9, 2),
+                (item.id, 1, 44)
+            ] {
+                do {
+                    try verifyChangeAck(receipt(id, revision, cursor), mutations: initial)
+                    return false
+                } catch { /* forged receipt correctly refused */ }
+            }
             let one = Snapshot(schema: 1, cursor: 1,
                                records: [Record(kind: "task", id: String(task.id),
                                                 revision: 9, deleted: false)])
