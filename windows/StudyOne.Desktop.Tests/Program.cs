@@ -710,4 +710,50 @@ if (Environment.GetEnvironmentVariable("STUDYONE_PHASE31_MAC_CROSSCLIENT") == "1
         "inbound=2 outbound=1 server_cursor=3 conflicts=1");
 }
 
+// Phase31 on Ubuntu Android emulator runner: the actual StudyOne Android app
+// sends TWO synthetic rows. The real .NET SyncClient decodes those exact wire
+// records, uploads a third, and the restarted Android app must decode that
+// .NET-origin task. The test never reads or modifies user stores.
+if (Environment.GetEnvironmentVariable("STUDYONE_PHASE31_ANDROID_CROSSCLIENT") == "1")
+{
+    var raw = Environment.GetEnvironmentVariable("STUDYONE_E2E_BASE")
+        ?? throw new InvalidOperationException("Missing disposable loopback server");
+    var token = Environment.GetEnvironmentVariable("STUDYONE_SYNC_TOKEN")
+        ?? throw new InvalidOperationException("Missing synthetic bearer");
+    var endpoint = SyncClient.ParseEndpoint(raw);
+    Check(endpoint.Scheme == "http" && endpoint.Host == "127.0.0.1"
+          && endpoint.Port == 8765, "Only fixed localhost test server is allowed");
+    var received = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+    Check(received.Cursor == 2 && received.Records.Count == 2,
+          "Actual Android app must have sent two records to SQLite server");
+    var androidIncoming = SyncClient.PreviewNewRemote(
+        new TaskBackup { Grade = 3, ClassName = "1" },
+        new ProgressBackup(), received);
+    Check(androidIncoming.NewTasks.Count == 1 && androidIncoming.NewProgress.Count == 1 &&
+          androidIncoming.NewTasks[0].Id == 1730000001234L &&
+          androidIncoming.NewTasks[0].Title == "CI 실험 문제" &&
+          androidIncoming.NewProgress[0].Unit == "7-2",
+          "Windows .NET client must decode Android-origin study records");
+    var fromDotnet = new StudyTask
+    {
+        Id = 1730000005678L, Type = "숙제 항목", Subject = "수학",
+        Title = "Windows .NET Android 공유 테스트", DueDate = "2026-11-05",
+        Importance = 2, Completed = false
+    };
+    var outgoing = SyncClient.NewOnly(
+        new TaskBackup { Grade = 3, ClassName = "1", Tasks = { fromDotnet } },
+        new ProgressBackup(), received);
+    Check(outgoing.Count == 1 && outgoing[0].Id == fromDotnet.Id.ToString(),
+          "Windows queues exactly one genuinely new task");
+    Check(await SyncClient.UploadNew(token, outgoing, endpoint: endpoint) == 1,
+          "Windows .NET HTTP client must validate complete server receipt");
+    var final = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+    Check(final.Cursor == 3 && final.Records.Count == 3 &&
+          final.Records.Count(r => r.Kind == "task") == 2 &&
+          final.Records.Count(r => r.Kind == "progress") == 1,
+          "Both real client transports must persist exactly three records");
+    Console.WriteLine("DOTNET_ACTUAL_CLIENT_CROSS_ANDROID_E2E_PASSED " +
+        "android_inbound=2 dotnet_outbound=1 cursor=3");
+}
+
 Console.WriteLine("StudyOne Windows portable JSON contract: PASS");

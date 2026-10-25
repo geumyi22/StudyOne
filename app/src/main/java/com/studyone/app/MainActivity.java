@@ -152,6 +152,64 @@ public class MainActivity extends Activity {
                 }
             });
         }
+        // Cross-client E2E: after the real Windows .NET transport adds its own
+        // synthetic record, this genuine Android emulator app process reads it
+        // with StudySyncClient and classifies same-ID divergence read-only.
+        // No Storage, UserDefaults, production token or app study rows involved.
+        if ((getApplicationInfo().flags &
+                android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+                getIntent()!=null &&
+                getIntent().getBooleanExtra("studyone_sync_crossclient_self_test",false)) {
+            final String ephemeralToken=getIntent().getStringExtra("studyone_sync_test_token");
+            io.execute(()->{
+                try {
+                    JSONObject shared=StudySyncClient.snapshot(ephemeralToken);
+                    if(shared.getLong("cursor")!=3 ||
+                            shared.getJSONArray("records").length()!=3)
+                        throw new IllegalStateException("Expected one Windows .NET change");
+                    StudySyncClient.IncomingPlan imported=StudySyncClient.previewInbound(
+                            java.util.Collections.emptyList(),java.util.Collections.emptyList(),
+                            shared);
+                    if(imported.newTasks.size()!=2 || imported.newProgress.size()!=1 ||
+                            imported.conflicts!=0)
+                        throw new IllegalStateException("Android inbound decoding incomplete");
+                    boolean foundWindows=false,foundAndroid=false;
+                    for(Models.StudyTask t:imported.newTasks){
+                        if(t.id==1730000005678L &&
+                                "Windows .NET Android 공유 테스트".equals(t.title))
+                            foundWindows=true;
+                        if(t.id==1730000001234L &&
+                                "CI 실험 문제".equals(t.title))
+                            foundAndroid=true;
+                    }
+                    if(!foundWindows || !foundAndroid)
+                        throw new IllegalStateException("Cross-client task payload mismatch");
+                    Models.StudyTask divergent=new Models.StudyTask(
+                            1730000001234L,"숙제 항목","과학","다른 기기의 충돌 기록",
+                            LocalDate.of(2026,10,22),2,false);
+                    StudySyncClient.IncomingPlan compared=StudySyncClient.previewInbound(
+                            java.util.Collections.singletonList(divergent),
+                            java.util.Collections.emptyList(),shared);
+                    if(compared.conflicts!=1 || compared.newTasks.size()!=1 ||
+                            compared.newProgress.size()!=1)
+                        throw new IllegalStateException("Cross-client conflict not reported");
+                    if(StudySyncClient.snapshot(ephemeralToken).getLong("cursor")!=3)
+                        throw new IllegalStateException("Preview changed server records");
+                    try {
+                        StudySyncClient.snapshot("InvalidSyntheticBearerForAndroidE2E01234567890");
+                        throw new IllegalStateException("Invalid bearer accepted");
+                    } catch(IllegalStateException denied){
+                        if("Invalid bearer accepted".equals(denied.getMessage()))throw denied;
+                    }
+                    android.util.Log.i("StudyOneSync",
+                            "ANDROID_DOTNET_CROSSCLIENT_E2E_PASSED " +
+                            "tasks=2 progress=1 cursor=3 conflict=1 denied=1");
+                } catch(Exception ignored) {
+                    android.util.Log.e("StudyOneSync",
+                            "ANDROID_DOTNET_CROSSCLIENT_E2E_FAILED");
+                }
+            });
+        }
         if ((getApplicationInfo().flags &
                 android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
                 getIntent()!=null && getIntent().getBooleanExtra("studyone_nav_self_test",false)) {
