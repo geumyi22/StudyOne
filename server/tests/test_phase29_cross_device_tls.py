@@ -195,9 +195,10 @@ class CrossDeviceEndToEnd(unittest.TestCase):
                                             self.task(task_id, "다른 계정 자료")))
         self.assertEqual(self.send(self.stranger, "POST",
                                    "/v2/changes", outsider)[0], 200)
-        self.assertEqual(self.send(self.windows, "GET",
-                                   "/v2/snapshot")[1]["records"][0]["payload"]
-                         .get("title", ""), "합성 과학 수행평가")
+        owner_records = self.send(self.windows, "GET",
+                                  "/v2/snapshot")[1]["records"]
+        self.assertEqual({r["id"]: r for r in owner_records}
+                         [str(task_id)]["payload"]["title"], "합성 과학 수행평가")
 
         # Restart the actual HTTPS server process listener and reopen the
         # persisted on-disk account registry, simulating an offline/restart.
