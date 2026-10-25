@@ -4,7 +4,7 @@
 
 ## Windows 4종 통합 백업 포맷
 
-Android의 `StudyPortableBundle`과 같은 `studyone-transfer-bundle / schema 1` 포맷을 Windows .NET 8에서 읽고 쓸 수 있습니다.
+Android의 `StudyPortableBundle`과 같은 `studyone-transfer-bundle / schema 1` 포맷을 Windows .NET 8에서 읽고 쓸 수 있습니다. 내보낼 외부 파일 위치가 StudyOne 앱 내부 저장 폴더이면 실제 기록 덮어쓰기를 막기 위해 거부합니다.
 
 - `sections`: `tasks`, `progress`, `details`, `wrongAnswers` 네 JSON 문자열
 - `sha256`: 각 UTF-8 JSON 문자열의 SHA-256 소문자 64자리 체크섬
@@ -25,11 +25,12 @@ Android의 `StudyPortableBundle`과 같은 `studyone-transfer-bundle / schema 1`
 
 Windows의 네 개 독립 파일 변경은 데이터베이스 ACID 트랜잭션이 아닙니다. 프로세스가 작업 도중 종료되는 즉시 불일치한 파일이 남을 수 있으며, 다음 실행의 명시적 복구로 복원합니다. 복구 폴더가 손상되거나 디스크/장치가 손실되면 복원할 수 없습니다. 로컬 Recovery는 외부/오프사이트 백업의 대체가 아닙니다. 여러 프로세스에서 파일을 동시에 쓰는 환경의 완전한 직렬화는 구현하지 않았습니다.
 
-기존 Android 통합 백업은 **원본 복구본 저장 후 부분 실패 시 예외 보고**를 지원하지만 4종 전체의 자동 원자 롤백은 구현되지 않았습니다. iOS도 이 단계에서 4종 통합 가져오기 UI가 구현된 것으로 간주하지 않습니다.
+Android 통합 가져오기도 이번 PR에서 **4단계 중 부분 실패 시 네 종류 모두 보상 복원 시도**를 추가합니다. 적용 중 오류가 발생하면 기존 검증된 원본 4종을 역순으로 복원하고, 재검증 실패를 포함한 복구 오류를 명시합니다. 각 저장소는 독립 저장이므로 강제 종료를 포함한 **완전한 ACID 원자 롤백은 아닙니다**. 앱 내부 통합 원본 백업은 계속 보존됩니다. iOS도 이 단계에서 4종 통합 가져오기 UI가 구현된 것으로 간주하지 않습니다.
 
 ## 일괄 QA (합성 데이터만 사용)
 
 - Windows .NET 기능 테스트: 네 항목 유효성, Android와 동일 포맷, 체크섬 변조 거부, 버전 오류, 완료 후 복구 폴더, stale 미리보기 거부, 두 번째 파일 저장 뒤 합성 예외 주입·자동 복원, 중단 마커를 이용한 명시적 복구
+- Android JVM 보상 복원 테스트: 1~4번째 저장소 각 단계에서 실패 주입, 오류난 단계까지 되돌리기, 복원 불가능 상황을 분명히 알리는지 확인
 - Windows WPF Release 빌드 및 self-contained EXE 배포 아티팩트, SHA-256
 - Android 번들 기존 에뮬레이터 백업 검증 및 Android/Planner CI
 - 기존 iOS 빌드, 서버 SQLite 복구 연습 워크플로 별도 유지
