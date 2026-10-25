@@ -22,6 +22,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install pinned optional OAuth RS256 verifier for full regression suite
+        run: python -m pip install -r server/requirements-oauth.txt
       - name: Compile sync backend
         run: python -m compileall -q server
       - name: Exercise transactional API, conflict tests and loopback HTTP
