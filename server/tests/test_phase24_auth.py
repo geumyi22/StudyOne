@@ -5,6 +5,8 @@ No production accounts, server ports, credentials or learned student data.
 from __future__ import annotations
 
 import json
+import secrets
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 import sqlite3
@@ -107,19 +109,25 @@ class AuthenticationLifecycleTests(unittest.TestCase):
             db.execute("CREATE TABLE audit(id INTEGER PRIMARY KEY AUTOINCREMENT,"
                        " timestamp INTEGER NOT NULL, account_id TEXT NOT NULL,"
                        " device_id TEXT, action TEXT NOT NULL, detail TEXT NOT NULL)")
+        # Create actual pre-migration rows WITHOUT an audience column.
+        a, device_id, old_token = str(uuid4()), str(uuid4()), secrets.token_urlsafe(48)
+        now = int(time.time())
+        with sqlite3.connect(legacy) as db:
+            db.execute("INSERT INTO accounts(id,label,created_at,disabled) VALUES(?,?,?,0)",
+                       (a, "original-account", now))
+            db.execute("""INSERT INTO devices(
+                id,account_id,label,digest,scope,issued_at,expires_at,revoked)
+                VALUES(?,?,?,?,?,?,?,0)""",
+                (device_id, a, "preexisting-android", token_digest(old_token),
+                 "read-write", now, now + 86400))
         upgraded = Registry(legacy, self.root / "legacy-records")
-        a = upgraded.account("legacy-owner")
-        token = upgraded.device(a, "device-old")["token"]
-        # Mimic a pre-Phase24 columnless registry with a previously issued token.
-        with upgraded.connect() as db:
-            device_id = db.execute("SELECT id FROM devices WHERE digest=?",
-                                   (token_digest(token),)).fetchone()["id"]
-            db.execute("PRAGMA foreign_keys=OFF")
-        # Historical schemas were exactly what we created; migration is exercised
-        # above by Registry(legacy) adding the missing audience column.
-        self.assertEqual(upgraded.authorize(token)[0], a)
+        self.assertEqual(upgraded.authorize(old_token)[0], a)
         self.assertEqual(upgraded.list_devices(a)[0]["audience"], "device")
-        self.assertTrue(device_id)
+        self.assertEqual(upgraded.list_devices(a)[0]["deviceId"], device_id)
+        # A second construction must leave migrated rows unchanged.
+        reopened = Registry(legacy, self.root / "legacy-records")
+        self.assertEqual(reopened.authorize(old_token, write=True)[0], a)
+        self.assertEqual(len(reopened.list_devices(a)), 1)
 
 
 class HttpAudienceTests(AuthenticationLifecycleTests):
