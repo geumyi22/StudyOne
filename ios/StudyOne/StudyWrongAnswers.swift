@@ -120,6 +120,14 @@ final class StudyWrongAnswersStore: ObservableObject {
 
     private func persist(_ items: [StudyWrongAnswer]) throws {
         guard loadError == nil else { throw StudyError.message("손상된 오답 원본은 수정할 수 없습니다.") }
+        // Avoid overwriting a newer four-store import or another screen's edits.
+        if let raw = try originalBytes() {
+            guard try Self.parse(raw) == entries else {
+                throw StudyError.message("오답이 다른 화면에서 변경됐습니다. 다시 열어주세요.")
+            }
+        } else if !entries.isEmpty {
+            throw StudyError.message("기존 오답 원본이 없어 덮어쓰기를 차단했습니다.")
+        }
         let bytes = try encoded(items)
         let fm = FileManager.default
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
