@@ -152,6 +152,31 @@ class HttpsIntegrationTests(unittest.TestCase):
                                   "/v2/snapshot")
         self.assertEqual(last["cursor"], snapshot["cursor"])
 
+    def test_mcp_only_token_isolated_through_real_tls_and_rotatable(self):
+        assistant = self.registry.device(self.alice, "oauth-preflight-assistant",
+                                         "read", days=7, audience="mcp")
+        token = assistant["token"]
+        rpc = {"jsonrpc": "2.0", "id": 101, "method": "tools/list"}
+        status, returned, headers = self.request(token, "POST", "/mcp", rpc)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(returned["result"]["tools"]), 4)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        status, denied, _ = self.request(token, "GET", "/v2/snapshot")
+        self.assertEqual((status, denied["error"]),
+                         (403, "TOKEN_AUDIENCE_FORBIDDEN"))
+        status, denied, _ = self.request(token, "POST",
+            "/v2/proposals/" + str(uuid4()) + "/approve", {})
+        self.assertEqual((status, denied["error"]),
+                         (403, "TOKEN_AUDIENCE_FORBIDDEN"))
+        rotated = self.registry.rotate(assistant["deviceId"])
+        status, denied, _ = self.request(token, "POST", "/mcp", rpc)
+        self.assertEqual((status, denied["error"]), (401, "UNAUTHORIZED"))
+        status, returned, _ = self.request(rotated["token"], "POST", "/mcp", rpc)
+        self.assertEqual(status, 200)
+        self.registry.revoke(assistant["deviceId"])
+        status, denied, _ = self.request(rotated["token"], "POST", "/mcp", rpc)
+        self.assertEqual((status, denied["error"]), (401, "UNAUTHORIZED"))
+
     def test_device_revocation_cancels_subsequent_https_access(self):
         status, _, _ = self.request(self.alice_device["token"], "GET",
                                     "/v2/snapshot")

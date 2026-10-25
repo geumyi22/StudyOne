@@ -73,6 +73,7 @@ class Registry:
                     label TEXT NOT NULL,
                     digest TEXT NOT NULL UNIQUE,
                     scope TEXT NOT NULL CHECK(scope IN ('read','read-write')),
+                    audience TEXT NOT NULL DEFAULT 'device' CHECK(audience IN ('device','mcp')),
                     issued_at INTEGER NOT NULL,
                     expires_at INTEGER NOT NULL,
                     revoked INTEGER NOT NULL DEFAULT 0 CHECK(revoked IN (0,1))
@@ -88,6 +89,14 @@ class Registry:
                 CREATE INDEX IF NOT EXISTS idx_devices_account
                     ON devices(account_id, revoked);
             """)
+            # Existing registry databases predate audience segregation. Preserve
+            # all existing tokens as device-scoped, never implicitly MCP-scoped.
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(devices)")}
+            if "audience" not in columns:
+                db.execute("""
+                    ALTER TABLE devices ADD COLUMN audience TEXT NOT NULL DEFAULT 'device'
+                    CHECK(audience IN ('device','mcp'))
+                """)
         try:
             os.chmod(self.path, 0o600)
         except OSError:
@@ -125,12 +134,17 @@ class Registry:
                        (account_id, label, int(time.time())))
         return account_id
 
-    def device(self, account_id, label, scope="read-write", days=30):
+    def device(self, account_id, label, scope="read-write", days=30,
+               audience="device"):
         if not uuid_valid(account_id):
             raise ValueError("Invalid account ID")
         label = self._label(label)
         if scope not in ("read", "read-write") or type(days) is not int or not 1 <= days <= 365:
             raise ValueError("Invalid device scope or expiry")
+        # Assistant-only bearer grants ONLY MCP tool access, never raw /v2
+        # sync or approval endpoints. It cannot approve its own proposed plans.
+        if audience not in ("device", "mcp") or (audience == "mcp" and scope != "read"):
+            raise ValueError("MCP tokens must be read-scoped and MCP-only")
         device_id = str(uuid4())
         raw_token = secrets.token_urlsafe(48)
         digest = token_digest(raw_token)
@@ -142,14 +156,63 @@ class Registry:
             if current is None or current["disabled"]:
                 raise ValueError("Unknown or disabled account")
             db.execute("""
-                INSERT INTO devices(id,account_id,label,digest,scope,issued_at,expires_at)
-                VALUES(?,?,?,?,?,?,?)
-            """, (device_id, account_id, label, digest, scope,
+                INSERT INTO devices(id,account_id,label,digest,scope,audience,issued_at,expires_at)
+                VALUES(?,?,?,?,?,?,?,?)
+            """, (device_id, account_id, label, digest, scope, audience,
                   now, now + days * 86400))
-            self._audit(db, account_id, device_id, "DEVICE_ISSUED", scope)
+            self._audit(db, account_id, device_id, "DEVICE_ISSUED",
+                        scope + ":" + audience)
         return {"accountId": account_id, "deviceId": device_id,
-                "scope": scope, "expiresAt": now + days * 86400,
-                "token": raw_token}
+                "scope": scope, "audience": audience,
+                "expiresAt": now + days * 86400, "token": raw_token}
+
+    def list_devices(self, account_id):
+        """Operator-only inventory; labels/ids permitted, NEVER bearer/digest."""
+        if not uuid_valid(account_id):
+            raise ValueError("Invalid account ID")
+        with self.connect() as db:
+            account = db.execute("SELECT id FROM accounts WHERE id=?",
+                                 (account_id,)).fetchone()
+            if account is None:
+                raise ValueError("Unknown account")
+            rows = db.execute("""
+                SELECT id,label,scope,audience,issued_at,expires_at,revoked
+                FROM devices WHERE account_id=? ORDER BY issued_at,id
+            """, (account_id,)).fetchall()
+        return [{"deviceId": row["id"], "label": row["label"],
+                 "scope": row["scope"], "audience": row["audience"],
+                 "issuedAt": row["issued_at"], "expiresAt": row["expires_at"],
+                 "revoked": bool(row["revoked"])} for row in rows]
+
+    def rotate(self, device_id, days=30):
+        """Operator action. New random bearer replaces old digest atomically.
+
+        Revoked, disabled and expired devices cannot be silently revived.
+        The replacement raw token is returned only once and never persisted.
+        """
+        if not uuid_valid(device_id) or type(days) is not int or not 1 <= days <= 365:
+            raise ValueError("Invalid rotation parameters")
+        token = secrets.token_urlsafe(48)
+        digest = token_digest(token)
+        now = int(time.time())
+        with self.connect() as db:
+            row = db.execute("""
+                SELECT d.account_id,d.scope,d.audience,d.revoked,d.expires_at,
+                       a.disabled FROM devices d
+                JOIN accounts a ON a.id=d.account_id WHERE d.id=?
+            """, (device_id,)).fetchone()
+            if (row is None or row["revoked"] or row["disabled"] or
+                    row["expires_at"] <= now):
+                raise ValueError("Unknown, disabled, expired or revoked device")
+            db.execute("""
+                UPDATE devices SET digest=?,issued_at=?,expires_at=?
+                WHERE id=?
+            """, (digest, now, now + days * 86400, device_id))
+            self._audit(db, row["account_id"], device_id, "DEVICE_ROTATED",
+                        row["audience"])
+        return {"accountId": row["account_id"], "deviceId": device_id,
+                "scope": row["scope"], "audience": row["audience"],
+                "expiresAt": now + days * 86400, "token": token}
 
     @staticmethod
     def _audit(db, account_id, device_id, action, detail=""):
@@ -182,23 +245,44 @@ class Registry:
                 db.execute("UPDATE accounts SET disabled=1 WHERE id=?", (account_id,))
                 self._audit(db, account_id, None, "ACCOUNT_DISABLED")
 
-    def authorize(self, raw_token, write=False):
+    def authorize(self, raw_token, write=False, allowed_audiences=("device",)):
         digest = token_digest(raw_token)
         if digest is None:
             raise ApiProblem(401, "UNAUTHORIZED")
         with self.connect() as db:
             record = db.execute("""
-                SELECT d.id AS device_id, d.account_id, d.scope, d.expires_at,
-                       d.revoked, a.disabled FROM devices d
+                SELECT d.id AS device_id, d.account_id, d.scope, d.audience,
+                       d.expires_at, d.revoked, a.disabled FROM devices d
                 JOIN accounts a ON a.id=d.account_id
                 WHERE d.digest=?
             """, (digest,)).fetchone()
         if (record is None or record["revoked"] or record["disabled"] or
                 record["expires_at"] <= int(time.time())):
             raise ApiProblem(401, "UNAUTHORIZED")
+        if record["audience"] not in allowed_audiences:
+            raise ApiProblem(403, "TOKEN_AUDIENCE_FORBIDDEN")
         if write and record["scope"] != "read-write":
             raise ApiProblem(403, "WRITE_FORBIDDEN")
         return record["account_id"], record["device_id"]
+
+    def session(self, raw_token):
+        """Read-only, device-audience-only authenticated session diagnostics.
+
+        No raw token/digest or private account label is included. Used by
+        client connection checks instead of the unauthenticated /v2/health.
+        """
+        account, device = self.authorize(raw_token, allowed_audiences=("device",))
+        with self.connect() as db:
+            row = db.execute("""
+                SELECT d.scope,d.audience,d.expires_at,d.revoked,a.disabled
+                FROM devices d JOIN accounts a ON a.id=d.account_id
+                WHERE d.id=? AND a.id=?
+            """, (device, account)).fetchone()
+        if row is None or row["revoked"] or row["disabled"] or row["expires_at"] <= int(time.time()):
+            raise ApiProblem(401, "UNAUTHORIZED")
+        return {"schema": 1, "accountId": account, "deviceId": device,
+                "scope": row["scope"], "audience": row["audience"],
+                "expiresAt": row["expires_at"], "serverTime": int(time.time())}
 
     def store(self, account_id):
         # Account IDs must originate from the registry, not a client supplied path.
@@ -249,7 +333,8 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                     auth = self.headers.get("Authorization", "")
                     if not auth.startswith("Bearer ") or auth.count(" ") != 1:
                         raise ApiProblem(401, "UNAUTHORIZED")
-                    account, _ = registry.authorize(auth[7:], write=False)
+                    account, _ = registry.authorize(
+                        auth[7:], write=False, allowed_audiences=("device", "mcp"))
                     if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
                         raise ApiProblem(415, "JSON_REQUIRED")
                     try:
@@ -281,7 +366,8 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                     proposal_id = parts[3]
                     proposal_action = parts[4]
                 if (endpoint.path not in
-                        ("/v2/snapshot", "/v2/changes", "/v2/proposals")
+                        ("/v2/snapshot", "/v2/changes", "/v2/proposals",
+                         "/v2/session")
                         and proposal_action is None):
                     raise ApiProblem(404, "NOT_FOUND")
                 if method == "GET" and proposal_action is not None:
@@ -308,6 +394,8 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                     raise ApiProblem(401, "UNAUTHORIZED")
                 requires_write = method == "POST" and endpoint.path != "/v2/proposals"
                 account, device = registry.authorize(auth[7:], write=requires_write)
+                if method == "GET" and endpoint.path == "/v2/session":
+                    return self.send_json(200, registry.session(auth[7:]))
                 store = registry.store(account)
                 if method == "GET":
                     if endpoint.path == "/v2/snapshot":
@@ -394,6 +482,15 @@ def main():
     issue.add_argument("--label", required=True)
     issue.add_argument("--scope", choices=("read", "read-write"), default="read-write")
     issue.add_argument("--days", type=int, default=30)
+    assistant = commands.add_parser("issue-assistant")
+    assistant.add_argument("--account", required=True)
+    assistant.add_argument("--label", required=True)
+    assistant.add_argument("--days", type=int, default=7)
+    devices = commands.add_parser("list-devices")
+    devices.add_argument("--account", required=True)
+    rotation = commands.add_parser("rotate-device")
+    rotation.add_argument("--device", required=True)
+    rotation.add_argument("--days", type=int, default=30)
     revoke = commands.add_parser("revoke-device")
     revoke.add_argument("--device", required=True)
     disable = commands.add_parser("disable-account")
@@ -412,6 +509,17 @@ def main():
         # Secret shown only once on the local operator terminal.
         print(json.dumps(registry.device(args.account, args.label, args.scope, args.days),
                          ensure_ascii=False))
+    elif args.command == "issue-assistant":
+        # The assistant cannot approve drafts or use raw account data APIs.
+        print(json.dumps(registry.device(args.account, args.label, "read",
+                                         args.days, audience="mcp"),
+                         ensure_ascii=False))
+    elif args.command == "list-devices":
+        print(json.dumps({"devices": registry.list_devices(args.account)},
+                         ensure_ascii=False))
+    elif args.command == "rotate-device":
+        # Invalidate the previous secret immediately within one DB transaction.
+        print(json.dumps(registry.rotate(args.device, args.days), ensure_ascii=False))
     elif args.command == "revoke-device":
         registry.revoke(args.device)
         print("Device revoked")
