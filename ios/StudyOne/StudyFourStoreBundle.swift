@@ -4,6 +4,7 @@ import CryptoKit
 /// Read-only iOS exporter for Android's SHA-256 four-section wire format.
 /// Deliberately does not provide a destructive 4-store import until an
 /// interruption-safe coordinated recovery path is implemented and tested.
+@MainActor
 enum StudyFourStoreBundle {
     private static let kind = "studyone-transfer-bundle"
     private static let keys = ["tasks", "progress", "details", "wrongAnswers"]
