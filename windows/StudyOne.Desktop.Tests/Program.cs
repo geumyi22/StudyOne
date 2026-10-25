@@ -408,7 +408,7 @@ try
     Check(checkedBundle.Original.Same(reviewed), "Android four-store envelope roundtrip");
 
     var tampered = System.Text.Json.Nodes.JsonNode.Parse(encoded)!;
-    tampered["sections"]!["progress"] = "{\\"format\\":\\"studyone-progress\\",\\"schema\\":1,\\"items\\":[]}";
+    tampered["sections"]!["progress"] = Encoding.UTF8.GetString(StudyData.SerializeAndValidateProgress(new ProgressBackup()));
     ExpectInvalid(() => StudyPortableBundle.Parse(tampered.ToJsonString()),
                   "Checksum tampering must be rejected");
     var unsupported = System.Text.Json.Nodes.JsonNode.Parse(encoded)!;
