@@ -163,6 +163,45 @@ internal static class SyncClient
     /// When the response is lost, the same requestId is retried, never minted
     /// again. The server guarantees that replay returns the stored result.
     /// </summary>
+    /// <summary>
+    /// Validate a full authoritative server receipt instead of trusting HTTP 200.
+    /// A mismatch means the result is UNKNOWN; the persisted outbox requestId
+    /// remains available for safe replay, never replaced with a new UUID.
+    /// </summary>
+    internal static void VerifyChangeAck(byte[] raw, IReadOnlyList<Mutation> expected)
+    {
+        if (expected is null || expected.Count is < 1 or > 50)
+            throw new InvalidDataException("검증할 서버 변경 요청이 올바르지 않습니다.");
+        using JsonDocument document = JsonDocument.Parse(raw);
+        JsonElement root = document.RootElement;
+        if (!MatchingKeys(root, "schema", "cursor", "changes") ||
+            root.GetProperty("schema").GetInt32() != 1 ||
+            root.GetProperty("changes").ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("서버 변경 승인 형식이 올바르지 않습니다.");
+        var changes = root.GetProperty("changes").EnumerateArray().ToArray();
+        if (changes.Length != expected.Count)
+            throw new InvalidDataException("서버가 요청의 일부만 승인했습니다.");
+        long previous = 0;
+        for (int i = 0; i < changes.Length; i++)
+        {
+            JsonElement change = changes[i];
+            var item = expected[i];
+            if (!MatchingKeys(change, "seq", "kind", "id", "revision", "deleted", "updatedAt") ||
+                change.GetProperty("kind").GetString() != item.Kind ||
+                change.GetProperty("id").GetString() != item.Id ||
+                change.GetProperty("revision").GetInt64() != item.BaseRevision + 1 ||
+                change.GetProperty("deleted").GetBoolean() != item.Deleted ||
+                change.GetProperty("updatedAt").GetInt64() < 0)
+                throw new InvalidDataException("서버 기록 ID·수정 버전이 요청과 일치하지 않습니다.");
+            long seq = change.GetProperty("seq").GetInt64();
+            if (seq <= previous)
+                throw new InvalidDataException("서버 승인 순서가 올바르지 않습니다.");
+            previous = seq;
+        }
+        if (root.GetProperty("cursor").GetInt64() != previous)
+            throw new InvalidDataException("서버 커서가 최종 승인 기록과 일치하지 않습니다.");
+    }
+
     internal static async Task<int> UploadQueuedBatch(
         string token, Uri endpoint, StudySyncOutbox.Batch batch,
         CancellationToken cancel = default)
@@ -189,11 +228,7 @@ internal static class SyncClient
                 _ => $"서버 HTTP {(int)response.StatusCode} 오류. 대기열을 보존했습니다."
             });
         byte[] raw = await ReadLimited(response, cancel);
-        using JsonDocument reply = JsonDocument.Parse(raw);
-        JsonElement root = reply.RootElement;
-        if (root.GetProperty("schema").GetInt32() != 1 ||
-            root.GetProperty("changes").GetArrayLength() != batch.Mutations.Count)
-            throw new InvalidDataException("서버에서 반환한 요청 적용 개수가 다릅니다. 대기열을 보존했습니다.");
+        VerifyChangeAck(raw, batch.Mutations);
         return batch.Mutations.Count;
     }
 
@@ -261,6 +296,8 @@ internal static class SyncClient
                     _ => $"동기화 업로드 중 HTTP {(int)response.StatusCode} 오류가 발생했습니다. {sent}개 전송 후 중단했습니다."
                 });
             }
+            byte[] receipt = await ReadLimited(response, cancel);
+            VerifyChangeAck(receipt, batch);
             sent += batch.Length;
         }
         return sent;
