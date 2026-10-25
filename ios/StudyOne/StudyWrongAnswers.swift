@@ -119,6 +119,7 @@ final class StudyWrongAnswersStore: ObservableObject {
     }
 
     private func persist(_ items: [StudyWrongAnswer]) throws {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else { throw StudyError.message("손상된 오답 원본은 수정할 수 없습니다.") }
         // Avoid overwriting a newer four-store import or another screen's edits.
         if let raw = try originalBytes() {
@@ -173,6 +174,7 @@ final class StudyWrongAnswersStore: ObservableObject {
 
     @discardableResult
     func importBackup(_ input: Data, expectedOriginal: Data?) throws -> URL {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else { throw StudyError.message("오답 원본 오류") }
         let incoming = try Self.parse(input)
         let original = try originalBytes()
