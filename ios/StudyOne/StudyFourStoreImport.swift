@@ -13,6 +13,19 @@ enum StudyFourStoreImport {
     private static let maxSize = 8_200_000
     private static let format = "studyone-fourstore-recovery"
 
+    #if DEBUG && targetEnvironment(simulator)
+    /// Synthetic simulator QA only. Never compiled into an iPhone release.
+    static var syntheticFailureAfterSection: Int?
+    #endif
+
+    private static func checkInjectedFailure(after section: Int) throws {
+        #if DEBUG && targetEnvironment(simulator)
+        if syntheticFailureAfterSection == section {
+            throw StudyError.message("Synthetic section-\(section) failure")
+        }
+        #endif
+    }
+
     private struct Transfer: Decodable {
         let format: String
         let schema: Int
@@ -236,14 +249,18 @@ enum StudyFourStoreImport {
         try saveJournal(approved.originals)
         do {
             try tasks.importBackup(from: incoming["tasks"]!)
+            try checkInjectedFailure(after: 1)
             _ = try progress.importBackup(data: incoming["progress"]!,
-                                      original: progress.items)
+                                          original: progress.items)
+            try checkInjectedFailure(after: 2)
             try details.importBackup(incoming["details"]!,
                                      expectedOriginal: approved.originals["details"]!.existed
                                         ? approved.originals["details"]!.bytes : nil)
+            try checkInjectedFailure(after: 3)
             try wrong.importBackup(incoming["wrongAnswers"]!,
                                    expectedOriginal: approved.originals["wrongAnswers"]!.existed
                                         ? approved.originals["wrongAnswers"]!.bytes : nil)
+            try checkInjectedFailure(after: 4)
             let expectedTasks = try JSONDecoder().decode(
                 StudyOneBackup.self, from: incoming["tasks"]!)
             let expectedProgress = try JSONDecoder().decode(
