@@ -901,6 +901,8 @@ public partial class MainWindow : Window
         SyncQueueSendButton.IsEnabled = false;
         SyncQueueDiscardButton.IsEnabled = false;
         SyncQueueStatusButton.IsEnabled = false;
+        SyncChangeUpdateButton.IsEnabled = false;
+        SyncChangeDeleteButton.IsEnabled = false;
         SyncResultText.Text = "동기화 작업 확인 중…";
         return true;
     }
@@ -919,6 +921,114 @@ public partial class MainWindow : Window
         SyncQueueSendButton.IsEnabled = true;
         SyncQueueDiscardButton.IsEnabled = true;
         SyncQueueStatusButton.IsEnabled = true;
+        SyncChangeUpdateButton.IsEnabled = true;
+        SyncChangeDeleteButton.IsEnabled = true;
+    }
+
+    private async void SyncChangeUpdate_Click(object sender, RoutedEventArgs e) =>
+        await ApplyReviewedServerChange(delete: false);
+
+    private async void SyncChangeDelete_Click(object sender, RoutedEventArgs e) =>
+        await ApplyReviewedServerChange(delete: true);
+
+    /// <summary>
+    /// One user-selected existing-ID remote operation at a time. Nothing is
+    /// automatically inferred from missing local items, and original PC stores
+    /// remain unchanged. A verified, private remote restore snapshot is saved
+    /// BEFORE any request that could mutate the server.
+    /// </summary>
+    private async Task ApplyReviewedServerChange(bool delete)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            if (tasksLocked || progressLocked ||
+                StudyPortableBundle.Pending(StudyData.DataDirectory).Count > 0)
+                throw new InvalidDataException("PC 원본이 손상됐거나 복구가 남아 있어 변경할 수 없습니다.");
+            Uri endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            if (endpoint.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidOperationException("기존 기록의 수정·삭제에는 HTTPS 계정 서버가 필요합니다.");
+            string token = SyncTokenInput.Password;
+            var session = await SyncClient.GetSession(token, endpoint);
+            if (session.Scope != "read-write" || session.Audience != "device")
+                throw new InvalidOperationException("해당 계정의 쓰기 권한이 있는 기기 토큰이 필요합니다.");
+            string kind = (SyncChangeKindInput.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
+            string id = SyncChangeIdInput.Text.Trim();
+            if (string.IsNullOrEmpty(id))
+                throw new InvalidDataException("수정·삭제할 일정 ID 또는 진도 UUID를 입력하세요.");
+            TaskBackup localTasks = StudyData.LoadTasks();
+            ProgressBackup localProgress = StudyData.LoadProgress();
+            byte[] beforeTasks = StudyData.SerializeAndValidateTasks(localTasks);
+            byte[] beforeProgress = StudyData.SerializeAndValidateProgress(localProgress);
+            var first = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+            var review = SyncClient.PrepareReviewedChange(
+                localTasks, localProgress, first, kind, id, delete);
+            string verb = delete ? "서버에서 삭제" : "현재 PC 내용으로 서버 기록 수정";
+            string prompt = $"동기화 계정: {session.AccountId}\n"
+                + $"대상 {kind} / {id}\n서버 수정 버전 {review.Mutation.BaseRevision}\n"
+                + $"현재 서버: {review.ServerSummary}\n"
+                + $"현재 PC: {review.LocalSummary}\n\n"
+                + $"{verb}하시겠습니까?\n\n"
+                + "전송 전 서버 현재값의 별도 복구 JSON을 PC에 보관합니다. "
+                + "다른 기기에서 기록을 바꾸면 전송이 거부됩니다. "
+                + "네트워크 결과가 확인되지 않으면 재시도 전 반드시 서버를 다시 조회하세요.";
+            if (MessageBox.Show(this, prompt, "기존 ID 변경 최종 승인",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                SyncResultText.Text = "서버 변경을 취소했습니다. 기록을 전송하지 않았습니다.";
+                return;
+            }
+            // Re-fetch the authorized identity, server and both source files.
+            // Explicitly bind the approved preview to both the stable account
+            // and the exact global server cursor, then reconstruct the write.
+            var currentSession = await SyncClient.GetSession(token, endpoint);
+            if (currentSession.AccountId != session.AccountId ||
+                currentSession.Audience != "device" ||
+                currentSession.Scope != "read-write")
+                throw new InvalidOperationException("승인 후 인증 계정 또는 쓰기 권한이 변경됐습니다.");
+            var second = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+            if (second.Cursor != first.Cursor)
+                throw new InvalidOperationException("승인 중 서버 기록이 바뀌었습니다. 처음부터 다시 확인하세요.");
+            TaskBackup latestTasks = StudyData.LoadTasks();
+            ProgressBackup latestProgress = StudyData.LoadProgress();
+            if (!StudyData.SerializeAndValidateTasks(latestTasks).SequenceEqual(beforeTasks) ||
+                !StudyData.SerializeAndValidateProgress(latestProgress).SequenceEqual(beforeProgress))
+                throw new InvalidOperationException("승인 중 PC 학습 기록이 변경돼 서버에 전송하지 않았습니다.");
+            var renewed = SyncClient.PrepareReviewedChange(
+                latestTasks, latestProgress, second, kind, id, delete);
+            if (renewed.Mutation.BaseRevision != review.Mutation.BaseRevision ||
+                renewed.ServerSummary != review.ServerSummary ||
+                renewed.LocalSummary != review.LocalSummary ||
+                !StudyData.Serialize(renewed.Mutation).SequenceEqual(
+                    StudyData.Serialize(review.Mutation)))
+                throw new InvalidOperationException("승인한 대상 기록이 바뀌어 전송을 차단했습니다.");
+            // Capture remote record before mutation. If this file cannot be
+            // written atomically, refuse to modify the server.
+            var existing = second.Records.Single(r => r.Kind == kind && r.Id == id);
+            string folder = Path.Combine(StudyData.DataDirectory, "SyncRemoteRecovery");
+            string file = Path.Combine(folder,
+                DateTime.UtcNow.ToString("yyyyMMddHHmmss") + "-" +
+                Guid.NewGuid().ToString("N") + ".json");
+            StudyData.SaveAtomic(file, StudyData.Serialize(new {
+                format = "studyone-remote-recovery", schema = 1,
+                accountId = currentSession.AccountId, endpoint = endpoint.AbsoluteUri,
+                cursor = second.Cursor, record = existing
+            }));
+            int applied = await SyncClient.UploadApprovedChange(
+                token, endpoint, renewed.Mutation);
+            SyncResultText.Text =
+                $"{verb} 승인·전송 완료: {applied}건, 서버 새 revision " +
+                $"{renewed.Mutation.BaseRevision + 1}.\n" +
+                "서버 이전 버전 복구용 파일: " + file +
+                "\n이 PC의 학습 기록은 수정하거나 삭제하지 않았습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "기존 기록 변경이 거부됐거나 서버 응답을 확인하지 못했습니다. " +
+                "서버를 다시 조회하기 전에는 동일한 작업을 반복하지 마세요.";
+            ShowError("기존 서버 기록 변경 중단\n" + error.Message);
+        }
+        finally { EndSync(); }
     }
 
     private void SyncQueueStatus_Click(object sender, RoutedEventArgs e)

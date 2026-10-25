@@ -381,6 +381,89 @@ try {
         new SyncClient.Snapshot { Schema = 1, Records = { MakeProgress(malformedProgress) } });
     throw new InvalidOperationException("Malformed progress accepted");
 } catch (InvalidDataException) { /* expected */ }
+// Phase32: explicit, server-revision guarded single-ID update and deletion.
+// These synthetic checks create NO real study data and perform NO network call.
+var editedTask = new StudyTask {
+    Id = tasks.Tasks[0].Id, Type = tasks.Tasks[0].Type,
+    Subject = tasks.Tasks[0].Subject, Title = "직접 승인한 수정 과제",
+    DueDate = tasks.Tasks[0].DueDate, Importance = 2, Completed = true
+};
+var editableRemote = new SyncClient.Snapshot {
+    Schema = 1, Cursor = 11,
+    Records = { MakeTask(tasks.Tasks[0]) }
+};
+editableRemote.Records[0].Revision = 7;
+var proposedTaskEdit = SyncClient.PrepareReviewedChange(
+    new TaskBackup { Tasks = { editedTask } }, new ProgressBackup(),
+    editableRemote, "task", editedTask.Id.ToString(), delete: false);
+Check(proposedTaskEdit.Mutation.BaseRevision == 7 &&
+      proposedTaskEdit.Mutation.Payload is StudyTask &&
+      ((StudyTask)proposedTaskEdit.Mutation.Payload).Title == "직접 승인한 수정 과제" &&
+      !proposedTaskEdit.Mutation.Deleted && proposedTaskEdit.Cursor == 11,
+      "Single-ID update must carry actual authoritative server revision");
+var updatedTaskReceipt = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+    new { schema = 1, cursor = 25, changes = new[] {
+        new { seq = 25, kind = "task", id = editedTask.Id.ToString(),
+              revision = 8, deleted = false, updatedAt = 1790000000000L } } });
+SyncClient.VerifyChangeAck(updatedTaskReceipt,
+    new[] { proposedTaskEdit.Mutation });
+ExpectInvalid(() => SyncClient.VerifyChangeAck(
+    System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+        new { schema = 1, cursor = 25, changes = new[] {
+            new { seq = 25, kind = "task", id = editedTask.Id.ToString(),
+                  revision = 7, deleted = false, updatedAt = 1790000000000L } } }),
+    new[] { proposedTaskEdit.Mutation }),
+    "Update must refuse an ACK that did not increment server revision");
+
+var proposedDeletion = SyncClient.PrepareReviewedChange(
+    new TaskBackup(), new ProgressBackup(), editableRemote,
+    "task", editedTask.Id.ToString(), delete: true);
+Check(proposedDeletion.Mutation.Deleted &&
+      proposedDeletion.Mutation.BaseRevision == 7 &&
+      proposedDeletion.Mutation.Payload is null,
+      "Explicit server deletion creates a tombstone only for absent local ID");
+try {
+    SyncClient.PrepareReviewedChange(new TaskBackup { Tasks = { editedTask } },
+        new ProgressBackup(), editableRemote, "task",
+        editedTask.Id.ToString(), delete: true);
+    throw new Exception("Remote deletion accepted while local record still exists");
+} catch (InvalidOperationException) { /* safe guard */ }
+try {
+    SyncClient.PrepareReviewedChange(tasks, new ProgressBackup(),
+        editableRemote, "task", editedTask.Id.ToString(), delete: false);
+    throw new Exception("Identical server and local payload accepted as modification");
+} catch (InvalidOperationException) { /* no-op cannot overwrite */ }
+ExpectInvalid(() => SyncClient.PrepareReviewedChange(
+    new TaskBackup { Tasks = { editedTask } }, new ProgressBackup(),
+    new SyncClient.Snapshot { Schema = 1, Cursor = 12 },
+    "task", editedTask.Id.ToString(), delete: false),
+    "Existing-ID change must be refused when the server record has disappeared");
+
+var remoteProgressEdit = new SyncClient.Snapshot {
+    Schema = 1, Cursor = 18, Records = { MakeProgress(progress.Items[0]) }
+};
+remoteProgressEdit.Records[0].Revision = progress.Items[0].Revision;
+var editedProgress = new StudyProgressItem {
+    Id = progress.Items[0].Id, Subject = progress.Items[0].Subject,
+    Material = progress.Items[0].Material, Unit = progress.Items[0].Unit,
+    Status = "완료", InExamScope = progress.Items[0].InExamScope,
+    Revision = 1, UpdatedAt = 1790000000000L
+};
+var progressEdit = SyncClient.PrepareReviewedChange(
+    new TaskBackup(), new ProgressBackup { Items = { editedProgress } },
+    remoteProgressEdit, "progress", editedProgress.Id, delete: false);
+Check(progressEdit.Mutation.Kind == "progress" &&
+      progressEdit.Mutation.BaseRevision == remoteProgressEdit.Records[0].Revision &&
+      progressEdit.Mutation.Payload is StudyProgressItem changedProgressPayload &&
+      changedProgressPayload.Status == "완료",
+      "Progress edits use SERVER revision rather than local field revision");
+var progressDeletion = SyncClient.PrepareReviewedChange(
+    new TaskBackup(), new ProgressBackup(), remoteProgressEdit,
+    "progress", editedProgress.Id, delete: true);
+Check(progressDeletion.Mutation.Deleted && progressDeletion.Mutation.Payload is null,
+      "Progress tombstone never includes a payload");
+Console.WriteLine("StudyOne approved remote edit/delete CAS review guards: PASS");
+
 Console.WriteLine("StudyOne Windows safe incoming merge and HTTPS endpoints: PASS");
 
 var pendingPlan = new SyncClient.PendingPlan {
