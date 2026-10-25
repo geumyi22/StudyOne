@@ -121,6 +121,16 @@ final class StudyProgressStore: ObservableObject {
         guard entries.count <= limit else {
             throw StudyError.message("진도 항목은 최대 2000개입니다.")
         }
+        // A different screen or a four-store import may have replaced this
+        // record after the view loaded. Never overwrite that newer version.
+        if let raw = UserDefaults.standard.data(forKey: storeKey) {
+            let disk = try JSONDecoder().decode(StudyProgressEnvelope.self, from: raw)
+            guard disk.schema == 1 && disk.items == items else {
+                throw StudyError.message("다른 화면에서 진도가 변경됐습니다. 화면을 다시 열어주세요.")
+            }
+        } else if !items.isEmpty {
+            throw StudyError.message("기존 진도 원본이 없어 변경을 중단했습니다.")
+        }
         let blob = try JSONEncoder().encode(StudyProgressEnvelope(schema: 1, items: entries))
         UserDefaults.standard.set(blob, forKey: storeKey)
         items = entries
