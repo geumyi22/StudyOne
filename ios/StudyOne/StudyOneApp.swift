@@ -52,6 +52,7 @@ struct StudyOneApp: App {
                         // Synthetic, opt-in Simulator-only network exercise.
                         // Never runs on devices or in production; no personal records.
                         await StudySyncRuntimeE2E.runIfRequested()
+                        StudyFourStoreRuntimeE2E.runIfRequested()
                     }
                     #endif
             }
