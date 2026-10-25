@@ -212,6 +212,22 @@ final class StudyProgressStore: ObservableObject {
         return url
     }
 
+    /// Rebuild memory from recovered on-disk progress after a coordinated rollback.
+    func reloadAfterFourStoreRecovery() throws {
+        if let raw = UserDefaults.standard.data(forKey: storeKey) {
+            let decoded = try JSONDecoder().decode(StudyProgressEnvelope.self, from: raw)
+            let ids = decoded.items.map { $0.id.lowercased() }
+            guard decoded.schema == 1, decoded.items.count <= limit,
+                  Set(ids).count == ids.count, decoded.items.allSatisfy(\.valid) else {
+                throw StudyError.message("복구된 진도 파일 검증 실패")
+            }
+            items = decoded.items
+        } else {
+            items = []
+        }
+        loadError = nil
+    }
+
     /// Fully validate before replacing locally stored progress.
     func importBackup(data: Data, original expected: [StudyProgressItem]) throws -> URL {
         guard loadError == nil, items == expected else {
