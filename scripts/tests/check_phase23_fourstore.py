@@ -69,7 +69,7 @@ class FourStoreContract(unittest.TestCase):
             "try recoverIfNeeded()",
             "try FileManager.default.removeItem(at: pendingURL)",
             "FourStorePendingImport-v1.json",
-            "StudyOne-fourstore-recovery",
+            "studyone-fourstore-recovery",
             "digest(original) == checksum",
         ):
             self.assertIn(safeguard, importer)
