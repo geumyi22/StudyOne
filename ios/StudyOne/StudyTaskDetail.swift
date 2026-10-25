@@ -140,6 +140,7 @@ final class StudyTaskDetailStore: ObservableObject {
     }
 
     private func persist(_ records: [Int64: StudyTaskDetail]) throws {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "상세 저장소를 읽지 못했습니다.")
         }
@@ -205,6 +206,7 @@ final class StudyTaskDetailStore: ObservableObject {
     /// Explicit replace only after confirmation, original-byte backup, and stale-read check.
     @discardableResult
     func importBackup(_ data: Data, expectedOriginal: Data?) throws -> URL {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "상세 저장소 오류")
         }
