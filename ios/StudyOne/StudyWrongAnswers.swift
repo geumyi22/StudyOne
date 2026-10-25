@@ -153,6 +153,16 @@ final class StudyWrongAnswersStore: ObservableObject {
         return output
     }
 
+    /// Reload recovered wrong-answer notes without deleting the original file.
+    func reloadAfterFourStoreRecovery() throws {
+        if let raw = try originalBytes() {
+            entries = try Self.parse(raw)
+        } else {
+            entries = []
+        }
+        loadError = nil
+    }
+
     @discardableResult
     func importBackup(_ input: Data, expectedOriginal: Data?) throws -> URL {
         guard loadError == nil else { throw StudyError.message("오답 원본 오류") }
