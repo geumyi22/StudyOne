@@ -6,6 +6,10 @@ The previous Phase29 test used Python HTTP clients pretending to be three device
 
 This is stronger than a mock and stronger than compilation-only QA. It does **not** establish a public server, complete account sign-in, production OAuth approval, or true three-device live UI synchronization.
 
+## Actual defect discovered by running the app
+
+The first Simulator E2E discovered a real cross-platform discrepancy: after a successful server write, StudyOne's iOS inbound comparison used the complete `StudyProgressItem` value (including server-rewritten `revision` and `updatedAt`) to decide whether the locally entered progress conflicted with the server's record. Android and Windows compared only student-controlled study fields, so iOS over-reported conflicts on otherwise identical progress. The iOS parser now compares subject, material, unit, status and exam-scope for a matching progress UUID. The live test requires precisely **one** conflict for a deliberately divergent task and **no false conflict** for the semantically identical progress whose transport timestamp differs.
+
 ## Execution and isolation
 
 1. GitHub macOS runner builds the unsigned Release IPA and unsigned Debug iOS Simulator app.
