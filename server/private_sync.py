@@ -425,6 +425,11 @@ def handler_for(registry: Registry, *, tls_enabled=True, oauth=None):
                 auth = self.headers.get("Authorization", "")
                 if not auth.startswith("Bearer ") or auth.count(" ") != 1:
                     raise ApiProblem(401, "UNAUTHORIZED")
+                # OAuth JWT access is strictly limited to the MCP resource.
+                # Reject JWT-shaped credentials on /v2 before the device
+                # digest lookup, so callers receive a clear audience error.
+                if auth[7:].count(".") == 2:
+                    raise ApiProblem(403, "TOKEN_AUDIENCE_FORBIDDEN")
                 requires_write = method == "POST" and endpoint.path != "/v2/proposals"
                 account, device = registry.authorize(auth[7:], write=requires_write)
                 if method == "GET" and endpoint.path == "/v2/session":
