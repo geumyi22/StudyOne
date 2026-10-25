@@ -882,7 +882,11 @@ public partial class MainWindow : Window
         SyncLoadPlansButton.IsEnabled = false;
         SyncApprovePlanButton.IsEnabled = false;
         SyncRejectPlanButton.IsEnabled = false;
-        SyncResultText.Text = "로컬 동기화 서버 확인 중…";
+        SyncQueueSaveButton.IsEnabled = false;
+        SyncQueueSendButton.IsEnabled = false;
+        SyncQueueDiscardButton.IsEnabled = false;
+        SyncQueueStatusButton.IsEnabled = false;
+        SyncResultText.Text = "동기화 작업 확인 중…";
         return true;
     }
 
@@ -896,6 +900,146 @@ public partial class MainWindow : Window
         SyncLoadPlansButton.IsEnabled = true;
         SyncApprovePlanButton.IsEnabled = true;
         SyncRejectPlanButton.IsEnabled = true;
+        SyncQueueSaveButton.IsEnabled = true;
+        SyncQueueSendButton.IsEnabled = true;
+        SyncQueueDiscardButton.IsEnabled = true;
+        SyncQueueStatusButton.IsEnabled = true;
+    }
+
+    private void SyncQueueStatus_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var outbox = StudySyncOutbox.Read(StudyData.DataDirectory);
+            int records = outbox.Batches.Sum(x => x.Mutations.Count);
+            SyncResultText.Text =
+                $"오프라인 전송 대기열 · {outbox.Batches.Count}개 요청 · 총 {records}개 신규 기록\\n"
+                + "기기 토큰은 파일에 저장되지 않습니다. 재전송은 사용자 확인이 필요합니다.";
+        }
+        catch (Exception error) { ShowError("대기열을 읽을 수 없습니다. 원본 보존: " + error.Message); }
+    }
+
+    private void SyncQueueSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            if (tasksLocked || progressLocked ||
+                StudyPortableBundle.Pending(StudyData.DataDirectory).Count > 0)
+                throw new InvalidDataException("현재 원본이 손상됐거나 복구가 필요해 대기열 저장을 차단했습니다.");
+            string account = SyncQueueAccountInput.Text.Trim().ToLowerInvariant();
+            if (!Guid.TryParse(account, out Guid accountId) ||
+                accountId.ToString("D") != account)
+                throw new InvalidDataException("전송 대상 계정 UUID를 정확히 입력하세요.");
+            Uri endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            if (endpoint.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidOperationException("오프라인 대기열은 HTTPS 계정 서버만 허용합니다.");
+            TaskBackup sourceTasks = StudyData.LoadTasks();
+            ProgressBackup sourceProgress = StudyData.LoadProgress();
+            if (MessageBox.Show(this,
+                "현재 PC의 일정·진도 중 대기열에 아직 없는 신규 ID를 내부 파일에 저장합니다.\\n"
+                + "서버에 즉시 업로드하지 않으며, 나중에 HTTPS 서버와 동일 계정 확인 후 "
+                + "사용자가 재전송을 승인해야 합니다.\\n\\n"
+                + "대기열 파일에는 개인 학습 정보가 암호화되지 않은 상태로 포함됩니다. 계속할까요?",
+                "오프라인 대기열 저장", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                != MessageBoxResult.Yes)
+            {
+                SyncResultText.Text = "오프라인 대기열 저장을 취소했습니다.";
+                return;
+            }
+            int added = StudySyncOutbox.Enqueue(
+                sourceTasks, sourceProgress, account, endpoint, StudyData.DataDirectory);
+            var queue = StudySyncOutbox.Read(StudyData.DataDirectory);
+            SyncResultText.Text =
+                $"새 기록 {added}개를 로컬 대기열에 보관했습니다. 총 {queue.Batches.Count}개 요청 대기.\\n"
+                + "서버 업로드는 수행하지 않았습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "대기열 저장에 실패했습니다. 기존 기록과 대기열 파일은 보존합니다.";
+            ShowError("오프라인 대기열 오류: " + error.Message);
+        }
+        finally { EndSync(); }
+    }
+
+    private async void SyncQueueSend_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            if (tasksLocked || progressLocked ||
+                StudyPortableBundle.Pending(StudyData.DataDirectory).Count > 0)
+                throw new InvalidDataException("복구 중이거나 손상된 로컬 기록은 전송하지 않습니다.");
+            var queue = StudySyncOutbox.Read(StudyData.DataDirectory);
+            if (queue.Batches.Count == 0)
+            {
+                SyncResultText.Text = "오프라인 대기열이 비어 있습니다.";
+                return;
+            }
+            // One immutable request at a time. No background uploads.
+            var batch = queue.Batches[0];
+            Uri endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
+            string account = SyncQueueAccountInput.Text.Trim().ToLowerInvariant();
+            if (account != batch.AccountId || endpoint.AbsoluteUri != batch.Endpoint)
+                throw new InvalidOperationException("입력한 서버·계정이 첫 대기 요청과 다릅니다.");
+            var currentTasks = StudyData.LoadTasks();
+            var currentProgress = StudyData.LoadProgress();
+            StudySyncOutbox.ValidateCurrent(batch, currentTasks, currentProgress);
+            string token = SyncTokenInput.Password;
+            var session = await SyncClient.GetSession(token, endpoint);
+            StudySyncOutbox.ConfirmAccount(batch, session, endpoint);
+            if (MessageBox.Show(this,
+                $"HTTPS 인증 완료. 계정 {batch.AccountId}로 "
+                + $"대기 중인 신규 학습 기록 {batch.Mutations.Count}개를 전송할까요?\\n"
+                + "기존 서버 ID는 절대 수정/삭제하지 않습니다. "
+                + "서버 충돌 시 대기열을 보존합니다. 계속할까요?",
+                "오프라인 기록 수동 재전송", MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                SyncResultText.Text = "대기열 전송을 취소했습니다. 로컬 대기열은 그대로 유지합니다.";
+                return;
+            }
+            // Recheck local source after user dialog. Token is never persisted.
+            StudySyncOutbox.ValidateCurrent(batch, StudyData.LoadTasks(),
+                                               StudyData.LoadProgress());
+            int sent = await SyncClient.UploadQueuedBatch(token, endpoint, batch);
+            StudySyncOutbox.Acknowledge(StudyData.DataDirectory, batch.RequestId);
+            int left = StudySyncOutbox.Read(StudyData.DataDirectory).Batches.Count;
+            SyncResultText.Text = $"신규 기록 {sent}개 전송 확인 · 남은 대기 요청 {left}개.\\n"
+                + "기존 서버·로컬 기록은 변경하지 않았습니다.";
+        }
+        catch (Exception error)
+        {
+            SyncResultText.Text = "재전송 실패 또는 결과 미확인. 요청 ID와 원본 대기열을 보존했습니다. "
+                + "동일한 요청을 다시 시도할 수 있습니다.";
+            ShowError("대기열 전송 차단: " + error.Message);
+        }
+        finally { EndSync(); }
+    }
+
+    private void SyncQueueDiscard_Click(object sender, RoutedEventArgs e)
+    {
+        if (!BeginSync()) return;
+        try
+        {
+            var queue = StudySyncOutbox.Read(StudyData.DataDirectory);
+            if (queue.Batches.Count == 0)
+            {
+                SyncResultText.Text = "취소할 대기 요청이 없습니다.";
+                return;
+            }
+            var first = queue.Batches[0];
+            if (MessageBox.Show(this,
+                $"첫 대기 요청 {first.Mutations.Count}개를 로컬 대기열에서만 삭제할까요?\\n"
+                + "실제 일정·진도 파일은 삭제하지 않지만, 아직 서버에 보내지 못한 기록의 "
+                + "재전송 예약은 사라집니다.",
+                "대기 요청 폐기 확인", MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            StudySyncOutbox.Discard(StudyData.DataDirectory, first.RequestId);
+            SyncResultText.Text = "첫 대기 요청을 취소했습니다. 기존 학습 원본은 보존했습니다.";
+        }
+        catch (Exception error) { ShowError("대기 요청 취소 실패: " + error.Message); }
+        finally { EndSync(); }
     }
 
     private async void SyncPreview_Click(object sender, RoutedEventArgs e)

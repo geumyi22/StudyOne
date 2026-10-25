@@ -47,6 +47,17 @@ internal static class SyncClient
         public List<RemoteRecord> Records { get; set; } = new();
     }
 
+    internal sealed class Session
+    {
+        public int Schema { get; set; }
+        public string AccountId { get; set; } = "";
+        public string DeviceId { get; set; } = "";
+        public string Scope { get; set; } = "";
+        public string Audience { get; set; } = "";
+        public long ExpiresAt { get; set; }
+        public long ServerTime { get; set; }
+    }
+
     internal sealed class RemoteRecord
     {
         public string Kind { get; set; } = "";
@@ -125,6 +136,65 @@ internal static class SyncClient
                                    string.IsNullOrWhiteSpace(x.Id) || x.Revision < 1))
             throw new InvalidDataException("지원하지 않는 동기화 스냅샷입니다.");
         return value;
+    }
+
+    /// <summary>Verify a device token belongs to the exact intended HTTPS account.</summary>
+    internal static async Task<Session> GetSession(
+        string token, Uri endpoint, CancellationToken cancel = default)
+    {
+        if (ParseEndpoint(endpoint.AbsoluteUri).Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("대기열은 HTTPS 계정 서버에서만 전송합니다.");
+        using var http = OpenClient(token, endpoint);
+        using var response = await http.GetAsync("v2/session", cancel);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                $"동기화 계정 인증 실패: HTTP {(int)response.StatusCode}");
+        byte[] raw = await ReadLimited(response, cancel);
+        Session value = JsonSerializer.Deserialize<Session>(raw, StudyData.JsonOptions)
+            ?? throw new InvalidDataException("인증 세션 응답이 비어 있습니다.");
+        if (value.Schema != 1 || !Guid.TryParse(value.AccountId, out _) ||
+            !Guid.TryParse(value.DeviceId, out _) || value.ExpiresAt <= value.ServerTime)
+            throw new InvalidDataException("잘못된 계정 인증 정보입니다.");
+        return value;
+    }
+
+    /// <summary>
+    /// Replays EXACTLY one bounded, already-user-approved requestId and body.
+    /// When the response is lost, the same requestId is retried, never minted
+    /// again. The server guarantees that replay returns the stored result.
+    /// </summary>
+    internal static async Task<int> UploadQueuedBatch(
+        string token, Uri endpoint, StudySyncOutbox.Batch batch,
+        CancellationToken cancel = default)
+    {
+        if (ParseEndpoint(endpoint.AbsoluteUri).Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("대기열은 HTTPS 계정 서버만 허용합니다.");
+        if (batch.Mutations.Count is < 1 or > 50 ||
+            !Guid.TryParse(batch.RequestId, out _))
+            throw new InvalidDataException("대기열 요청이 올바르지 않습니다.");
+        using var http = OpenClient(token, endpoint);
+        var body = new { requestId = batch.RequestId, mutations = batch.Mutations };
+        using var message = new HttpRequestMessage(HttpMethod.Post, "v2/changes")
+        {
+            Content = new ByteArrayContent(StudyData.Serialize(body))
+        };
+        message.Content.Headers.ContentType =
+            new MediaTypeHeaderValue("application/json");
+        using var response = await http.SendAsync(message, cancel);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(response.StatusCode switch {
+                HttpStatusCode.Conflict => "서버에 동일 ID 변경 또는 충돌이 있습니다. 대기열을 보존했습니다.",
+                HttpStatusCode.Unauthorized => "로그인이 만료됐습니다. 대기열을 보존했습니다.",
+                HttpStatusCode.Forbidden => "쓰기 권한이 없습니다. 대기열을 보존했습니다.",
+                _ => $"서버 HTTP {(int)response.StatusCode} 오류. 대기열을 보존했습니다."
+            });
+        byte[] raw = await ReadLimited(response, cancel);
+        using JsonDocument reply = JsonDocument.Parse(raw);
+        JsonElement root = reply.RootElement;
+        if (root.GetProperty("schema").GetInt32() != 1 ||
+            root.GetProperty("changes").GetArrayLength() != batch.Mutations.Count)
+            throw new InvalidDataException("서버에서 반환한 요청 적용 개수가 다릅니다. 대기열을 보존했습니다.");
+        return batch.Mutations.Count;
     }
 
     internal static List<Mutation> NewOnly(TaskBackup tasks, ProgressBackup progress,
