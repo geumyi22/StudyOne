@@ -1065,12 +1065,23 @@ public partial class MainWindow : Window
             var endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
             var snapshot = await SyncClient.GetSnapshot(SyncTokenInput.Password,
                                                        endpoint: endpoint);
+            if (tasksLocked || progressLocked)
+                throw new InvalidDataException("손상된 로컬 학습 기록은 비교하지 않습니다.");
+            var localTasks = StudyData.LoadTasks();
+            var localProgress = StudyData.LoadProgress();
+            var compared = SyncClient.PreviewNewRemote(localTasks, localProgress, snapshot);
+            var outgoing = SyncClient.NewOnly(localTasks, localProgress, snapshot);
             int totalTasks = snapshot.Records.Count(x => x.Kind == "task");
             int totalProgress = snapshot.Records.Count(x => x.Kind == "progress");
             SyncResultText.Text =
-                $"로컬 서버 연결 성공 · 서버 변경 cursor {snapshot.Cursor}\n" +
-                $"서버에 저장된 일정 {totalTasks}개 · 진도 {totalProgress}개\n" +
-                "이 기기의 데이터는 읽거나 수정하지 않았고, 서버에 아무것도 업로드하지 않았습니다.";
+                $"서버 cursor {snapshot.Cursor} · 서버 일정 {totalTasks}개 · 진도 {totalProgress}개\n" +
+                $"서버에만 있는 새 기록: 일정 {compared.NewTasks.Count}개 · 진도 {compared.NewProgress.Count}개\n" +
+                $"기기에만 있는 새 기록: {outgoing.Count}개\n" +
+                $"일치 {compared.ExistingIdentical}개 · 같은 ID의 다른 내용 {compared.Conflicts}개\n" +
+                (compared.Conflicts > 0
+                    ? "충돌 항목을 자동으로 덮어쓰지 않습니다. 개별 확인이 필요합니다."
+                    : "읽기 전용 미리보기이며 실제 동기화를 증명하지 않습니다.") +
+                "\n서버와 기기 데이터를 수정하거나 업로드하지 않았습니다.";
         }
         catch (Exception error)
         {
@@ -1092,8 +1103,19 @@ public partial class MainWindow : Window
             string token = SyncTokenInput.Password;
             var endpoint = SyncClient.ParseEndpoint(SyncUrlInput.Text.Trim());
             var snapshot = await SyncClient.GetSnapshot(token, endpoint: endpoint);
-            var pending = SyncClient.NewOnly(CloneTasks(), progressBackup, snapshot);
-            int localTotal = taskBackup.Tasks.Count + progressBackup.Items.Count;
+            TaskBackup beforeTasks = StudyData.LoadTasks();
+            ProgressBackup beforeProgress = StudyData.LoadProgress();
+            byte[] taskFingerprint = StudyData.SerializeAndValidateTasks(beforeTasks);
+            byte[] progressFingerprint = StudyData.SerializeAndValidateProgress(beforeProgress);
+            var comparison = SyncClient.PreviewNewRemote(beforeTasks, beforeProgress, snapshot);
+            if (comparison.Conflicts > 0)
+            {
+                SyncResultText.Text = $"동일 ID의 서로 다른 내용 {comparison.Conflicts}개를 발견했습니다. " +
+                    "업로드하지 않았습니다. 먼저 충돌 항목을 확인하세요.";
+                return;
+            }
+            var pending = SyncClient.NewOnly(beforeTasks, beforeProgress, snapshot);
+            int localTotal = beforeTasks.Tasks.Count + beforeProgress.Items.Count;
             int skipped = localTotal - pending.Count;
             if (pending.Count == 0)
             {
@@ -1115,6 +1137,17 @@ public partial class MainWindow : Window
                 SyncResultText.Text = "전송을 취소했습니다. 개인 학습 데이터는 업로드되지 않았습니다.";
                 return;
             }
+            // Recheck both persisted files and the exact remote cursor
+            // after approval; never send a stale plan selected before user consent.
+            var latestServer = await SyncClient.GetSnapshot(token, endpoint: endpoint);
+            var latestTasks = StudyData.LoadTasks();
+            var latestProgress = StudyData.LoadProgress();
+            if (latestServer.Cursor != snapshot.Cursor ||
+                !StudyData.SerializeAndValidateTasks(latestTasks).SequenceEqual(taskFingerprint) ||
+                !StudyData.SerializeAndValidateProgress(latestProgress).SequenceEqual(progressFingerprint) ||
+                !StudyData.Serialize(SyncClient.NewOnly(latestTasks, latestProgress, latestServer))
+                    .SequenceEqual(StudyData.Serialize(pending)))
+                throw new InvalidOperationException("승인 중 로컬/서버 데이터가 변경되어 전송하지 않았습니다.");
             int sent = await SyncClient.UploadNew(token, pending, endpoint: endpoint);
             SyncResultText.Text =
                 $"새 기록 {sent}개를 로컬 서버로 보냈습니다.\n" +
