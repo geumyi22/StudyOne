@@ -189,6 +189,30 @@ class HttpAudienceTests(AuthenticationLifecycleTests):
         self.assertEqual(len(tools["result"]["tools"]), 4)
         self.assertEqual(self.fetch(self.device["token"], "/v2/snapshot")[0], 200)
 
+    def test_mcp_only_draft_requires_device_approval(self):
+        draft = {"requestId": str(uuid4()), "title": "합성 온라인 내신 계획",
+                 "baseCursor": 0,
+                 "tasks": [{"type": "숙제 항목", "subject": "영어",
+                            "title": "합성 학습 문제", "dueDate": "2026-11-01",
+                            "importance": 2}]}
+        code, data = self.fetch(self.assistant["token"], "/mcp", "POST",
+            {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+             "params": {"name": "studyone_propose_study_plan", "arguments": draft}})
+        self.assertEqual(code, 200)
+        self.assertFalse(data["result"]["isError"])
+        proposed = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(proposed["state"], "pending")
+        code, snapshot = self.fetch(self.device["token"], "/v2/snapshot")
+        self.assertEqual(code, 200)
+        self.assertEqual(snapshot["records"], [])
+        code, _ = self.fetch(self.assistant["token"],
+            "/v2/proposals/" + proposed["id"] + "/approve", "POST", {})
+        self.assertEqual(code, 403)
+        code, approved = self.fetch(self.device["token"],
+            "/v2/proposals/" + proposed["id"] + "/approve", "POST", {})
+        self.assertEqual(code, 200)
+        self.assertEqual(approved["state"], "approved")
+
     def test_mcp_token_cross_account_no_raw_api_and_revoke(self):
         ai = self.assistant["token"]
         own = self.fetch(ai, "/mcp", "POST", {"jsonrpc": "2.0",
