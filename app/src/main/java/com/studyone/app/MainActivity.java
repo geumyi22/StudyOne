@@ -657,6 +657,18 @@ public class MainActivity extends Activity {
             meter.setMax(Math.max(total,1));
             meter.setProgress(complete);
             c.addView(meter);
+            java.util.List<StudyExamFocus.Subject> focus=StudyExamFocus.summarize(progress);
+            c.addView(section("과목별 시험 준비 · 다음 학습 추천"));
+            if(focus.isEmpty()) {
+                c.addView(cardText("시험범위에 포함된 진도가 없습니다.",13));
+            } else {
+                for(StudyExamFocus.Subject subject:focus){
+                    c.addView(cardText(subject.summary()+"\n"+subject.nextText(),13));
+                }
+                c.addView(cardText("온라인 내신 문제는 같은 과목의 다른 시험범위 학습이 "
+                        +"남아 있으면 우선 추천하지 않습니다. 진도 기록이 실제 시험대비 자료 "
+                        +"완료를 대신 확인해 주는 것은 아닙니다.",12));
+            }
             if(progress.isEmpty()) {
                 c.addView(cardText("등록된 교재 진도가 없습니다. 위 버튼에서 직접 추가할 수 있습니다.",13));
             } else {

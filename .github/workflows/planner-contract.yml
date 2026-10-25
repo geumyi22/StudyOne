@@ -63,6 +63,15 @@ jobs:
             app/src/main/java/com/studyone/app/StudyProgressChecklist.java \
             scripts/tests/StudyProgressChecklistSmoke.java
           java -cp /tmp/studyone-progress-checklist-classes StudyProgressChecklistSmoke
+      - name: Compile and test actual next-study exam recommendations (Java fixture)
+        run: |
+          mkdir -p /tmp/studyone-exam-focus
+          javac -encoding UTF-8 -d /tmp/studyone-exam-focus \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            app/src/main/java/com/studyone/app/StudyOnlinePractice.java \
+            app/src/main/java/com/studyone/app/StudyExamFocus.java \
+            scripts/tests/StudyExamFocusSmoke.java
+          java -cp /tmp/studyone-exam-focus StudyExamFocusSmoke
       - name: Compile and test idempotent six-subject online practice suggestions
         run: |
           mkdir -p /tmp/studyone-online-practice-classes

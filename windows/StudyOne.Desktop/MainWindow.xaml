@@ -255,6 +255,14 @@
                         <TextBlock x:Name="ProgressSummary" Text="시험범위 진도 관리"
                                    FontSize="14" Foreground="#53617B" Margin="0,8,0,8"/>
                         <ProgressBar x:Name="ExamProgressBar" Height="9" Minimum="0" Maximum="100" Value="0"/>
+                        <Expander Header="과목별 시험 준비 · 다음에 할 공부" IsExpanded="True"
+                                  Margin="0,10,0,6">
+                            <ScrollViewer MaxHeight="230" VerticalScrollBarVisibility="Auto">
+                                <TextBlock x:Name="ExamSubjectSummary" Text="진도 상태를 불러오는 중…"
+                                           TextWrapping="Wrap" LineHeight="23" FontSize="13"
+                                           Foreground="#243351" Padding="10,8"/>
+                            </ScrollViewer>
+                        </Expander>
                         <Button Content="과목명 포함 진도 체크리스트 복사" Click="CopyProgress_Click"
                                 HorizontalAlignment="Left" Margin="0,7,0,7"/>
                         <Button Content="+ 6과목 온라인 내신 문제 빠른 추가" Click="QuickAddOnlinePractice_Click"

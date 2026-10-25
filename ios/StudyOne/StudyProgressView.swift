@@ -70,6 +70,37 @@ struct StudyProgressView: View {
                     }
                     .padding(.vertical, 5)
                 }
+                Section("과목별 시험 준비 · 우선 학습") {
+                    let focus = StudyExamFocus.summarize(progress.items)
+                    if focus.isEmpty {
+                        Text("시험범위에 포함된 진도 항목이 없습니다.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(focus) { subject in
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Text(subject.name).font(.headline)
+                                    Spacer()
+                                    Text("\(subject.percent)%")
+                                        .font(.headline).monospacedDigit()
+                                }
+                                ProgressView(value: Double(subject.done),
+                                             total: Double(max(1, subject.total)))
+                                Text(subject.summary)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(subject.nextText)
+                                    .font(.subheadline)
+                                if subject.waitingOnline > 0 {
+                                    Text("온라인 내신 대기 \(subject.waitingOnline)개")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    Text("같은 과목의 다른 시험범위 진도가 남아 있으면 온라인 내신 문제를 우선 추천하지 않습니다. 실제 시험대비 자료를 모두 마쳤는지는 직접 확인하세요.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section {
                     Picker("진도 상태", selection: $filter) {
                         Text("전체").tag("전체")
