@@ -394,10 +394,10 @@ def handler_for(registry: Registry, *, tls_enabled=True):
                     raise ApiProblem(401, "UNAUTHORIZED")
                 requires_write = method == "POST" and endpoint.path != "/v2/proposals"
                 account, device = registry.authorize(auth[7:], write=requires_write)
+                if method == "GET" and endpoint.path == "/v2/session":
+                    return self.send_json(200, registry.session(auth[7:]))
                 store = registry.store(account)
                 if method == "GET":
-                    if endpoint.path == "/v2/session":
-                        return self.send_json(200, registry.session(auth[7:]))
                     if endpoint.path == "/v2/snapshot":
                         return self.send_json(200, store.snapshot())
                     if endpoint.path == "/v2/proposals":
