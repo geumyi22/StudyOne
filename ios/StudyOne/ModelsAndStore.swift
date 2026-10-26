@@ -186,6 +186,12 @@ final class StudyOneStore: ObservableObject {
                              className: className, tasks: merged)
         let blob = try JSONEncoder().encode(document)
         let raw = UserDefaults.standard.data(forKey: settingsKey)
+        // Compare the COMPLETE persisted settings bytes (including school
+        // and grade), not only task IDs/statuses. A second tab's settings
+        // change must not be overwritten by a reviewed paper-plan append.
+        guard raw == lastSettingsBytes else {
+            throw StudyError.message("검토 도중 학교·반·일정 설정이 변경됐습니다. 다시 확인하세요.")
+        }
         let backup = try StudySyncBackup.save(raw, kind: "tasks")
         UserDefaults.standard.set(blob, forKey: settingsKey)
         guard UserDefaults.standard.data(forKey: settingsKey) == blob else {
