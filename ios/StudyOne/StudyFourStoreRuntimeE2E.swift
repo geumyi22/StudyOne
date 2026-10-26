@@ -44,6 +44,10 @@ enum StudyFourStoreRuntimeE2E {
             stage = "offline_paper_schedule_self_test"
             try require(StudyPaperSchedule.selfTest(),
                         "read-only study paper schedule validation failed")
+            try require(StudyPaperProgressLink.selfTest(),
+                        "strict individual-paper autofill validation failed")
+            try require(StudyPaperPlanApproval.selfTest(),
+                        "reviewed paper-plan task duplicate validation failed")
             // The simulator must have no preexisting study records. Refuse to
             // change any nonempty app data, even on this debug-only path.
             let tasks = StudyOneStore()
