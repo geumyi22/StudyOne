@@ -186,7 +186,8 @@ class HttpAudienceTests(AuthenticationLifecycleTests):
         code, tools = self.fetch(ai, "/mcp", "POST",
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         self.assertEqual(code, 200)
-        self.assertEqual(len(tools["result"]["tools"]), 4)
+        self.assertEqual(len(tools["result"]["tools"]), 5)
+        self.assertIn("studyone_preview_paper_schedule", [t["name"] for t in tools["result"]["tools"]])
         self.assertEqual(self.fetch(self.device["token"], "/v2/snapshot")[0], 200)
 
     def test_mcp_only_draft_requires_device_approval(self):

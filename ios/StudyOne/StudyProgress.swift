@@ -114,12 +114,45 @@ final class StudyProgressStore: ObservableObject {
         }
     }
 
+    /// Read-only, verified on-disk progress snapshot for individual-paper
+    /// autofill. A stale tab, corrupted file or duplicate ID fails closed.
+    func checkedPaperPreviewItems() throws -> [StudyProgressItem] {
+        if let loadError {
+            throw StudyError.message(loadError)
+        }
+        guard let raw = UserDefaults.standard.data(forKey: storeKey) else {
+            guard items.isEmpty else {
+                throw StudyError.message("기기 진도 원본이 없어 자동 채우기를 중단합니다.")
+            }
+            return []
+        }
+        let saved = try JSONDecoder().decode(StudyProgressEnvelope.self, from: raw)
+        let ids = saved.items.map { $0.id.lowercased() }
+        guard saved.schema == 1, saved.items.count <= limit,
+              Set(ids).count == ids.count,
+              saved.items.allSatisfy(\.valid), saved.items == items else {
+            throw StudyError.message("진도 기록이 다른 화면에서 변경됐거나 손상됐습니다.")
+        }
+        return saved.items
+    }
+
     private func persist(_ entries: [StudyProgressItem]) throws {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "저장소를 읽을 수 없습니다.")
         }
         guard entries.count <= limit else {
             throw StudyError.message("진도 항목은 최대 2000개입니다.")
+        }
+        // A different screen or a four-store import may have replaced this
+        // record after the view loaded. Never overwrite that newer version.
+        if let raw = UserDefaults.standard.data(forKey: storeKey) {
+            let disk = try JSONDecoder().decode(StudyProgressEnvelope.self, from: raw)
+            guard disk.schema == 1 && disk.items == items else {
+                throw StudyError.message("다른 화면에서 진도가 변경됐습니다. 화면을 다시 열어주세요.")
+            }
+        } else if !items.isEmpty {
+            throw StudyError.message("기존 진도 원본이 없어 변경을 중단했습니다.")
         }
         let blob = try JSONEncoder().encode(StudyProgressEnvelope(schema: 1, items: entries))
         UserDefaults.standard.set(blob, forKey: storeKey)
@@ -129,6 +162,7 @@ final class StudyProgressStore: ObservableObject {
     /// Save a protected local copy and append only server IDs not already present.
     func mergeNewProgressFromServer(_ additions: [StudyProgressItem],
                                     original expected: [StudyProgressItem]) throws -> URL {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "진도 저장소를 읽을 수 없습니다.")
         }
@@ -210,6 +244,22 @@ final class StudyProgressStore: ObservableObject {
             .appendingPathComponent("StudyOne-progress-\(Date().studyString()).json")
         try bytes.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Rebuild memory from recovered on-disk progress after a coordinated rollback.
+    func reloadAfterFourStoreRecovery() throws {
+        if let raw = UserDefaults.standard.data(forKey: storeKey) {
+            let decoded = try JSONDecoder().decode(StudyProgressEnvelope.self, from: raw)
+            let ids = decoded.items.map { $0.id.lowercased() }
+            guard decoded.schema == 1, decoded.items.count <= limit,
+                  Set(ids).count == ids.count, decoded.items.allSatisfy(\.valid) else {
+                throw StudyError.message("복구된 진도 파일 검증 실패")
+            }
+            items = decoded.items
+        } else {
+            items = []
+        }
+        loadError = nil
     }
 
     /// Fully validate before replacing locally stored progress.

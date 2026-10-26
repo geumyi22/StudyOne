@@ -665,6 +665,11 @@ public class MainActivity extends Activity {
         Button onlinePractice=secondary("+ 6과목 온라인 내신 문제 빠른 추가");
         onlinePractice.setOnClickListener(v->showOnlinePracticeDialog());
         c.addView(onlinePractice);
+        Button paperPreview=secondary("국어 인쇄 시험지 18회 · 남은 분량 자동 배분");
+        paperPreview.setOnClickListener(v->showPaperSchedulePreview());
+        c.addView(paperPreview);
+        c.addView(cardText("날짜·완료 회차를 직접 입력해 분배안을 미리 봅니다. "
+                +"계획 계산과 복사는 로컬에서만 실행되며 기존 숙제·진도는 수정하지 않습니다.",12));
         Button progressExport=secondary("진도 JSON 백업 내보내기");
         progressExport.setOnClickListener(v->{
             android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
@@ -1054,6 +1059,94 @@ public class MainActivity extends Activity {
      * Development-only manual sync: never sends data until a second explicit
      * confirmation. It never mutates local tasks or progress records.
      */
+    /** User-selected existing-ID write, HTTPS account only; no background sync. */
+    private void reviewedRemoteChange(boolean delete, String address, String token,
+            String kind, String id, TextView result, AlertDialog dialog, Button trigger) {
+        if(!dialog.isShowing())return;
+        trigger.setEnabled(false);
+        io.execute(()->{
+            try {
+                String endpoint=StudySyncClient.checkedAccountAddress(address);
+                JSONObject session=StudySyncClient.accountSession(token,endpoint);
+                if(!"device".equals(session.getString("audience")) ||
+                        !"read-write".equals(session.getString("scope")))
+                    throw new IllegalStateException("서버에 쓰기 권한이 있는 계정 기기 토큰만 허용합니다.");
+                List<Models.StudyTask> localTasks=storage.checkedTasksForSync();
+                List<StudyProgressItem> localProgress=progressStorage.list();
+                JSONObject snapshot=StudySyncClient.snapshot(token,endpoint);
+                StudySyncClient.ReviewedChange reviewed=StudySyncClient.prepareReviewedChange(
+                        snapshot,localTasks,localProgress,kind,id,delete);
+                runOnUiThread(()->{
+                    if(!dialog.isShowing()){trigger.setEnabled(true);return;}
+                    String verb=delete?"서버에서 삭제":"현재 기기 내용으로 서버 수정";
+                    new AlertDialog.Builder(this)
+                        .setTitle("기존 기록 "+verb+" · 최종 승인")
+                        .setMessage("계정 "+session.optString("accountId")
+                                +"\\n대상 "+kind+" / "+id
+                                +"\\n서버 버전 "+reviewed.mutation.optLong("baseRevision")
+                                +"\\n현재 서버: "+reviewed.remoteSummary
+                                +"\\n현재 기기: "+reviewed.localSummary
+                                +"\\n\\n"+verb+"하시겠습니까? 서버 기록을 내부 복구 파일로 보관한 뒤 전송합니다. "
+                                +"승인 중 원본이 바뀌거나 충돌하면 전송하지 않습니다.")
+                        .setNegativeButton("취소",(d,w)->{
+                            result.setText("서버 기록 변경을 취소했습니다.");
+                            trigger.setEnabled(true);
+                        })
+                        .setPositiveButton("검증 후 서버 "+(delete?"삭제":"수정"),(d,w)->io.execute(()->{
+                            try {
+                                JSONObject secondSession=StudySyncClient.accountSession(token,endpoint);
+                                if(!session.getString("accountId").equals(
+                                        secondSession.getString("accountId")) ||
+                                        !"read-write".equals(secondSession.getString("scope")))
+                                    throw new IllegalStateException("승인 후 계정 또는 쓰기 권한이 변경됐습니다.");
+                                JSONObject latest=StudySyncClient.snapshot(token,endpoint);
+                                if(latest.getLong("cursor")!=reviewed.cursor)
+                                    throw new IllegalStateException("승인 중 서버 상태가 변경됐습니다.");
+                                StudySyncClient.ReviewedChange rechecked=
+                                        StudySyncClient.prepareReviewedChange(latest,
+                                                storage.checkedTasksForSync(),progressStorage.list(),
+                                                kind,id,delete);
+                                if(rechecked.mutation.getLong("baseRevision")!=
+                                        reviewed.mutation.getLong("baseRevision") ||
+                                        !rechecked.mutation.toString().equals(
+                                                reviewed.mutation.toString()))
+                                    throw new IllegalStateException("승인한 로컬 기록이 변경됐습니다.");
+                                JSONObject remote=null;
+                                JSONArray rows=latest.getJSONArray("records");
+                                for(int i=0;i<rows.length();i++){
+                                    JSONObject row=rows.getJSONObject(i);
+                                    if(kind.equals(row.getString("kind")) &&
+                                            id.equals(row.getString("id"))) {remote=row;break;}
+                                }
+                                if(remote==null)throw new IllegalStateException("서버 복구 대상이 없습니다.");
+                                String saved=StudySyncClient.saveReviewedRecovery(
+                                        getApplicationContext(),remote,secondSession,endpoint,
+                                        reviewed.cursor);
+                                StudySyncClient.uploadReviewed(token,endpoint,rechecked);
+                                runOnUiThread(()->{
+                                    result.setText("기존 "+kind+" ID "+id+" 서버 "
+                                        +(delete?"삭제":"수정")+" 확인. 복구 JSON: "+saved
+                                        +"\\n현재 기기의 기존 기록은 수정하지 않았습니다.");
+                                    trigger.setEnabled(true);
+                                });
+                            }catch(Exception error){
+                                runOnUiThread(()->{
+                                    result.setText("서버 변경 실패·결과 미확인. 재시도 전 서버를 다시 읽으세요: "
+                                            +error.getMessage());
+                                    trigger.setEnabled(true);
+                                });
+                            }
+                        })).show();
+                });
+            }catch(Exception error){
+                runOnUiThread(()->{
+                    result.setText("기존 기록 승인 준비 실패: "+error.getMessage());
+                    trigger.setEnabled(true);
+                });
+            }
+        });
+    }
+
     private void syncExperimentDialog() {
         LinearLayout form=column();
         form.setPadding(dp(20),dp(6),dp(20),dp(8));
@@ -1086,6 +1179,15 @@ public class MainActivity extends Activity {
         form.addView(pullTasks);
         form.addView(pullProgress);
         form.addView(pendingPlans);
+        form.addView(cardText("기존 서버 기록 변경·삭제는 한 번에 1개 ID만 처리합니다. HTTPS 쓰기 권한, 로컬·서버 값 비교, 승인 후 서버 커서 재검증, 원격 복구본 저장을 요구합니다.",12));
+        EditText changeKind=input("서버 기록 종류: task 또는 progress","task");
+        EditText changeId=input("수정·삭제할 일정 ID 또는 진도 UUID","");
+        form.addView(changeKind);
+        form.addView(changeId);
+        Button changeUpdate=secondary("선택 ID를 기기 내용으로 서버 수정 · 승인 필수");
+        Button changeDelete=secondary("선택 ID 서버 삭제 · 기기에 없는 경우만");
+        form.addView(changeUpdate);
+        form.addView(changeDelete);
         form.addView(cardText("오프라인 대기열은 토큰을 저장하지 않습니다. 과목·학습 기록은 앱 내부 JSON에 저장되므로 기기 잠금과 외부 백업이 필요합니다. 네트워크 전송에는 동일한 HTTPS 주소·계정·쓰기 권한 토큰과 별도 승인이 필요합니다.",12));
         form.addView(queueSave);
         form.addView(queueSend);
@@ -1099,6 +1201,15 @@ public class MainActivity extends Activity {
                 .create();
         dialog.setOnDismissListener(d->token.setText(""));
         dialog.show();
+
+        changeUpdate.setOnClickListener(v->reviewedRemoteChange(false,
+                address.getText().toString().trim(),token.getText().toString(),
+                changeKind.getText().toString().trim(),
+                changeId.getText().toString().trim(),result,dialog,changeUpdate));
+        changeDelete.setOnClickListener(v->reviewedRemoteChange(true,
+                address.getText().toString().trim(),token.getText().toString(),
+                changeKind.getText().toString().trim(),
+                changeId.getText().toString().trim(),result,dialog,changeDelete));
 
         pullTasks.setOnClickListener(v->
                 importNewRemote(true, token.getText().toString(),
@@ -1695,6 +1806,170 @@ public class MainActivity extends Activity {
                 .setPositiveButton("닫기",null).show();
     }
 
+    /**
+     * User-editable 2/3-unit paper schedule PREVIEW only. Data are entered
+     * manually, not inferred from actual completed progress or private files.
+     * The dialog never writes Storage, StudyProgressStorage or network data.
+     */
+    private void showPaperSchedulePreview() {
+        ScrollView scroll=new ScrollView(this);
+        LinearLayout form=column();
+        form.setPadding(dp(20),dp(8),dp(20),dp(10));
+        scroll.addView(form);
+        form.addView(cardText("국어 2·3단원 인쇄 시험지 템플릿입니다. 완료 회차를 수동 입력한 후 "
+                +"계산하세요. 자동 미리보기는 진도·일정을 수정하지 않습니다. 결과 확인 후 별도 승인하면 할 일만 추가할 수 있습니다.",12));
+        EditText start=input("시작일 · YYYY-MM-DD",LocalDate.now().toString());
+        EditText end=input("마감일 · YYYY-MM-DD",LocalDate.now().plusDays(8).toString());
+        EditText daily=input("하루 최대 시험지 횟수", "2");
+        daily.setInputType(InputType.TYPE_CLASS_NUMBER);
+        form.addView(tv("시작일",13,TEXT,true));form.addView(start);
+        form.addView(tv("마감일",13,TEXT,true));form.addView(end);
+        form.addView(tv("하루 최대 횟수 (1~12)",13,TEXT,true));form.addView(daily);
+        form.addView(tv("개념 복습 시작 · 학습지 또는 교재",13,TEXT,true));
+        Spinner review=new Spinner(this);
+        String[] reviewOptions={"학습지","교재"};
+        ArrayAdapter<String> reviewAdapter=new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,reviewOptions);
+        review.setAdapter(reviewAdapter);form.addView(review);
+        EditText skip=input("쉬는 날짜 · YYYY-MM-DD, YYYY-MM-DD (선택)","");
+        form.addView(tv("시험지를 배정하지 않을 날짜 (선택)",13,TEXT,true));
+        form.addView(skip);
+        final String[] names={
+                "2-1 소단원 평가","2-2 소단원 평가","2단원 대단원 평가",
+                "3-1 소단원 평가","3-2 소단원 평가","3단원 대단원 평가"};
+        List<EditText> amounts=new ArrayList<>();
+        form.addView(section("시험지별 총 횟수 / 완료 횟수"));
+        for(int i=0;i<names.length;i++){
+            if(i==0)form.addView(tv("2단원",14,BLUE_DARK,true));
+            if(i==3)form.addView(tv("3단원",14,BLUE_DARK,true));
+            form.addView(tv(names[i]+" · 총/완료",13,TEXT,true));
+            EditText count=input("예: 3/1","3/0");
+            count.setSingleLine(true);
+            amounts.add(count);form.addView(count);
+        }
+        final String[] trustedProgressRaw={null};
+        final boolean[] filledFromDevice={false};
+        Button fromDevice=secondary("기기에 기록된 시험지 18개 회차로 자동 채우기");
+        fromDevice.setOnClickListener(v->{
+            try {
+                String original=progressStorage.rawProgressForSync();
+                StudyPaperProgressLink.Snapshot snapshot=
+                    StudyPaperProgressLink.checked(progressStorage.list());
+                if(!java.util.Objects.equals(original,progressStorage.rawProgressForSync()))
+                    throw new IllegalStateException("진도 읽는 동안 원본이 변경됐습니다. 다시 확인하세요.");
+                for(int i=0;i<names.length;i++) {
+                    StudyPaperSchedule.Paper paper=i<3
+                        ?snapshot.lanes.get(0).papers.get(i)
+                        :snapshot.lanes.get(1).papers.get(i-3);
+                    amounts.get(i).setText(paper.total+"/"+paper.completed);
+                }
+                trustedProgressRaw[0]=original;
+                filledFromDevice[0]=true;
+                toast("개별 진도 18개를 검증해 완료 "+snapshot.completed+"회 불러왔습니다.");
+            }catch(Exception error){
+                new AlertDialog.Builder(this).setTitle("자동 채우기 불가 · 수동 입력 유지")
+                    .setMessage(error.getMessage()==null?"진도 기록을 확인할 수 없습니다.":error.getMessage())
+                    .setPositiveButton("확인",null).show();
+            }
+        });
+        form.addView(fromDevice);
+        form.addView(cardText("자동 입력은 국어 인쇄 시험지 18회 교재의 개별 회차 18개가 진도에 기록된 경우에만 허용합니다. 합계 4/18 같은 기록만으로는 완료 항목을 추측하지 않습니다.",12));
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("시험지 자동 배분 · 안전한 미리보기")
+                .setView(scroll)
+                .setPositiveButton("계획 미리보기",null)
+                .setNegativeButton("취소",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(button->{
+            try {
+                LocalDate first=LocalDate.parse(start.getText().toString().trim());
+                LocalDate last=LocalDate.parse(end.getText().toString().trim());
+                int limit=Integer.parseInt(daily.getText().toString().trim());
+                java.util.Set<LocalDate> skips=new java.util.HashSet<>();
+                String absent=skip.getText().toString().trim();
+                if(!absent.isEmpty()) {
+                    for(String day:absent.split(",",-1)) {
+                        LocalDate parsed=LocalDate.parse(day.trim());
+                        if(!skips.add(parsed))
+                            throw new IllegalArgumentException("쉬는 날짜를 중복 입력하지 마세요.");
+                    }
+                }
+                List<StudyPaperSchedule.Paper> left=new ArrayList<>();
+                List<StudyPaperSchedule.Paper> right=new ArrayList<>();
+                for(int i=0;i<names.length;i++){
+                    String[] counts=amounts.get(i).getText().toString().trim().split("/",-1);
+                    if(counts.length!=2)
+                        throw new IllegalArgumentException(names[i]+" 횟수는 3/1 형식으로 입력하세요.");
+                    StudyPaperSchedule.Paper paper=new StudyPaperSchedule.Paper(
+                        names[i],Integer.parseInt(counts[0].trim()),
+                        Integer.parseInt(counts[1].trim()));
+                    if(i<3)left.add(paper);else right.add(paper);
+                }
+                List<StudyPaperSchedule.Lane> lanes=new ArrayList<>();
+                lanes.add(new StudyPaperSchedule.Lane("2단원",left));
+                lanes.add(new StudyPaperSchedule.Lane("3단원",right));
+                StudyPaperSchedule.Preview plan=StudyPaperSchedule.preview(
+                    first,last,limit,skips,
+                    reviewOptions[review.getSelectedItemPosition()],lanes);
+                // Capture the original verified record state at preview time.
+                // Any change before confirmation cancels the entire import.
+                storage.checkedTasksForSync();
+                final String tasksAtReview=storage.rawTasksForSync();
+                final String reviewedProgress=trustedProgressRaw[0];
+                final boolean reviewUsedDevice=filledFromDevice[0];
+                String preview=plan.clipboardText();
+                TextView body=tv(preview,14,TEXT,false);
+                body.setTextIsSelectable(true);
+                ScrollView resultScroll=new ScrollView(this);
+                resultScroll.setPadding(dp(16),dp(10),dp(16),dp(10));
+                resultScroll.addView(body);
+                new AlertDialog.Builder(this)
+                        .setTitle("자동 배분 결과 · "+plan.remainingPapers+"회")
+                        .setView(resultScroll)
+                        .setPositiveButton("내용만 복사",(d,w)->{
+                            try{
+                                android.content.ClipboardManager clipboard=
+                                    (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                                if(clipboard==null)
+                                    throw new IllegalStateException("클립보드를 사용할 수 없습니다.");
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                                        "StudyOne 계획 미리보기",preview));
+                                toast("시험지 일정 미리보기를 복사했습니다. 앱 기록은 변경하지 않았습니다.");
+                            }catch(Exception error){toast("복사 실패: "+error.getMessage());}
+                        })
+                        .setNeutralButton("실제 할 일 등록",(d,w)->{
+                            new AlertDialog.Builder(this)
+                                .setTitle("국어 시험지 숙제 "+plan.remainingPapers+"개 등록")
+                                .setMessage("방금 확인한 날짜별 시험지를 실제 할 일로 새로 추가합니다. "
+                                        +"기존 완료·미완료 숙제는 변경하지 않습니다. 같은 날짜·제목의 기존 항목이 있거나 미리보기 후 일정이 바뀌면 전체 등록을 취소합니다. "
+                                        +"저장 전 원본 백업을 만듭니다. 실행할까요?")
+                                .setPositiveButton("검증 후 전체 추가",(confirm,which)->{
+                                    try {
+                                        if(reviewUsedDevice && !java.util.Objects.equals(
+                                                reviewedProgress,progressStorage.rawProgressForSync()))
+                                            throw new IllegalStateException("진도가 수정됐습니다. 다시 미리보기를 확인하세요.");
+                                        String backup=storage.appendReviewedPaperSchedule(
+                                            tasksAtReview,plan,MainActivity.this);
+                                        toast("시험지 숙제 "+plan.remainingPapers
+                                                +"개를 추가했습니다. 기존 원본 백업: "+backup);
+                                        dialog.dismiss();showTab(3);
+                                    }catch(Exception error){
+                                        new AlertDialog.Builder(this)
+                                            .setTitle("등록 취소 · 기존 데이터 유지")
+                                            .setMessage(error.getMessage())
+                                            .setPositiveButton("확인",null).show();
+                                    }
+                                }).setNegativeButton("취소",null).show();
+                        })
+                        .setNegativeButton("닫기",null).show();
+            } catch(Exception error) {
+                String message=error.getMessage();
+                toast(message==null?"날짜나 회차 입력을 확인해 주세요.":message);
+            }
+        }));
+        dialog.show();
+    }
+
     private View studyCoach() {
         ScrollView scroll=page();
         LinearLayout c=column();
@@ -1733,6 +2008,13 @@ public class MainActivity extends Activity {
         });
         c.addView(generate);
         c.addView(output);
+
+        c.addView(section("시험지·학습지 남은 분량 자동 배분"));
+        Button paperPreview=secondary("국어 인쇄 시험지 18회 계획 미리보기");
+        paperPreview.setOnClickListener(view->showPaperSchedulePreview());
+        c.addView(paperPreview);
+        c.addView(cardText("완료 횟수, 마감일, 쉬는 날을 직접 입력합니다. "
+                +"서버나 OpenAI API를 호출하지 않고 원본 일정·진도도 변경하지 않습니다.",12));
 
         c.addView(section("StudyOne AI 학습 도우미"));
         c.addView(cardText("선택 사항 · OpenAI API 연결 (gpt-4.1-mini)\n"

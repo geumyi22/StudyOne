@@ -99,6 +99,61 @@ class ProposalCoreTests(unittest.TestCase):
                 self.proposals.create(invalid)
         self.assertEqual(self.registry.store(self.a).snapshot()["cursor"], 0)
 
+    def test_duplicate_tasks_inside_one_proposal_are_rejected(self):
+        candidate = draft()
+        duplicate = dict(candidate["tasks"][0], importance=3)
+        candidate["tasks"].append(duplicate)
+        with self.assertRaises(ApiProblem) as caught:
+            self.proposals.create(candidate)
+        self.assertEqual((caught.exception.status, caught.exception.code),
+                         (409, "DUPLICATE_PLAN_TASK"))
+        self.assertEqual(self.proposals.pending()["proposals"], [])
+        self.assertEqual(self.registry.store(self.a).snapshot()["cursor"], 0)
+
+    def test_repeated_ai_plan_cannot_duplicate_existing_homework(self):
+        first = self.proposals.create(draft())
+        self.proposals.approve(first["id"])
+        store = self.registry.store(self.a)
+        before = store.snapshot()
+        repeated = draft(title="두 번째 계획")
+        repeated["tasks"][0]["importance"] = 3
+        duplicate = self.proposals.create(repeated)
+        with self.assertRaises(ApiProblem) as caught:
+            self.proposals.approve(duplicate["id"])
+        self.assertEqual((caught.exception.status, caught.exception.code),
+                         (409, "PLAN_TASK_ALREADY_EXISTS"))
+        self.assertEqual(store.snapshot(), before)
+        self.assertEqual(len(self.proposals.pending()["proposals"]), 1)
+
+    def test_already_completed_homework_cannot_be_readded_by_ai(self):
+        first = self.proposals.create(draft())
+        self.proposals.approve(first["id"])
+        store = self.registry.store(self.a)
+        record = next(r for r in store.snapshot()["records"]
+                      if r["payload"]["subject"] == "과학")
+        finished = dict(record["payload"], completed=True)
+        store.apply({"requestId": str(uuid4()), "mutations": [{
+            "kind": "task", "id": record["id"],
+            "baseRevision": record["revision"],
+            "deleted": False, "payload": finished
+        }]})
+        before = store.snapshot()
+        proposed = self.proposals.create(draft(title="완료된 숙제 재추가 금지"))
+        with self.assertRaises(ApiProblem) as caught:
+            self.proposals.approve(proposed["id"])
+        self.assertEqual(caught.exception.code, "PLAN_TASK_ALREADY_EXISTS")
+        self.assertEqual(store.snapshot(), before)
+
+    def test_same_homework_on_another_date_is_allowed(self):
+        original = self.proposals.create(draft())
+        self.proposals.approve(original["id"])
+        next_date = draft(title="다음 날 반복 숙제")
+        for item in next_date["tasks"]:
+            item["dueDate"] = "2026-10-22" if item["subject"] == "과학" else "2026-10-23"
+        approved = self.proposals.approve(self.proposals.create(next_date)["id"])
+        self.assertEqual(approved["state"], "approved")
+        self.assertEqual(len(self.registry.store(self.a).snapshot()["records"]), 4)
+
     def test_expired_draft_cannot_be_approved(self):
         saved = self.proposals.create(draft())
         with self.registry.store(self.a).connect() as db:
