@@ -48,4 +48,28 @@ enum StudyPaperPlanApproval {
         }
         return proposed
     }
+
+    static func selfTest() -> Bool {
+        do {
+            let first = StudyPaperSchedule.Lane(name: "2단원", papers: [
+                StudyPaperSchedule.Paper(title: "2-1 소단원 평가",
+                                         total: 3, completed: 1)
+            ])
+            let plan = try StudyPaperSchedule.preview(
+                start: "2026-10-27", end: "2026-10-28",
+                dailyLimit: 1, skipDates: [], firstReview: "교재", lanes: [first])
+            let proposed = try prepare(plan, existing: [])
+            guard proposed.count == 2, proposed.allSatisfy({
+                $0.subject == "국어" && $0.type == "숙제 항목" &&
+                !$0.completed && $0.id > 0
+            }) else { return false }
+            do {
+                _ = try prepare(plan, existing: [proposed[0]])
+                return false
+            } catch { }
+            return true
+        } catch {
+            return false
+        }
+    }
 }
