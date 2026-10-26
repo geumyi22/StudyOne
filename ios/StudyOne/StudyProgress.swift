@@ -114,6 +114,28 @@ final class StudyProgressStore: ObservableObject {
         }
     }
 
+    /// Read-only, verified on-disk progress snapshot for individual-paper
+    /// autofill. A stale tab, corrupted file or duplicate ID fails closed.
+    func checkedPaperPreviewItems() throws -> [StudyProgressItem] {
+        if let loadError {
+            throw StudyError.message(loadError)
+        }
+        guard let raw = UserDefaults.standard.data(forKey: storeKey) else {
+            guard items.isEmpty else {
+                throw StudyError.message("기기 진도 원본이 없어 자동 채우기를 중단합니다.")
+            }
+            return []
+        }
+        let saved = try JSONDecoder().decode(StudyProgressEnvelope.self, from: raw)
+        let ids = saved.items.map { $0.id.lowercased() }
+        guard saved.schema == 1, saved.items.count <= limit,
+              Set(ids).count == ids.count,
+              saved.items.allSatisfy(\.valid), saved.items == items else {
+            throw StudyError.message("진도 기록이 다른 화면에서 변경됐거나 손상됐습니다.")
+        }
+        return saved.items
+    }
+
     private func persist(_ entries: [StudyProgressItem]) throws {
         try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
