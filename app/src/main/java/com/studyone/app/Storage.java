@@ -246,6 +246,18 @@ public final class Storage {
                     throw new IllegalArgumentException("계획 항목이 비어 있습니다.");
                 String title="["+slot.lane+"] "+slot.title;
                 String type="숙제 항목",subject="국어";
+                // A daily aggregate ('인쇄 문제 2회') may already cover
+                // these papers. We cannot safely infer it is unrelated.
+                for(Models.StudyTask existing:originals) {
+                    if(existing.dueDate.equals(day.date)&&"국어".equals(existing.subject)
+                            &&(existing.title.contains("인쇄 문제")
+                               ||existing.title.contains("인쇄 시험지")
+                               ||existing.title.contains(slot.title))) {
+                        throw new IllegalStateException(
+                            "같은 날짜에 국어 인쇄/평가 숙제가 이미 있습니다. 중복 여부를 직접 확인하세요: "
+                            +existing.title);
+                    }
+                }
                 if(title.length()>500)
                     throw new IllegalArgumentException("계획 제목이 너무 깁니다.");
                 String identity=paperTaskKey(day.date,type,subject,title);
