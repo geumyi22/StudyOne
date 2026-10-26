@@ -27,6 +27,16 @@ enum StudyPaperPlanApproval {
             }
             for paper in day.papers {
                 let title = "[\(paper.lane)] \(paper.title)"
+                // Do not split a daily aggregate '인쇄 문제 2회' into more
+                // tasks without knowing whether they are already covered.
+                if let overlapping = existing.first(where: {
+                    $0.dueDate == day.date && $0.subject == "국어" &&
+                    ($0.title.contains("인쇄 문제") ||
+                     $0.title.contains("인쇄 시험지") ||
+                     $0.title.contains(paper.title))
+                }) {
+                    throw StudyError.message("같은 날짜에 국어 인쇄/평가 숙제가 있습니다. 중복 확인 필요: \(overlapping.title)")
+                }
                 guard title.count <= 500 else {
                     throw StudyError.message("시험지 숙제 제목이 너무 깁니다.")
                 }
