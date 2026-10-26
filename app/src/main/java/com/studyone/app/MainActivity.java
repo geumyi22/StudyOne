@@ -665,6 +665,11 @@ public class MainActivity extends Activity {
         Button onlinePractice=secondary("+ 6과목 온라인 내신 문제 빠른 추가");
         onlinePractice.setOnClickListener(v->showOnlinePracticeDialog());
         c.addView(onlinePractice);
+        Button paperPreview=secondary("국어 인쇄 시험지 18회 · 남은 분량 자동 배분");
+        paperPreview.setOnClickListener(v->showPaperSchedulePreview());
+        c.addView(paperPreview);
+        c.addView(cardText("날짜·완료 회차를 직접 입력해 분배안을 미리 봅니다. "
+                +"계획 계산과 복사는 로컬에서만 실행되며 기존 숙제·진도는 수정하지 않습니다.",12));
         Button progressExport=secondary("진도 JSON 백업 내보내기");
         progressExport.setOnClickListener(v->{
             android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
@@ -1801,6 +1806,113 @@ public class MainActivity extends Activity {
                 .setPositiveButton("닫기",null).show();
     }
 
+    /**
+     * User-editable 2/3-unit paper schedule PREVIEW only. Data are entered
+     * manually, not inferred from actual completed progress or private files.
+     * The dialog never writes Storage, StudyProgressStorage or network data.
+     */
+    private void showPaperSchedulePreview() {
+        ScrollView scroll=new ScrollView(this);
+        LinearLayout form=column();
+        form.setPadding(dp(20),dp(8),dp(20),dp(10));
+        scroll.addView(form);
+        form.addView(cardText("국어 2·3단원 인쇄 시험지 템플릿입니다. 완료 회차를 수동 입력한 후 "
+                +"계산하세요. 실제 완료 상태나 StudyOne 진도에 자동 반영되지 않습니다.",12));
+        EditText start=input("시작일 · YYYY-MM-DD",LocalDate.now().toString());
+        EditText end=input("마감일 · YYYY-MM-DD",LocalDate.now().plusDays(8).toString());
+        EditText daily=input("하루 최대 시험지 횟수", "2");
+        daily.setInputType(InputType.TYPE_CLASS_NUMBER);
+        form.addView(tv("시작일",13,TEXT,true));form.addView(start);
+        form.addView(tv("마감일",13,TEXT,true));form.addView(end);
+        form.addView(tv("하루 최대 횟수 (1~12)",13,TEXT,true));form.addView(daily);
+        form.addView(tv("개념 복습 시작 · 학습지 또는 교재",13,TEXT,true));
+        Spinner review=new Spinner(this);
+        String[] reviewOptions={"학습지","교재"};
+        ArrayAdapter<String> reviewAdapter=new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item,reviewOptions);
+        review.setAdapter(reviewAdapter);form.addView(review);
+        EditText skip=input("쉬는 날짜 · YYYY-MM-DD, YYYY-MM-DD (선택)","");
+        form.addView(tv("시험지를 배정하지 않을 날짜 (선택)",13,TEXT,true));
+        form.addView(skip);
+        final String[] names={
+                "2-1 소단원 평가","2-2 소단원 평가","2단원 대단원 평가",
+                "3-1 소단원 평가","3-2 소단원 평가","3단원 대단원 평가"};
+        List<EditText> amounts=new ArrayList<>();
+        form.addView(section("시험지별 총 횟수 / 완료 횟수"));
+        for(int i=0;i<names.length;i++){
+            if(i==0)form.addView(tv("2단원",14,BLUE_DARK,true));
+            if(i==3)form.addView(tv("3단원",14,BLUE_DARK,true));
+            form.addView(tv(names[i]+" · 총/완료",13,TEXT,true));
+            EditText count=input("예: 3/1","3/0");
+            count.setSingleLine(true);
+            amounts.add(count);form.addView(count);
+        }
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("시험지 자동 배분 · 읽기 전용")
+                .setView(scroll)
+                .setPositiveButton("계획 미리보기",null)
+                .setNegativeButton("취소",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(button->{
+            try {
+                LocalDate first=LocalDate.parse(start.getText().toString().trim());
+                LocalDate last=LocalDate.parse(end.getText().toString().trim());
+                int limit=Integer.parseInt(daily.getText().toString().trim());
+                java.util.Set<LocalDate> skips=new java.util.HashSet<>();
+                String absent=skip.getText().toString().trim();
+                if(!absent.isEmpty()) {
+                    for(String day:absent.split(",",-1)) {
+                        LocalDate parsed=LocalDate.parse(day.trim());
+                        if(!skips.add(parsed))
+                            throw new IllegalArgumentException("쉬는 날짜를 중복 입력하지 마세요.");
+                    }
+                }
+                List<StudyPaperSchedule.Paper> left=new ArrayList<>();
+                List<StudyPaperSchedule.Paper> right=new ArrayList<>();
+                for(int i=0;i<names.length;i++){
+                    String[] counts=amounts.get(i).getText().toString().trim().split("/",-1);
+                    if(counts.length!=2)
+                        throw new IllegalArgumentException(names[i]+" 횟수는 3/1 형식으로 입력하세요.");
+                    StudyPaperSchedule.Paper paper=new StudyPaperSchedule.Paper(
+                        names[i],Integer.parseInt(counts[0].trim()),
+                        Integer.parseInt(counts[1].trim()));
+                    if(i<3)left.add(paper);else right.add(paper);
+                }
+                List<StudyPaperSchedule.Lane> lanes=new ArrayList<>();
+                lanes.add(new StudyPaperSchedule.Lane("2단원",left));
+                lanes.add(new StudyPaperSchedule.Lane("3단원",right));
+                StudyPaperSchedule.Preview plan=StudyPaperSchedule.preview(
+                    first,last,limit,skips,
+                    reviewOptions[review.getSelectedItemPosition()],lanes);
+                String preview=plan.clipboardText();
+                TextView body=tv(preview,14,TEXT,false);
+                body.setTextIsSelectable(true);
+                ScrollView resultScroll=new ScrollView(this);
+                resultScroll.setPadding(dp(16),dp(10),dp(16),dp(10));
+                resultScroll.addView(body);
+                new AlertDialog.Builder(this)
+                        .setTitle("자동 배분 결과 · "+plan.remainingPapers+"회")
+                        .setView(resultScroll)
+                        .setPositiveButton("내용만 복사",(d,w)->{
+                            try{
+                                android.content.ClipboardManager clipboard=
+                                    (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                                if(clipboard==null)
+                                    throw new IllegalStateException("클립보드를 사용할 수 없습니다.");
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                                        "StudyOne 계획 미리보기",preview));
+                                toast("시험지 일정 미리보기를 복사했습니다. 앱 기록은 변경하지 않았습니다.");
+                            }catch(Exception error){toast("복사 실패: "+error.getMessage());}
+                        })
+                        .setNegativeButton("닫기",null).show();
+            } catch(Exception error) {
+                String message=error.getMessage();
+                toast(message==null?"날짜나 회차 입력을 확인해 주세요.":message);
+            }
+        }));
+        dialog.show();
+    }
+
     private View studyCoach() {
         ScrollView scroll=page();
         LinearLayout c=column();
@@ -1839,6 +1951,13 @@ public class MainActivity extends Activity {
         });
         c.addView(generate);
         c.addView(output);
+
+        c.addView(section("시험지·학습지 남은 분량 자동 배분"));
+        Button paperPreview=secondary("국어 인쇄 시험지 18회 계획 미리보기");
+        paperPreview.setOnClickListener(view->showPaperSchedulePreview());
+        c.addView(paperPreview);
+        c.addView(cardText("완료 횟수, 마감일, 쉬는 날을 직접 입력합니다. "
+                +"서버나 OpenAI API를 호출하지 않고 원본 일정·진도도 변경하지 않습니다.",12));
 
         c.addView(section("StudyOne AI 학습 도우미"));
         c.addView(cardText("선택 사항 · OpenAI API 연결 (gpt-4.1-mini)\n"
