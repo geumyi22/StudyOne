@@ -41,6 +41,9 @@ enum StudyFourStoreRuntimeE2E {
         let output = FileManager.default.temporaryDirectory.appendingPathComponent(report)
         var stage = "initialize"
         do {
+            stage = "offline_paper_schedule_self_test"
+            try require(StudyPaperSchedule.selfTest(),
+                        "read-only study paper schedule validation failed")
             // The simulator must have no preexisting study records. Refuse to
             // change any nonempty app data, even on this debug-only path.
             let tasks = StudyOneStore()
