@@ -216,6 +216,62 @@ public final class Storage {
     }
 
     /**
+     * Add an explicitly approved local paper schedule in one storage commit.
+     * Revalidate the exact pre-preview snapshot and semantic duplicate keys
+     * UNDER the same synchronized lock as the backup/append implementation.
+     * No existing task (including completed ones) is ever overwritten.
+     */
+    public synchronized String appendReviewedPaperSchedule(
+            String expectedOriginal, StudyPaperSchedule.Preview preview, Context context)
+            throws Exception {
+        if(preview==null||preview.days.isEmpty())
+            throw new IllegalArgumentException("저장할 시험지 일정이 없습니다.");
+        if(preview.remainingPapers>240)
+            throw new IllegalArgumentException("시험지 일정 수가 너무 많습니다.");
+        List<Models.StudyTask> originals=checkedTasksForSync();
+        if(!rawTasksForSync().equals(expectedOriginal))
+            throw new IllegalStateException("계획 미리보기 후 일정이 변경됐습니다. 다시 확인하세요.");
+        java.util.Set<String> identities=new java.util.HashSet<>();
+        java.util.Set<Long> ids=new java.util.HashSet<>();
+        for(Models.StudyTask item:originals){
+            ids.add(item.id);
+            identities.add(paperTaskKey(item.dueDate,item.type,item.subject,item.title));
+        }
+        List<Models.StudyTask> additions=new ArrayList<>();
+        for(StudyPaperSchedule.Day day:preview.days) {
+            if(day==null||day.date==null||day.papers==null)
+                throw new IllegalArgumentException("계획에 유효하지 않은 날짜가 있습니다.");
+            for(StudyPaperSchedule.Slot slot:day.papers) {
+                if(slot==null||slot.lane==null||slot.title==null)
+                    throw new IllegalArgumentException("계획 항목이 비어 있습니다.");
+                String title="["+slot.lane+"] "+slot.title;
+                String type="숙제 항목",subject="국어";
+                if(title.length()>500)
+                    throw new IllegalArgumentException("계획 제목이 너무 깁니다.");
+                String identity=paperTaskKey(day.date,type,subject,title);
+                if(!identities.add(identity))
+                    throw new IllegalStateException("이미 등록되었거나 완료된 시험지 숙제가 있습니다: "+title
+                            +" / "+day.date);
+                long id;
+                do {id=java.util.concurrent.ThreadLocalRandom.current()
+                            .nextLong(1,Long.MAX_VALUE);} while(!ids.add(id));
+                additions.add(new Models.StudyTask(id,type,subject,title,day.date,2,false));
+            }
+        }
+        if(additions.size()!=preview.remainingPapers)
+            throw new IllegalArgumentException("미리보기와 저장 예정 시험지 수가 다릅니다.");
+        // appendNewTasksForSync performs another exact-snapshot check, writes
+        // recovery bytes and commits all additions together, or adds none.
+        return appendNewTasksForSync(expectedOriginal,additions,context);
+    }
+
+    private static String paperTaskKey(LocalDate date,String role,String subject,String title) {
+        return date+"|"+role.trim().replaceAll("\\s+"," ")+
+                "|"+subject.trim().replaceAll("\\s+"," ")+
+                "|"+title.trim().replaceAll("\\s+"," ");
+    }
+
+    /**
      * Import-only fail-closed synchronous task replacement; never used to prepare
      * a backup from tolerant tasks(). Preserve all IDs and reject null/duplicates.
      */
