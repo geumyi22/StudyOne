@@ -6,6 +6,7 @@ on:
       - 'app/src/main/java/com/studyone/app/StudyCategories.java'
       - 'app/src/main/java/com/studyone/app/StudyProgress*.java'
       - 'app/src/main/java/com/studyone/app/StudyPaperSchedule.java'
+      - 'app/src/main/java/com/studyone/app/StudyPaperProgressLink.java'
       - 'app/src/main/java/com/studyone/app/BackupIo.java'
       - 'app/src/main/java/com/studyone/app/AppUpdates.java'
       - 'app/src/main/java/com/studyone/app/StudyUpdateChannels.java'
@@ -63,6 +64,15 @@ jobs:
             app/src/main/java/com/studyone/app/StudyPaperSchedule.java \
             scripts/tests/StudyPaperScheduleSmoke.java
           java -cp /tmp/studyone-paper-schedule-classes StudyPaperScheduleSmoke
+      - name: Compile and verify exact 18-paper progress autofill (no guessing)
+        run: |
+          mkdir -p /tmp/studyone-paper-progress-classes
+          javac -encoding UTF-8 -d /tmp/studyone-paper-progress-classes \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            app/src/main/java/com/studyone/app/StudyPaperSchedule.java \
+            app/src/main/java/com/studyone/app/StudyPaperProgressLink.java \
+            scripts/tests/StudyPaperProgressLinkSmoke.java
+          java -cp /tmp/studyone-paper-progress-classes StudyPaperProgressLinkSmoke
       - name: Compile and exercise the standalone Java progress checklist formatter
         run: |
           mkdir -p /tmp/studyone-progress-checklist-classes
