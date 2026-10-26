@@ -1847,17 +1847,24 @@ public class MainActivity extends Activity {
             count.setSingleLine(true);
             amounts.add(count);form.addView(count);
         }
+        final String[] trustedProgressRaw={null};
+        final boolean[] filledFromDevice={false};
         Button fromDevice=secondary("기기에 기록된 시험지 18개 회차로 자동 채우기");
         fromDevice.setOnClickListener(v->{
             try {
+                String original=progressStorage.rawProgressForSync();
                 StudyPaperProgressLink.Snapshot snapshot=
                     StudyPaperProgressLink.checked(progressStorage.list());
+                if(!java.util.Objects.equals(original,progressStorage.rawProgressForSync()))
+                    throw new IllegalStateException("진도 읽는 동안 원본이 변경됐습니다. 다시 확인하세요.");
                 for(int i=0;i<names.length;i++) {
                     StudyPaperSchedule.Paper paper=i<3
                         ?snapshot.lanes.get(0).papers.get(i)
                         :snapshot.lanes.get(1).papers.get(i-3);
                     amounts.get(i).setText(paper.total+"/"+paper.completed);
                 }
+                trustedProgressRaw[0]=original;
+                filledFromDevice[0]=true;
                 toast("개별 진도 18개를 검증해 완료 "+snapshot.completed+"회 불러왔습니다.");
             }catch(Exception error){
                 new AlertDialog.Builder(this).setTitle("자동 채우기 불가 · 수동 입력 유지")
@@ -1908,6 +1915,8 @@ public class MainActivity extends Activity {
                 // Any change before confirmation cancels the entire import.
                 storage.checkedTasksForSync();
                 final String tasksAtReview=storage.rawTasksForSync();
+                final String reviewedProgress=trustedProgressRaw[0];
+                final boolean reviewUsedDevice=filledFromDevice[0];
                 String preview=plan.clipboardText();
                 TextView body=tv(preview,14,TEXT,false);
                 body.setTextIsSelectable(true);
@@ -1936,6 +1945,9 @@ public class MainActivity extends Activity {
                                         +"저장 전 원본 백업을 만듭니다. 실행할까요?")
                                 .setPositiveButton("검증 후 전체 추가",(confirm,which)->{
                                     try {
+                                        if(reviewUsedDevice && !java.util.Objects.equals(
+                                                reviewedProgress,progressStorage.rawProgressForSync()))
+                                            throw new IllegalStateException("진도가 수정됐습니다. 다시 미리보기를 확인하세요.");
                                         String backup=storage.appendReviewedPaperSchedule(
                                             tasksAtReview,plan,MainActivity.this);
                                         toast("시험지 숙제 "+plan.remainingPapers
