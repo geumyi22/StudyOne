@@ -1817,7 +1817,7 @@ public class MainActivity extends Activity {
         form.setPadding(dp(20),dp(8),dp(20),dp(10));
         scroll.addView(form);
         form.addView(cardText("국어 2·3단원 인쇄 시험지 템플릿입니다. 완료 회차를 수동 입력한 후 "
-                +"계산하세요. 실제 완료 상태나 StudyOne 진도에 자동 반영되지 않습니다.",12));
+                +"계산하세요. 자동 미리보기는 진도·일정을 수정하지 않습니다. 결과 확인 후 별도 승인하면 할 일만 추가할 수 있습니다.",12));
         EditText start=input("시작일 · YYYY-MM-DD",LocalDate.now().toString());
         EditText end=input("마감일 · YYYY-MM-DD",LocalDate.now().plusDays(8).toString());
         EditText daily=input("하루 최대 시험지 횟수", "2");
@@ -1847,8 +1847,28 @@ public class MainActivity extends Activity {
             count.setSingleLine(true);
             amounts.add(count);form.addView(count);
         }
+        Button fromDevice=secondary("기기에 기록된 시험지 18개 회차로 자동 채우기");
+        fromDevice.setOnClickListener(v->{
+            try {
+                StudyPaperProgressLink.Snapshot snapshot=
+                    StudyPaperProgressLink.checked(progressStorage.list());
+                for(int i=0;i<names.length;i++) {
+                    StudyPaperSchedule.Paper paper=i<3
+                        ?snapshot.lanes.get(0).papers.get(i)
+                        :snapshot.lanes.get(1).papers.get(i-3);
+                    amounts.get(i).setText(paper.total+"/"+paper.completed);
+                }
+                toast("개별 진도 18개를 검증해 완료 "+snapshot.completed+"회 불러왔습니다.");
+            }catch(Exception error){
+                new AlertDialog.Builder(this).setTitle("자동 채우기 불가 · 수동 입력 유지")
+                    .setMessage(error.getMessage()==null?"진도 기록을 확인할 수 없습니다.":error.getMessage())
+                    .setPositiveButton("확인",null).show();
+            }
+        });
+        form.addView(fromDevice);
+        form.addView(cardText("자동 입력은 국어 인쇄 시험지 18회 교재의 개별 회차 18개가 진도에 기록된 경우에만 허용합니다. 합계 4/18 같은 기록만으로는 완료 항목을 추측하지 않습니다.",12));
         AlertDialog dialog=new AlertDialog.Builder(this)
-                .setTitle("시험지 자동 배분 · 읽기 전용")
+                .setTitle("시험지 자동 배분 · 안전한 미리보기")
                 .setView(scroll)
                 .setPositiveButton("계획 미리보기",null)
                 .setNegativeButton("취소",null).create();
@@ -1884,6 +1904,10 @@ public class MainActivity extends Activity {
                 StudyPaperSchedule.Preview plan=StudyPaperSchedule.preview(
                     first,last,limit,skips,
                     reviewOptions[review.getSelectedItemPosition()],lanes);
+                // Capture the original verified record state at preview time.
+                // Any change before confirmation cancels the entire import.
+                storage.checkedTasksForSync();
+                final String tasksAtReview=storage.rawTasksForSync();
                 String preview=plan.clipboardText();
                 TextView body=tv(preview,14,TEXT,false);
                 body.setTextIsSelectable(true);
@@ -1903,6 +1927,27 @@ public class MainActivity extends Activity {
                                         "StudyOne 계획 미리보기",preview));
                                 toast("시험지 일정 미리보기를 복사했습니다. 앱 기록은 변경하지 않았습니다.");
                             }catch(Exception error){toast("복사 실패: "+error.getMessage());}
+                        })
+                        .setNeutralButton("실제 할 일 등록",(d,w)->{
+                            new AlertDialog.Builder(this)
+                                .setTitle("국어 시험지 숙제 "+plan.remainingPapers+"개 등록")
+                                .setMessage("방금 확인한 날짜별 시험지를 실제 할 일로 새로 추가합니다. "
+                                        +"기존 완료·미완료 숙제는 변경하지 않습니다. 같은 날짜·제목의 기존 항목이 있거나 미리보기 후 일정이 바뀌면 전체 등록을 취소합니다. "
+                                        +"저장 전 원본 백업을 만듭니다. 실행할까요?")
+                                .setPositiveButton("검증 후 전체 추가",(confirm,which)->{
+                                    try {
+                                        String backup=storage.appendReviewedPaperSchedule(
+                                            tasksAtReview,plan,MainActivity.this);
+                                        toast("시험지 숙제 "+plan.remainingPapers
+                                                +"개를 추가했습니다. 기존 원본 백업: "+backup);
+                                        dialog.dismiss();showTab(3);
+                                    }catch(Exception error){
+                                        new AlertDialog.Builder(this)
+                                            .setTitle("등록 취소 · 기존 데이터 유지")
+                                            .setMessage(error.getMessage())
+                                            .setPositiveButton("확인",null).show();
+                                    }
+                                }).setNegativeButton("취소",null).show();
                         })
                         .setNegativeButton("닫기",null).show();
             } catch(Exception error) {
