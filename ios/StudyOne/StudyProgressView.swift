@@ -253,7 +253,7 @@ struct StudyProgressView: View {
                 }
             }
             .sheet(isPresented: $showingPaperSchedule) {
-                StudyPaperScheduleView()
+                StudyPaperScheduleView(progress: progress)
             }
             .sheet(isPresented: $showingEditor) {
                 StudyProgressEditor(existing: editing) { subject, material, unit, status, scope in
