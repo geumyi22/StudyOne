@@ -166,8 +166,11 @@ public final class StudySyncClient {
         if(session.getInt("schema")!=1 ||
                 !canonicalUuid(session.getString("accountId")) ||
                 !canonicalUuid(session.getString("deviceId")) ||
+                session.getLong("serverTime")<0 ||
                 session.getLong("expiresAt")<=session.getLong("serverTime") ||
-                !"device".equals(session.getString("audience")))
+                !"device".equals(session.getString("audience")) ||
+                !("read".equals(session.getString("scope")) ||
+                  "read-write".equals(session.getString("scope"))))
             throw new IllegalStateException("계정 인증 응답이 올바르지 않습니다.");
         return session;
     }
