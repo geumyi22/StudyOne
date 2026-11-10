@@ -140,8 +140,17 @@ final class StudyTaskDetailStore: ObservableObject {
     }
 
     private func persist(_ records: [Int64: StudyTaskDetail]) throws {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "상세 저장소를 읽지 못했습니다.")
+        }
+        // Refuse a stale view's write after another view/restore changed disk.
+        if let raw = try currentData() {
+            guard try Self.parseBackup(raw) == items else {
+                throw StudyError.message("학습 상세가 다른 화면에서 변경됐습니다. 다시 열어주세요.")
+            }
+        } else if !items.isEmpty {
+            throw StudyError.message("학습 상세 원본을 찾지 못해 덮어쓰기를 차단했습니다.")
         }
         let bytes = try encode(records)
         let manager = FileManager.default
@@ -184,9 +193,20 @@ final class StudyTaskDetailStore: ObservableObject {
         return path
     }
 
+    /// Reload exact recovered detail data into the active screen after rollback.
+    func reloadAfterFourStoreRecovery() throws {
+        if let raw = try currentData() {
+            items = try Self.parseBackup(raw)
+        } else {
+            items = [:]
+        }
+        loadError = nil
+    }
+
     /// Explicit replace only after confirmation, original-byte backup, and stale-read check.
     @discardableResult
     func importBackup(_ data: Data, expectedOriginal: Data?) throws -> URL {
+        try StudyFourStoreImport.requireSafeWrite()
         guard loadError == nil else {
             throw StudyError.message(loadError ?? "상세 저장소 오류")
         }

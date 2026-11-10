@@ -8,9 +8,11 @@ from __future__ import annotations
 
 try:
     from .studyone_proposals import ProposalStore
+    from .studyone_study_schedule import preview as preview_study_schedule
     from .studyone_sync import ApiProblem, json_bytes
 except ImportError:
     from studyone_proposals import ProposalStore
+    from studyone_study_schedule import preview as preview_study_schedule
     from studyone_sync import ApiProblem, json_bytes
 
 PROTOCOL = "2025-06-18"
@@ -51,6 +53,52 @@ def definitions():
                 "StudyOne app. This tool does not approve them."
             ),
             "inputSchema": dict(base, properties={}, required=[])
+        },
+        {
+            "name": "studyone_preview_paper_schedule",
+            "description": (
+                "READ-ONLY preview of remaining printed exams/worksheets across "
+                "calendar days with a daily cap, unit lanes and alternating "
+                "worksheet/textbook concept review. Never edits a user's "
+                "tasks or progress. Preview does not imply automatic approval."
+            ),
+            "inputSchema": {
+                "type": "object", "additionalProperties": False,
+                "required": ["startDate", "endDate", "lanes"],
+                "properties": {
+                    "startDate": {"type": "string", "format": "date"},
+                    "endDate": {"type": "string", "format": "date"},
+                    "maxPerDay": {"type": "integer", "minimum": 1, "maximum": 12},
+                    "firstReview": {"type": "string", "enum": ["학습지", "교재"]},
+                    "skipDates": {"type": "array", "maxItems": 120,
+                                  "items": {"type": "string", "format": "date"}},
+                    "lanes": {
+                        "type": "array", "minItems": 1, "maxItems": 8,
+                        "items": {
+                            "type": "object", "additionalProperties": False,
+                            "required": ["label", "items"],
+                            "properties": {
+                                "label": {"type": "string", "minLength": 1, "maxLength": 80},
+                                "items": {
+                                    "type": "array", "minItems": 1, "maxItems": 20,
+                                    "items": {
+                                        "type": "object", "additionalProperties": False,
+                                        "required": ["title", "total"],
+                                        "properties": {
+                                            "title": {"type": "string", "minLength": 1,
+                                                      "maxLength": 80},
+                                            "total": {"type": "integer", "minimum": 1,
+                                                      "maximum": 60},
+                                            "completed": {"type": "integer", "minimum": 0,
+                                                          "maximum": 60}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         },
         {
             "name": "studyone_propose_study_plan",
@@ -120,6 +168,8 @@ def call(registry, account_id, name, arguments):
         if arguments:
             raise ApiProblem(400, "INVALID_TOOL_ARGUMENTS")
         return ProposalStore(store).pending()
+    if name == "studyone_preview_paper_schedule":
+        return preview_study_schedule(arguments)
     if name == "studyone_propose_study_plan":
         if set(arguments) != {"requestId", "title", "tasks", "baseCursor"}:
             raise ApiProblem(400, "PLAN_CURSOR_REQUIRED")

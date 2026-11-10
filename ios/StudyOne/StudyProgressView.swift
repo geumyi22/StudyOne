@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct StudyProgressView: View {
     @StateObject private var progress = StudyProgressStore()
     @State private var filter = "전체"
+    @State private var showingPaperSchedule = false
     @State private var showingEditor = false
     @State private var editing: StudyProgressItem?
     @State private var deleting: StudyProgressItem?
@@ -110,6 +111,16 @@ struct StudyProgressView: View {
                     }
                     .pickerStyle(.menu)
                     Text("교재·소단원·모의고사·학습지·전체 오답 복습을 별도로 기록할 수 있습니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("시험지·학습지 분량 자동 배분") {
+                    Button {
+                        showingPaperSchedule = true
+                    } label: {
+                        Label("국어 18회 시험지 일정 미리보기",
+                              systemImage: "calendar.badge.clock")
+                    }
+                    Text("시작일·마감일·회차별 완료 횟수를 직접 입력하고 날짜별 계획을 복사합니다. 오프라인 읽기 전용이며 현재 진도 및 숙제를 수정하지 않습니다.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("온라인 내신 문제") {
@@ -240,6 +251,9 @@ struct StudyProgressView: View {
                     } label: { Image(systemName: "plus") }
                         .disabled(progress.loadError != nil)
                 }
+            }
+            .sheet(isPresented: $showingPaperSchedule) {
+                StudyPaperScheduleView(progress: progress)
             }
             .sheet(isPresented: $showingEditor) {
                 StudyProgressEditor(existing: editing) { subject, material, unit, status, scope in

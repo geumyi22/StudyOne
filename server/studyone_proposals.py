@@ -25,6 +25,12 @@ EXPIRES_AFTER = 7 * 24 * 3600
 TASK_KEYS = frozenset(("type", "subject", "title", "dueDate", "importance"))
 
 
+def task_identity(task):
+    """A daily task's semantic identity; priority changes must not duplicate it."""
+    return tuple(" ".join(task[field].split()) for field in
+                 ("dueDate", "type", "subject", "title"))
+
+
 def canonical_uuid(value):
     from uuid import UUID
     if not isinstance(value, str):
@@ -94,12 +100,17 @@ class ProposalStore:
             raise ApiProblem(400, "INVALID_PROPOSAL")
         if not isinstance(tasks, list) or not 1 <= len(tasks) <= MAX_PLAN_TASKS:
             raise ApiProblem(400, "INVALID_PROPOSAL_COUNT")
+        seen_tasks = set()
         for task in tasks:
             if not isinstance(task, dict) or set(task) != TASK_KEYS:
                 raise ApiProblem(400, "INVALID_PROPOSAL_TASK")
             sample = dict(task)
             sample.update(id=1, completed=False)
             validate_record("task", "1", sample)
+            identity = task_identity(task)
+            if identity in seen_tasks:
+                raise ApiProblem(409, "DUPLICATE_PLAN_TASK")
+            seen_tasks.add(identity)
         return key, title.strip(), tasks, expected_cursor
 
     def create(self, request):
@@ -186,9 +197,21 @@ class ProposalStore:
                 head = db.execute("SELECT COALESCE(MAX(seq),0) FROM change_log").fetchone()[0]
                 if head != row["base_cursor"]:
                     raise ApiProblem(409, "STALE_PLAN_CURSOR")
+            mutations = json.loads(row["mutations_json"])
+            # Check existing user tasks and pending mutations under the SAME
+            # write lock as approval. A repeated AI plan must not silently
+            # add a duplicate daily task or resurrect a completed task.
+            incoming = {task_identity(m["payload"]) for m in mutations}
+            current = db.execute("""
+                SELECT payload FROM records
+                WHERE kind='task' AND deleted=0
+            """).fetchall()
+            existing = {task_identity(json.loads(r["payload"])) for r in current}
+            if incoming & existing:
+                raise ApiProblem(409, "PLAN_TASK_ALREADY_EXISTS")
             body = {
                 "requestId": proposal_id,
-                "mutations": json.loads(row["mutations_json"])
+                "mutations": mutations
             }
             result = self.store.apply(body, connection=db)
             changed = db.execute("""

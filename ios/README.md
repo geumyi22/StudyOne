@@ -6,6 +6,12 @@ Android와 별도의 **네이티브 SwiftUI iOS 16+** 포트입니다. 패키지
 
 제한: Android의 홈 위젯·로컬 알림·APK 업데이터는 아직 구현하지 않았습니다. iOS 설치 데이터는 Android와 자동 동기화되지 않습니다. iOS API 실사용/실기기 설치는 CI에서 검증하지 않았습니다. App Store 배포 또는 Apple 서명은 포함하지 않습니다.
 
+## 차기 4.0.0 개발 브랜치 기능 (현재 공개 버전에 없음)
+
+[통합 Draft PR #60](https://github.com/geumyi22/StudyOne/pull/60)에는 기존 **4종 통합 JSON 내보내기**에 더해 사용자 승인형 **일정/진도/학습 상세/오답 동시 가져오기**가 구현 중입니다. 섹션 체크섬 검증, 원본 바이트 복구 기록, 중단 후 앱 재실행 복구와 iOS Simulator 합성 장애 주입 테스트를 포함합니다.
+
+이 코드는 공개 iOS Beta.2 IPA에 반영되지 않았습니다. **최종 CI·실기기·4종 안전 복구 검증 전까지 설치 또는 실제 사용자 데이터 이전을 권장하지 않습니다.** ChatGPT와 자동 동기화되는 기능도 아닙니다. [상세 기록](../docs/IMPLEMENTATION-V4-IOS-FOURSTORE-RESTORE.md).
+
 ## macOS 빌드
 
 ```sh

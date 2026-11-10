@@ -26,6 +26,11 @@ struct SyncExperimentView: View {
     @State private var queueAccount = ""
     @State private var queueMode = ""
     @State private var showQueueConfirmation = false
+    @State private var reviewedKind = "task"
+    @State private var reviewedId = ""
+    @State private var approvedChange: StudySyncClient.ReviewedChange?
+    @State private var approvedAccount = ""
+    @State private var showReviewedApproval = false
 
     private func candidates(snapshot: StudySyncClient.Snapshot) throws
             -> [StudySyncClient.Mutation] {
@@ -39,6 +44,38 @@ struct SyncExperimentView: View {
         return try StudySyncClient.newOnly(
             tasks: tasks, progress: progress.items, snapshot: snapshot
         )
+    }
+
+    private func reviewRemoteMutation(deleted: Bool) {
+        guard !busy else { return }
+        busy = true
+        status = "계정·서버의 기존 ID를 비교하고 있습니다…"
+        Task {
+            defer { busy = false }
+            do {
+                let session = try await StudySyncClient.authenticatedSession(
+                    token: token, address: serverAddress)
+                guard session.audience == "device", session.scope == "read-write" else {
+                    throw StudyError.message("읽기·쓰기 권한의 HTTPS 기기 토큰이 필요합니다.")
+                }
+                let local = try tasksStore.checkedTasksForSync()
+                let progress = StudyProgressStore()
+                if let issue = progress.loadError { throw StudyError.message(issue) }
+                let review = try await StudySyncClient.prepareReviewedChange(
+                    token: token, address: serverAddress,
+                    localTasks: local, localProgress: progress.items,
+                    kind: reviewedKind, id: reviewedId.trimmingCharacters(in: .whitespacesAndNewlines),
+                    deleted: deleted)
+                approvedChange = review
+                approvedAccount = session.accountId
+                status = "원격: \(review.remoteSummary)\n기기: \(review.localSummary)\n"
+                    + "서버 revision \(review.baseRevision). 변경 전 복구본을 저장하고 승인받습니다."
+                showReviewedApproval = true
+            } catch {
+                approvedChange = nil
+                status = "서버 ID 변경을 준비하지 못했습니다: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func prepareIncoming(tasks: Bool) {
@@ -251,6 +288,31 @@ struct SyncExperimentView: View {
                 .disabled(busy || token.count < 32)
             }
 
+            Section("기존 ID 서버 수정·삭제 · 건별 승인") {
+                Picker("대상 종류", selection: $reviewedKind) {
+                    Text("일정").tag("task")
+                    Text("진도").tag("progress")
+                }
+                .pickerStyle(.segmented)
+                TextField("정확한 일정 ID 또는 진도 UUID", text: $reviewedId)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("HTTPS 계정 서버의 기존 ID 하나만 선택합니다. 로컬 기록과 서버 값을 비교하고 승인하기 전까지 서버를 수정하지 않습니다. 삭제는 기기에 같은 ID가 없는 경우에만 가능하며 기존 원격 값은 보호된 복구 파일로 저장합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button {
+                    reviewRemoteMutation(deleted: false)
+                } label: {
+                    Label("현재 기기 내용으로 기존 서버 ID 수정 · 확인", systemImage: "square.and.pencil")
+                }
+                .disabled(busy || token.count < 32 || reviewedId.isEmpty)
+                Button(role: .destructive) {
+                    reviewRemoteMutation(deleted: true)
+                } label: {
+                    Label("선택한 서버 ID 삭제 · 별도 확인", systemImage: "trash")
+                }
+                .disabled(busy || token.count < 32 || reviewedId.isEmpty)
+            }
+
             Section("오프라인 신규 학습 기록 대기열") {
                 TextField("대상 계정 UUID (v2/session accountId)", text: $queueAccount)
                     .textInputAutocapitalization(.never)
@@ -291,7 +353,7 @@ struct SyncExperimentView: View {
                     Label("첫 대기 요청 폐기 · 별도 승인", systemImage: "trash")
                 }
                 .disabled(busy)
-                Text("기존 서버 ID 변경·삭제는 지원하지 않습니다. 기록이 변경됐거나 계정이 다르면 대기열을 보존하고 전송을 중단합니다.")
+                Text("이 대기열은 신규 기록 전용입니다. 기존 서버 ID의 변경·삭제는 위의 별도 건별 검토·승인 메뉴에서만 수행합니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -376,6 +438,62 @@ struct SyncExperimentView: View {
         }
         .navigationTitle("로컬 동기화 실험")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            approvedChange?.deleted == true
+                ? "선택한 기존 서버 기록을 삭제하시겠습니까?"
+                : "선택한 기존 서버 기록을 수정하시겠습니까?",
+            isPresented: $showReviewedApproval, titleVisibility: .visible
+        ) {
+            Button("HTTPS 계정·기록 재검증 후 " +
+                   (approvedChange?.deleted == true ? "서버 삭제" : "서버 수정"),
+                   role: approvedChange?.deleted == true ? .destructive : nil) {
+                guard let first = approvedChange else { return }
+                busy = true
+                Task {
+                    defer {
+                        busy = false
+                        approvedChange = nil
+                    }
+                    do {
+                        let session = try await StudySyncClient.authenticatedSession(
+                            token: token, address: serverAddress)
+                        guard session.accountId == approvedAccount,
+                              session.audience == "device",
+                              session.scope == "read-write" else {
+                            throw StudyError.message("승인 후 계정 또는 쓰기 권한이 변경됐습니다.")
+                        }
+                        let local = try tasksStore.checkedTasksForSync()
+                        let progress = StudyProgressStore()
+                        if let issue = progress.loadError {
+                            throw StudyError.message(issue)
+                        }
+                        let next = try await StudySyncClient.prepareReviewedChange(
+                            token: token, address: serverAddress,
+                            localTasks: local, localProgress: progress.items,
+                            kind: first.kind, id: first.id, deleted: first.deleted)
+                        guard try next.sameApprovedMutation(as: first) else {
+                            throw StudyError.message("승인 중 서버·기기 기록이 변경됐습니다.")
+                        }
+                        let backup = try StudySyncClient.saveReviewedRecovery(
+                            next, session: session, endpoint: serverAddress)
+                        try await StudySyncClient.uploadReviewedChange(
+                            token: token, address: serverAddress, reviewed: next)
+                        status = "기존 ID \(first.id) 서버 "
+                            + (first.deleted ? "삭제" : "수정")
+                            + " 확인 · 복구 파일 \(backup)\n기기 원본은 변경하지 않았습니다."
+                    } catch {
+                        status = "서버 변경 실패 또는 응답 미확인. 다시 시도하기 전에 서버를 조회하세요: "
+                            + error.localizedDescription
+                    }
+                }
+            }
+            Button("취소", role: .cancel) { approvedChange = nil }
+        } message: {
+            Text("계정 \(approvedAccount) · "
+                 + (approvedChange?.remoteSummary ?? "")
+                 + " → " + (approvedChange?.localSummary ?? "")
+                 + ". 승인 후 로컬·원격 값을 다시 확인하고 기존 원격 JSON을 복구 폴더에 보존합니다.")
+        }
         .confirmationDialog(
             queueMode == "save" ? "학습 기록을 기기에 보관하시겠습니까?"
             : queueMode == "send" ? "첫 대기 요청을 서버에 전송하시겠습니까?"

@@ -159,7 +159,8 @@ class HttpsIntegrationTests(unittest.TestCase):
         rpc = {"jsonrpc": "2.0", "id": 101, "method": "tools/list"}
         status, returned, headers = self.request(token, "POST", "/mcp", rpc)
         self.assertEqual(status, 200)
-        self.assertEqual(len(returned["result"]["tools"]), 4)
+        self.assertEqual(len(returned["result"]["tools"]), 5)
+        self.assertIn("studyone_preview_paper_schedule", [t["name"] for t in returned["result"]["tools"]])
         self.assertEqual(headers.get("Cache-Control"), "no-store")
         status, denied, _ = self.request(token, "GET", "/v2/snapshot")
         self.assertEqual((status, denied["error"]),

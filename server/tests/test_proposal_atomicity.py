@@ -63,8 +63,13 @@ class AtomicApprovalTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()["cursor"], 2)
 
     def test_approve_and_reject_cannot_both_win(self):
-        for _ in range(14):
-            pending = self.plans.create(proposal())
+        for attempt in range(14):
+            # Each race has a distinct synthetic daily task. Otherwise the
+            # new cross-plan duplicate guard correctly blocks later rounds.
+            fixture = proposal()
+            for task in fixture["tasks"]:
+                task["title"] += f" · round {attempt}"
+            pending = self.plans.create(fixture)
             barrier = Barrier(2)
             def act(which):
                 barrier.wait(timeout=5)

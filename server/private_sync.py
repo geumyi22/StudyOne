@@ -376,6 +376,7 @@ def handler_for(registry: Registry, *, tls_enabled=True, oauth=None):
                     response = dispatch(registry, account, request)
                     if (oauth_scopes is not None and
                             "studyone.propose" not in oauth_scopes and
+                            isinstance(request, dict) and
                             isinstance(response, dict) and
                             request.get("method") == "tools/list" and
                             isinstance(response.get("result"), dict)):

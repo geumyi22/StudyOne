@@ -17,6 +17,11 @@ enum StudySyncRuntimeE2E {
         let resultURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         var stage = "begin"
         do {
+            // Real simulator process also checks Phase33 reviewed mutation
+            // JSON serialization, including mandatory payload:null tombstones.
+            guard StudySyncClient.selfTest() else {
+                throw StudyError.message("실제 iOS 앱 내부 동기화/삭제 JSON 자체 검사 실패")
+            }
             let token = environment["STUDYONE_E2E_TOKEN"] ?? ""
             let address = "http://127.0.0.1:8765/"
             if requested == "verify-dotnet-crossclient" {

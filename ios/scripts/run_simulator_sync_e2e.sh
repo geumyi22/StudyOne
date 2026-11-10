@@ -117,3 +117,23 @@ assert {r["id"] for r in result["records"] if r["kind"]=="task"}=={
 print("IOS_AND_DOTNET_SERVER_PERSISTENCE_VERIFIED synthetic_records=3 cursor=3")
 PY
 echo "IOS_WINDOWS_ACTUAL_CROSSCLIENT_NETWORK_E2E_PASSED"
+
+# The same disposable simulator now tests the ACTUAL four-store file importer:
+# checksum rejection, full roundtrip, and rollback after each of 4 writes.
+# The in-app fixture refuses nonempty user records and is DEBUG/simulator-only.
+xcrun simctl terminate "$DEVICE" com.studyone.ios
+FOURSTORE_REPORT="$DATA_DIR/tmp/studyone-ci-ios-fourstore-result.txt"
+rm -f "$FOURSTORE_REPORT"
+SIMCTL_CHILD_STUDYONE_RUN_FOURSTORE_E2E=synthetic-fourstore-rollback \
+  xcrun simctl launch "$DEVICE" com.studyone.ios
+for attempt in $(seq 1 50); do
+  if [[ -s "$FOURSTORE_REPORT" ]]; then break; fi
+  sleep 2
+done
+if [[ ! -s "$FOURSTORE_REPORT" ]]; then
+  echo "iOS four-store runtime fixture did not produce a result"
+  exit 1
+fi
+cat "$FOURSTORE_REPORT"
+grep -Fq 'IOS_FOURSTORE_RUNTIME_E2E_PASSED' "$FOURSTORE_REPORT"
+echo "IOS_SYNTHETIC_FOURSTORE_RESTORE_AND_FAULT_E2E_PASSED"
