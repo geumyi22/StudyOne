@@ -165,9 +165,7 @@ internal static class SyncClient
         byte[] raw = await ReadLimited(response, cancel);
         Session value = JsonSerializer.Deserialize<Session>(raw, StudyData.JsonOptions)
             ?? throw new InvalidDataException("인증 세션 응답이 비어 있습니다.");
-        if (value.Schema != 1 || !Guid.TryParse(value.AccountId, out _) ||
-            !Guid.TryParse(value.DeviceId, out _) || value.ExpiresAt <= value.ServerTime)
-            throw new InvalidDataException("잘못된 계정 인증 정보입니다.");
+        ValidateSession(value);
         return value;
     }
 
