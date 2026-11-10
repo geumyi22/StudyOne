@@ -227,8 +227,9 @@ enum StudySyncClient {
         let value = try JSONDecoder().decode(Session.self, from: result)
         guard value.schema == 1, UUID(uuidString: value.accountId) != nil,
               UUID(uuidString: value.deviceId) != nil,
-              value.expiresAt > value.serverTime,
-              value.audience == "device" else {
+              value.serverTime >= 0, value.expiresAt > value.serverTime,
+              value.audience == "device",
+              (value.scope == "read" || value.scope == "read-write") else {
             throw StudyError.message("계정 인증 응답을 확인할 수 없습니다.")
         }
         return value
