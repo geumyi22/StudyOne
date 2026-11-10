@@ -644,6 +644,23 @@ try
         Schema = 1, AccountId = account, DeviceId = Guid.NewGuid().ToString("D"),
         Scope = "read-write", Audience = "device", ServerTime = 100, ExpiresAt = 200
     };
+    SyncClient.ValidateSession(verified);
+    SyncClient.ValidateSession(new SyncClient.Session {
+        Schema = 1, AccountId = account, DeviceId = verified.DeviceId,
+        Scope = "read", Audience = "device", ServerTime = 100, ExpiresAt = 200
+    });
+    ExpectInvalid(() => SyncClient.ValidateSession(new SyncClient.Session {
+        Schema = 1, AccountId = account, DeviceId = verified.DeviceId,
+        Scope = "read-write", Audience = "mcp", ServerTime = 100, ExpiresAt = 200
+    }), "OAuth/MCP audience must never be accepted as a device session");
+    ExpectInvalid(() => SyncClient.ValidateSession(new SyncClient.Session {
+        Schema = 1, AccountId = account, DeviceId = verified.DeviceId,
+        Scope = "admin", Audience = "device", ServerTime = 100, ExpiresAt = 200
+    }), "Unexpected device scope is rejected");
+    ExpectInvalid(() => SyncClient.ValidateSession(new SyncClient.Session {
+        Schema = 1, AccountId = account, DeviceId = verified.DeviceId,
+        Scope = "read-write", Audience = "device", ServerTime = 200, ExpiresAt = 200
+    }), "Expired device session is rejected");
     StudySyncOutbox.ConfirmAccount(queued.Batches[0], verified, endpoint);
     try {
         StudySyncOutbox.ConfirmAccount(queued.Batches[0],
