@@ -138,6 +138,19 @@ internal static class SyncClient
         return value;
     }
 
+    /// <summary>
+    /// Reject malformed or MCP-audience session claims before treating a token
+    /// as a device credential. Upload paths separately require read-write scope.
+    /// </summary>
+    internal static void ValidateSession(Session value)
+    {
+        if (value.Schema != 1 || !Guid.TryParse(value.AccountId, out _) ||
+            !Guid.TryParse(value.DeviceId, out _) || value.ServerTime < 0 ||
+            value.ExpiresAt <= value.ServerTime || value.Audience != "device" ||
+            (value.Scope != "read" && value.Scope != "read-write"))
+            throw new InvalidDataException("잘못된 계정 인증 정보입니다.");
+    }
+
     /// <summary>Verify a device token belongs to the exact intended HTTPS account.</summary>
     internal static async Task<Session> GetSession(
         string token, Uri endpoint, CancellationToken cancel = default)
