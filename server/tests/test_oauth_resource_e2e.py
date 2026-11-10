@@ -194,6 +194,24 @@ class OAuthResourceTLSTests(unittest.TestCase):
             "/mcp", self.token(scope="studyone.propose"), self.rpc("tools/list"))
         self.assertEqual(status, 403)
 
+    def test_read_only_oauth_malformed_rpc_does_not_disconnect(self):
+        # A valid read-only OAuth token may send a malformed JSON-RPC body.
+        # It must get a structured error, not crash the HTTPS request thread.
+        read = self.token(scope="studyone.read")
+        for body in ([], None, False, "not-an-object", 42):
+            with self.subTest(body=body):
+                status, response, _ = self.request("/mcp", read, body, "POST")
+                self.assertEqual(status, 200)
+                self.assertEqual(response["jsonrpc"], "2.0")
+                self.assertEqual(response["error"]["message"], "INVALID_REQUEST")
+                self.assertIsNone(response["id"])
+        # A malformed request must not affect the next valid authorized call.
+        status, response, _ = self.request(
+            "/mcp", read, self.rpc("tools/list"), "POST")
+        self.assertEqual(status, 200)
+        self.assertNotIn("studyone_propose_study_plan",
+                         [item["name"] for item in response["result"]["tools"]])
+
     def test_reject_forged_expired_wrong_issuer_audience_and_unlinked(self):
         samples = [
             self.token(key=self.key2),
