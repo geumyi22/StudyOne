@@ -198,7 +198,7 @@ class OAuthResourceTLSTests(unittest.TestCase):
         # A valid read-only OAuth token may send a malformed JSON-RPC body.
         # It must get a structured error, not crash the HTTPS request thread.
         read = self.token(scope="studyone.read")
-        for body in ([], None, False, "not-an-object", 42):
+        for body in ([], {}, False, "not-an-object", 42):
             with self.subTest(body=body):
                 status, response, _ = self.request("/mcp", read, body, "POST")
                 self.assertEqual(status, 200)
