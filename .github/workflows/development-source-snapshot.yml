@@ -1,0 +1,37 @@
+name: StudyOne development source snapshot (nonpublishing)
+
+# Exports only tracked public source; never packages app/user data or credentials.
+# Narrow push filters avoid running this helper for every development commit.
+on:
+  push:
+    branches: [feature/studyone-v4-school-session-20261113]
+    paths: [.github/workflows/development-source-snapshot.yml]
+  pull_request:
+    paths: [.github/workflows/development-source-snapshot.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Export exact tracked source and provenance
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/studyone-source"
+          git archive --format=zip --output="$RUNNER_TEMP/studyone-source/StudyOne-source.zip" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/studyone-source/COMMIT.txt"
+          cd "$RUNNER_TEMP/studyone-source"
+          sha256sum StudyOne-source.zip > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-development-source
+          path: ${{ runner.temp }}/studyone-source/
+          if-no-files-found: error
+          retention-days: 14
