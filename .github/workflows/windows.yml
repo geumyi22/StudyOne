@@ -37,6 +37,17 @@ jobs:
       - name: Build Windows WPF application
         run: dotnet build windows/StudyOne.Desktop/StudyOne.Desktop.csproj -c Release --nologo
 
+      - name: Exercise native WPF paper-planner interactions on synthetic inputs
+        run: dotnet run --project windows/StudyOne.LearningUi.Tests/StudyOne.LearningUi.Tests.csproj -c Release -- "$env:RUNNER_TEMP/studyone-ui"
+
+      - name: Retain native WPF rendering evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-learning-tools-ui-evidence
+          path: ${{ runner.temp }}/studyone-ui/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish x64 self-contained single-file EXE
         run: dotnet publish windows/StudyOne.Desktop/StudyOne.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none --nologo
 

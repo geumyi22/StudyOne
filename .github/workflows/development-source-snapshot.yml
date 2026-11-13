@@ -3,7 +3,6 @@ name: StudyOne Development Source Snapshot
 on:
   push:
     branches: ["feature/studyone-v4-learning-ux-20261113"]
-    paths: [".github/workflows/development-source-snapshot.yml"]
   workflow_dispatch:
 
 permissions:

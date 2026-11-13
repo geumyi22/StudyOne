@@ -43,6 +43,7 @@ try
     """;
     byte[] original = Encoding.UTF8.GetBytes(json);
     File.WriteAllBytes(path, original);
+    Reject(() => StudyPaperTaskBatch.Prepare(original, string.Concat(Enumerable.Repeat("🔬",31)), preview), "Mobile-compatible subject length checked");
     var batch = StudyPaperTaskBatch.Prepare(original, "수학", preview);
     Check(batch.Count == 3 && File.ReadAllBytes(path).SequenceEqual(original), "Prepare is read-only");
     Reject(() => batch.Commit(path, false), "No approval rejects write");

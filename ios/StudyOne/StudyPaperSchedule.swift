@@ -89,42 +89,51 @@ enum StudyPaperSchedule {
 
     private static func checkedLabel(_ value: String) throws -> String {
         guard !value.isEmpty, value == value.trimmingCharacters(in: .whitespacesAndNewlines),
-              value.count <= 80, !value.contains("\n"), !value.contains("\r") else {
+              value.unicodeScalars.count <= 80, !value.contains("\n"), !value.contains("\r") else {
             throw StudyError.message("단원·시험지 이름은 1~80자로 입력하세요.")
+        }
+        for scalar in value.unicodeScalars {
+            switch scalar.properties.generalCategory {
+            case .control, .format, .surrogate, .unassigned, .lineSeparator, .paragraphSeparator:
+                throw StudyError.message("이름에 숨은 제어 문자나 줄바꿈을 넣을 수 없습니다.")
+            case .spaceSeparator where scalar.value != 32:
+                throw StudyError.message("이름에는 일반 공백만 사용할 수 있습니다.")
+            default: break
+            }
         }
         return value
     }
 
-    private static var utcCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar
+    // Proleptic Gregorian day numbers: no locale, DST or 1582 cutover dependency.
+    private static func leap(_ year: Int) -> Bool {
+        year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
     }
-
-    private static func parsed(_ value: String) throws -> Date {
-        guard value.range(of: #"^\d{4}-\d{2}-\d{2}$"#,
+    private static func lengths(_ year: Int) -> [Int] {
+        [31, leap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    }
+    private static func beforeYear(_ year: Int) -> Int {
+        let previous = year - 1
+        return previous * 365 + previous / 4 - previous / 100 + previous / 400
+    }
+    private static func parsed(_ value: String) throws -> Int {
+        guard value.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#,
                           options: .regularExpression) != nil else {
             throw StudyError.message("날짜는 YYYY-MM-DD 형식이어야 합니다.")
         }
-        let formatter = DateFormatter()
-        formatter.calendar = utcCalendar
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)!
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.isLenient = false
-        guard let date = formatter.date(from: value),
-              formatter.string(from: date) == value else {
+        let parts = value.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, (1...9999).contains(parts[0]),
+              (1...12).contains(parts[1]),
+              (1...lengths(parts[0])[parts[1] - 1]).contains(parts[2]) else {
             throw StudyError.message("실제 존재하는 날짜를 입력하세요.")
         }
-        return date
+        return beforeYear(parts[0]) + lengths(parts[0]).prefix(parts[1] - 1).reduce(0, +) + parts[2]
     }
 
     static func preview(start: String, end: String,
                         dailyLimit: Int, skipDates: [String],
                         firstReview: String, lanes: [Lane]) throws -> Preview {
         let first = try parsed(start), last = try parsed(end)
-        let calendar = utcCalendar
-        let span = calendar.dateComponents([.day], from: first, to: last).day ?? -1
+        let span = last - first
         guard span >= 0, span < 120 else {
             throw StudyError.message("시작일~마감일을 120일 이내로 지정하세요.")
         }
@@ -172,13 +181,10 @@ enum StudyPaperSchedule {
         guard remaining <= 240 else {
             throw StudyError.message("남은 시험지는 최대 240회입니다.")
         }
-        var workDates = [(String, Date)]()
+        var workDates = [String]()
         for offset in 0...span {
-            guard let date = calendar.date(byAdding: .day, value: offset, to: first) else {
-                throw StudyError.message("날짜를 계산하지 못했습니다.")
-            }
-            let dateText = formatDay(date)
-            if !skipSet.contains(dateText) { workDates.append((dateText, date)) }
+            let dateText = formatDay(first + offset)
+            if !skipSet.contains(dateText) { workDates.append(dateText) }
         }
         guard remaining <= dailyLimit * workDates.count else {
             throw StudyError.message("남은 날짜에 모두 끝낼 수 없습니다. 날짜나 하루 분량을 조정하세요.")
@@ -204,7 +210,7 @@ enum StudyPaperSchedule {
             }
             let review = dayIndex % 2 == 0 ? firstReview
                 : (firstReview == "학습지" ? "교재" : "학습지")
-            output.append(Day(date: pair.0, review: review, papers: selected))
+            output.append(Day(date: pair, review: review, papers: selected))
         }
         guard remaining == 0 else {
             throw StudyError.message("분량 분배 결과가 불완전합니다.")
@@ -213,13 +219,18 @@ enum StudyPaperSchedule {
                        workDays: workDates.count, dailyLimit: dailyLimit)
     }
 
-    private static func formatDay(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = utcCalendar
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)!
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+    private static func formatDay(_ ordinal: Int) -> String {
+        var low = 1, high = 9999
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if beforeYear(middle) < ordinal { low = middle } else { high = middle - 1 }
+        }
+        var day = ordinal - beforeYear(low), month = 1
+        for length in lengths(low) {
+            if day <= length { break }
+            day -= length; month += 1
+        }
+        return String(format: "%04d-%02d-%02d", low, month, day)
     }
 
     static func selfTest() -> Bool {

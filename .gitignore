@@ -43,3 +43,7 @@ ios/build/
 *.xcuserstate
 windows/**/bin/
 windows/**/obj/
+
+# Python test bytecode (never a source or user-data artifact)
+__pycache__/
+*.py[cod]

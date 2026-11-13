@@ -24,6 +24,7 @@ public sealed class StudyPaperTaskBatch
     {
         ArgumentNullException.ThrowIfNull(preview);
         StudyPaperSchedule.Label(subject, 60);
+        if (subject.Length > 60) throw new InvalidDataException("모바일 호환 과목 이름은 UTF-16 기준 60자 이하여야 합니다.");
         byte[] source = original?.ToArray() ?? StudyData.SerializeAndValidateTasks(new TaskBackup());
         var parsed = StudyData.ParseTasks(source);
         // Retain unknown root and task properties, school settings, existing IDs and completion values.
