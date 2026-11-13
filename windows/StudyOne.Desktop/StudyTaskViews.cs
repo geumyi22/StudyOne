@@ -19,7 +19,8 @@ public static class StudyTaskViews
         if (displayMode < 0 || displayMode > 2)
             throw new ArgumentOutOfRangeException(nameof(displayMode));
         string date = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        string tomorrow = today.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        string? tomorrow = today == DateOnly.MaxValue ? null
+            : today.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         return source.Where(task => task is not null && (
                 displayMode == 2
                 || (displayMode == 1 && task.DueDate == tomorrow)
