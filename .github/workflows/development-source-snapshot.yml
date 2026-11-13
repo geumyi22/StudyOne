@@ -1,0 +1,34 @@
+name: StudyOne Development Source Snapshot
+
+on:
+  push:
+    branches: ["feature/studyone-v4-learning-ux-20261113"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout tracked source only
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Archive exact development commit (no .git or local data)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/studyone-source"
+          git archive --format=zip --output="$RUNNER_TEMP/studyone-source/StudyOne-source.zip" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/studyone-source/COMMIT.txt"
+          cd "$RUNNER_TEMP/studyone-source"
+          sha256sum StudyOne-source.zip > SHA256SUMS.txt
+      - name: Upload nonpublishing source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-development-source-${{ github.sha }}
+          path: ${{ runner.temp }}/studyone-source/
+          retention-days: 7
+          if-no-files-found: error

@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'windows/**'
+      - 'scripts/tests/schedule_cases.py'
+      - 'server/studyone_study_schedule.py'
       - '.github/workflows/windows.yml'
   workflow_dispatch:
 
@@ -26,8 +28,25 @@ jobs:
       - name: Run portable task/progress JSON compatibility tests
         run: dotnet run --project windows/StudyOne.Desktop.Tests/StudyOne.Desktop.Tests.csproj -c Release
 
+      - name: Generate pinned synthetic schedule fixtures
+        run: python scripts/tests/schedule_cases.py "$env:RUNNER_TEMP/studyone-schedule.json"
+
+      - name: Run learning tools and guarded append tests
+        run: dotnet run --project windows/StudyOne.LearningTools.Tests/StudyOne.LearningTools.Tests.csproj -c Release -- "$env:RUNNER_TEMP/studyone-schedule.json"
+
       - name: Build Windows WPF application
         run: dotnet build windows/StudyOne.Desktop/StudyOne.Desktop.csproj -c Release --nologo
+
+      - name: Exercise native WPF paper-planner interactions on synthetic inputs
+        run: dotnet run --project windows/StudyOne.LearningUi.Tests/StudyOne.LearningUi.Tests.csproj -c Release -- "$env:RUNNER_TEMP/studyone-ui"
+
+      - name: Retain native WPF rendering evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyOne-learning-tools-ui-evidence
+          path: ${{ runner.temp }}/studyone-ui/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Publish x64 self-contained single-file EXE
         run: dotnet publish windows/StudyOne.Desktop/StudyOne.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none --nologo

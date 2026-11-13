@@ -111,10 +111,21 @@ public final class StudyPaperSchedule {
     }
 
     private static String label(String value) {
-        if (value == null || value.isEmpty() || value.length() > 80
+        if (value == null || value.isEmpty() || value.codePointCount(0, value.length()) > 80
                 || !value.equals(value.trim()) || value.contains("\n")
                 || value.contains("\r")) {
             throw new IllegalArgumentException("단원·시험지 이름은 1~80자로 입력하세요.");
+        }
+        for (int offset = 0; offset < value.length();) {
+            int point = value.codePointAt(offset);
+            int kind = Character.getType(point);
+            if (kind == Character.CONTROL || kind == Character.FORMAT
+                    || kind == Character.SURROGATE || kind == Character.UNASSIGNED
+                    || kind == Character.LINE_SEPARATOR || kind == Character.PARAGRAPH_SEPARATOR
+                    || (kind == Character.SPACE_SEPARATOR && point != 32)) {
+                throw new IllegalArgumentException("이름에 숨은 제어 문자나 줄바꿈을 넣을 수 없습니다.");
+            }
+            offset += Character.charCount(point);
         }
         return value;
     }
@@ -166,8 +177,8 @@ public final class StudyPaperSchedule {
     public static Preview preview(LocalDate start, LocalDate end, int dailyLimit,
                                   Set<LocalDate> skipDates, String firstReview,
                                   List<Lane> lanes) {
-        if (start == null || end == null || end.isBefore(start)
-                || ChronoUnit.DAYS.between(start, end) >= 120) {
+        if (start == null || end == null || start.getYear() < 1 || end.getYear() > 9999
+                || end.isBefore(start) || ChronoUnit.DAYS.between(start, end) >= 120) {
             throw new IllegalArgumentException("시작일~마감일을 120일 이내로 지정하세요.");
         }
         if (dailyLimit < 1 || dailyLimit > 12) {
@@ -201,7 +212,8 @@ public final class StudyPaperSchedule {
         }
         if (total > 240) throw new IllegalArgumentException("남은 시험지는 최대 240회입니다.");
         List<LocalDate> work = new ArrayList<>();
-        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
+        for (int offset = 0; offset <= ChronoUnit.DAYS.between(start, end); offset++) {
+            LocalDate date = start.plusDays(offset);
             if (!skips.contains(date)) work.add(date);
         }
         if (total > work.size() * dailyLimit) {
