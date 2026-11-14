@@ -195,7 +195,6 @@ struct StudyPaperScheduleView: View {
                         Text("기존 국어 인쇄 시험지 18회 템플릿입니다. 개별 회차 18개가 모두 있는 경우만 자동 채웁니다.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                        .font(.caption).foregroundStyle(.secondary)
                     TextField("시작일 (YYYY-MM-DD)", text: $startDate)
                         .textContentType(.none)
                         .textInputAutocapitalization(.never)
