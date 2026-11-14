@@ -10,9 +10,9 @@
 | 기본 `main` HEAD | [`59a789d`](https://github.com/geumyi22/StudyOne/commit/59a789d947277526d3255f01b30ebda33bd43488), v4 Draft 미반영 |
 | 공개 최신 | [`v3.0.0-beta.2`](https://github.com/geumyi22/StudyOne/releases/tag/v3.0.0-beta.2) (2026-10-17, prerelease) |
 | 기본 브랜치의 개발 후보 | Android `3.1.0-canary.7`, iOS·Windows Canary.6 기반 ([기존 버전 매트릭스](VERSION-MATRIX.md), 2026-10-23 스냅샷) |
-| 개발 최전선 | [Draft PR #62](https://github.com/geumyi22/StudyOne/pull/62), `4408e6eb1c71f8675380789b4db56be85f126fd9` |
+| 개발 최전선 | [Draft PR #62](https://github.com/geumyi22/StudyOne/pull/62), `330ae9da6b9c7141f9f3f12af9dabcb37bee8d40` (P5 APK 정적 사전 검사 포함) |
 | v4 출시 여부 | **미출시** — `v4.0.0-beta.1` / `v4.0.0` 태그·릴리스 없음 |
-| 사용자 실기기·운영 계정 | 이번 점검에서 접근·검증하지 않음 |
+| 사용자 실기기·운영 계정 | S24 Ultra·iPhone·Apple Developer 계정 접근 **사용자가 확인**. 실제 설치·서명·학습 원본·운영 계정은 접근·검증하지 않음 |
 
 현재 `main`의 기능과 v4 Draft에 구현한 기능을 구분하세요. 공개 베타, Canary 후보, CI 테스트 산출물, 사용자의 실제 설치본은 같은 것이 아닙니다. iOS GitHub IPA는 **unsigned**, Windows 후보는 **미서명**이며, 실사용 설치/교차기기 자동 동기화 준비 완료를 뜻하지 않습니다.
 
@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | 1 | [PR #60 — v4 통합 후보](https://github.com/geumyi22/StudyOne/pull/60) | `main` ← `feature/studyone-v4-integrated-release-candidate` / `b3e4b97` | **Draft, 미병합** |
 | 2 | [PR #61 — Windows 학습 도구·플랫폼 일치](https://github.com/geumyi22/StudyOne/pull/61) | #60 브랜치 ← `feature/studyone-v4-learning-ux-20261113` / `baf3615` | **Draft, 미병합** |
-| 3 | [PR #62 — P0~P4 후속 개발](https://github.com/geumyi22/StudyOne/pull/62) | #61 브랜치 ← `feature/studyone-v4-p0-p4-20261114` / `4408e6e` | **Draft, 미병합** |
+| 3 | [PR #62 — P0~P4 후속 개발](https://github.com/geumyi22/StudyOne/pull/62) | #61 브랜치 ← `feature/studyone-v4-p0-p4-20261114` / `330ae9d` | **Draft, 미병합** |
 
 위 PR은 **누적 스택**입니다. #62를 `main`에서 독립 구현된 것으로 보거나, 세 PR을 독립적으로 임의 병합하지 마세요. 병합 직전 각 PR의 최종 SHA/차이/체크/충돌을 다시 점검하고 사용자 별도 판단을 받습니다.
 
@@ -35,11 +35,11 @@
 | **P2 내신 플래너** | 5분류, 오늘/내일/전체, 시험범위·진도·오답·수행평가 기존 동작을 보존하면서 신규 숙제 연결 | 실기기 전체 회귀, 범용 교재 스키마 장기 이관은 별도 |
 | **P3 동기화 안전성** | 기존 revision CAS, requestId, tombstone, 오프라인 큐, 계정 분리 테스트 유지 | 실제 운영 HTTPS 인증 계정과 Android↔iOS↔Windows 자동 동기화 미완료 |
 | **P4 ChatGPT/MCP** | 읽기 전용 `studyone_read_plan_status` 및 계정별 승인 결과/cursor 테스트 | 실계정 OAuth/MCP 등록·권한 철회·운영 연결 미완료 |
-| **P5 통합·실기기·출하 QA** | **진행하지 않음** | [별도 미완료 추적 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63) |
+| **P5 통합·실기기·출하 QA** | Android 서명 APK **읽기 전용 사전 검사 도구** 및 합성 CI 추가; 실제 P5 실시 없음 | [별도 미완료 추적 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63) |
 
 상세 구현은 [#62의 기록](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/IMPLEMENTATION-V4-P0-P4-20261114.md)을 참고합니다. 합성 데이터가 성공해도 실제 학생의 진도/완료 상태가 안전하게 보존된다고 단정할 수 없습니다.
 
-## 4. 최신 v4 HEAD의 GitHub Actions 확인
+## 4. 이전 P0–P4 기준 HEAD의 GitHub Actions (기록 보존)
 
 **검증 대상:** `4408e6eb1c71f8675380789b4db56be85f126fd9`. 다음 7개 실행은 2026-11-15 조회 시 모두 `completed / success`, 동일 `head_sha`였습니다.
 
@@ -54,6 +54,18 @@
 | iOS unsigned IPA / simulator E2E | [43603434760](https://github.com/geumyi22/StudyOne/actions/runs/43603434760) | PASS |
 
 이 7개는 **코드의 당시 자동화 검증 기록**입니다. 이후 코드·의존성·CI 정의·빌드 설정이 바뀌면 새 HEAD에 대해 다시 검사해야 합니다. 사용자 기기 설치, 운영 HTTPS, ChatGPT 실제 계정, 실제 3기기 동기화, Android 정식 서명/Windows 설치/iOS 물리 기기는 포함하지 않습니다.
+
+## 4-1. 현재 P5 준비 HEAD의 GitHub Actions (2026-11-15 추가)
+
+- 최신 기준: [`330ae9da6b9c7141f9f3f12af9dabcb37bee8d40`](https://github.com/geumyi22/StudyOne/commit/330ae9da6b9c7141f9f3f12af9dabcb37bee8d40), #62 Draft. Android 공식 패키지명·기존 인증서 지문·v4 버전코드·APK 해시의 **읽기 전용 검사 도구**와 합성 테스트가 새로 포함되었으며, 실제 APK 설치·개인 데이터 접근은 하지 않음.
+- 새 커밋에 대응하는 GitHub Actions **7개 모두 `completed/success`** 직접 확인: [Planner #43621822434](https://github.com/geumyi22/StudyOne/actions/runs/43621822434), [v4 계약 및 신규 검사 #43621822495](https://github.com/geumyi22/StudyOne/actions/runs/43621822495), [복구 #43621822428](https://github.com/geumyi22/StudyOne/actions/runs/43621822428), [Sync #43621822470](https://github.com/geumyi22/StudyOne/actions/runs/43621822470), [Account TLS #43621822461](https://github.com/geumyi22/StudyOne/actions/runs/43621822461), [Android #43621822454](https://github.com/geumyi22/StudyOne/actions/runs/43621822454), [iOS #43621822418](https://github.com/geumyi22/StudyOne/actions/runs/43621822418). 계약 워크플로의 **신규 모의 검사 단계도 통과**.
+- 로컬 신설 합성 테스트 7개 + 기존 v4 계약 4개 통과. 이 결과도 Android S24 Ultra 정식 서명·iPhone 실기기·Windows 설치·개인 4종 데이터 업그레이드/복원 또는 운영 OAuth를 시험한 결과가 아님.
+
+## 4-2. 사용자 환경·무료 클라우드 정책 확인
+
+- 사용자 확인: Android Galaxy S24 Ultra, iPhone, Apple Developer 계정 접근, 기존 Windows 11 테스트 환경. 실제 OS 버전·Mac/Xcode·Apple 배포팀·프로덕션 서명은 추가 확인 필요.
+- 별도 클라우드 월 예산 **무료(0원)**. Render Free는 SQLite 로컬 파일 지속성 없어 단독 운영 저장소로 부적합([공식](https://render.com/docs/free)). Oracle Always Free VM/블록 볼륨은 조건부([공식](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm))이며 카드 인증과 운영/회수/백업 제약이 있음. Supabase Free는 비활동 시 일시 중단([공식](https://supabase.com/docs/guides/platform/free-project-pausing))과 저장 방식 변경이 필요. 사용자의 비용·가입·실데이터 이전 승인은 아직 없음.
+- Apple 무료 Personal Team의 Xcode 실기기 개발 테스트와 TestFlight/App Store 배포 멤버십/성년 자격을 구분([공식](https://developer.apple.com/help/account/basics/about-your-developer-account)). [P5 실행 절차서](V4-P5-DEVICE-QA-PLAN.md) 참고.
 
 ## 5. 남은 작업 / 출시 차단
 
