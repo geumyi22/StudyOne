@@ -58,6 +58,7 @@
 ## 5. 남은 작업 / 출시 차단
 
 1. [P5 검증 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63) — Android/iPhone/Windows 실기기, 기존 버전 업그레이드, 4종 실원본 보호·복원, 시각·성능·접근성·오프라인·앱 기능 회귀. 실데이터는 기기 외부/GitHub로 업로드하지 않음.
+   - **본인 기기 테스트 절차서:** [V4-P5-DEVICE-QA-PLAN.md](V4-P5-DEVICE-QA-PLAN.md) — 2026-11-15 요청에 따른 Android·iPhone·Windows 3종 통합 출시, 별도 클라우드(업체/비용 승인 전 미구축), 본인 기기에서의 보호·설치·복원·동기화 검증 항목. 모든 통과 체크는 실제 증거가 생길 때만 변경.
 2. **운영 연결은 별도 승인:** 테스트 계정·HTTPS·도메인/호스팅 비용·OAuth/MCP 앱 등록 및 권한 철회, 3기기 충돌·재연결·복원 등 운영 E2E.
 3. **출하 게이트:** [`RELEASE-4.0.0-ACCEPTANCE.md`](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md) 충족, 단일 최종 SHA 필수 CI, 차단 결함 0, 서명/무결성·데이터 보존 근거, 사용자 **명시적 출하 승인**.
 4. 출하가 승인되더라도 원칙은 **`v4.0.0-beta.1` 1회 공개 후 검증된 `v4.0.0` Stable**. 기존 태그·베타 자산·서명을 덮어쓰지 않습니다.
