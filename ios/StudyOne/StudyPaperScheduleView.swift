@@ -9,6 +9,7 @@ struct StudyPaperScheduleView: View {
     @ObservedObject var progress: StudyProgressStore
     @State private var expectedTasks: [StudyTask]?
     @State private var autofillProgress: [StudyProgressItem]?
+    @State private var autofillStamp: String?
     @State private var approvedInputStamp: String?
     @State private var showingConfirmation = false
     @State private var startDate = Date().studyString()
@@ -94,6 +95,7 @@ struct StudyPaperScheduleView: View {
                 }
             }
             autofillProgress = original
+            autofillStamp = inputStamp
             expectedTasks = nil
             result = nil
             approvedInputStamp = nil
@@ -110,7 +112,8 @@ struct StudyPaperScheduleView: View {
                 throw StudyError.message("미리보기 이후 입력이 변경됐습니다. 다시 계산하세요.")
             }
             if let original = autofillProgress {
-                guard try progress.checkedPaperPreviewItems() == original else {
+                guard autofillStamp == inputStamp,
+                      try progress.checkedPaperPreviewItems() == original else {
                     throw StudyError.message("미리보기 이후 진도가 변경됐습니다. 다시 확인하세요.")
                 }
             }
@@ -315,7 +318,12 @@ struct StudyPaperScheduleView: View {
                     }
                 }
             }
-            .onChange(of: inputStamp) { _ in
+            .onChange(of: inputStamp) { current in
+                if let saved = autofillStamp, saved != current {
+                    autofillProgress = nil
+                    autofillStamp = nil
+                    notice = "자동 채움 이후 입력이 변경되어 해당 검증을 해제했습니다. 수동 완료 횟수를 다시 확인하세요."
+                }
                 if result != nil {
                     result = nil
                     expectedTasks = nil

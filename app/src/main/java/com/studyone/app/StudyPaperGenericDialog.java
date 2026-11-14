@@ -147,6 +147,7 @@ public final class StudyPaperGenericDialog {
         addRow.setOnClickListener(v->{try{appendRow(a,list,rows);}catch(Exception e){showError(a,e);}});
         form.addView(addRow);
         final String[] verifiedProgress={null};
+        final String[] verifiedInput={null};
         Button autoFill=new Button(a);
         autoFill.setText("기기에서 검증된 개별 회차만 불러오기");
         autoFill.setOnClickListener(v->{
@@ -167,11 +168,20 @@ public final class StudyPaperGenericDialog {
                     row.rounds.setText(paper.total+"/"+paper.completed);
                 }
                 verifiedProgress[0]=before;
+                verifiedInput[0]=stamp(subject,material,start,end,daily,excluded,source,rows);
                 new AlertDialog.Builder(a).setMessage("개별 진도 UUID 및 회차 "+linked.completed+
                     "개를 확인했습니다. 집계 진도는 추정하지 않았습니다.").setPositiveButton("확인",null).show();
-            }catch(Exception e){verifiedProgress[0]=null;showError(a,e);}
+            }catch(Exception e){verifiedProgress[0]=null;verifiedInput[0]=null;showError(a,e);}
         });
         form.addView(autoFill);
+        Button manual=new Button(a);
+        manual.setText("수동 입력으로 전환 · 자동 검증 해제");
+        manual.setOnClickListener(v->{
+            verifiedProgress[0]=null;verifiedInput[0]=null;
+            new AlertDialog.Builder(a).setMessage("자동으로 채운 횟수가 남아 있을 수 있습니다. 각 회차의 완료 횟수를 직접 확인한 뒤 미리보기를 만드세요.")
+                .setPositiveButton("확인",null).show();
+        });
+        form.addView(manual);
         form.addView(text(a,"기기에 해당 과목·교재의 모든 개별 회차 진도가 정확히 없으면 자동 불러오기는 실패하며 직접 입력해야 합니다. '진도'는 새로 생성하지 않습니다."));
         AlertDialog editor=new AlertDialog.Builder(a).setTitle("범용 시험지 · 학습지 배분")
             .setView(scroll).setPositiveButton("미리보기",null)
@@ -179,6 +189,10 @@ public final class StudyPaperGenericDialog {
         editor.setOnShowListener(ignored->editor.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             try {
                 String s=value(subject);
+                if(verifiedProgress[0]!=null &&
+                    !java.util.Objects.equals(verifiedInput[0],
+                        stamp(subject,material,start,end,daily,excluded,source,rows)))
+                    throw new IllegalStateException("자동 채움 이후 입력이 변경됐습니다. 다시 불러오거나 수동 입력으로 전환하세요.");
                 List<StudyPaperSchedule.Lane> planLanes=lanes(rows);
                 Set<LocalDate> skip=new LinkedHashSet<>();
                 if(!value(excluded).trim().isEmpty()) {
