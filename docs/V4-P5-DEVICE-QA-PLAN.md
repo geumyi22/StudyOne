@@ -3,8 +3,8 @@
 > **상태: 계획만 작성, 아직 P5 실행·합격 아님.** 기준: 2026-11-15. 사용자 학습 기록과 기존 설치본을 지우거나 GitHub/채팅에 업로드하지 않습니다. `main` 또는 공개 Beta에서 개발용 패키지로 덮어쓰기를 시도하지 마세요.
 
 - 제품 범위: **Android + iOS + Windows 통합 v4** (사용자 선택)
-- 운영 방향: 별도 클라우드 + 외부 OAuth 제공자 **검토 중** (서비스·계약·비용·도메인 미승인)
-- 실기기 QA: 사용자 기기에서 실시할 예정, 구체적 기종/OS·서명 수단 확인 전
+- 운영 방향: **월 0원 무료 범위만 허용**. 별도 클라우드 + 외부 OAuth 제공자 검토 중 (가입·카드 인증·도메인·유료 서비스·데이터 이전 모두 별도 승인)
+- 실기기 QA: 사용자가 **Galaxy S24 Ultra + iPhone**, **Apple Developer 계정 접근**을 확인. 각 OS 정확한 버전, iPhone 모델, Xcode/Mac 접근·유료 개발자 프로그램/팀 서명 자격 및 실제 설치 검증은 **미확인**. Windows 11 테스트 환경 기록은 있으나 현재 기기 환경은 QA 시 재확인
 - 개발 기준: [Draft #60](https://github.com/geumyi22/StudyOne/pull/60) → [#61](https://github.com/geumyi22/StudyOne/pull/61) → [#62](https://github.com/geumyi22/StudyOne/pull/62), 최종 검증 대상 SHA는 실행 직전에 재확인
 - 추적: [P5 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63), [출하 수용 기준](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
 
@@ -14,11 +14,35 @@
 
 | 테스트 용도 | Actions 실행 | 파일 특성 / 제한 |
 | --- | --- | --- |
-| Android UI 기능 체험 | [#62 HEAD Android Actions #43603434709](https://github.com/geumyi22/StudyOne/actions/runs/43603434709) | `StudyOne-v2-debug-apk` 아티팩트 이름(레거시 명칭). 별도 `com.studyone.app.canary7` 디버그 앱. **공식 Android 앱에 업그레이드 설치하지 말 것** |
-| iOS 코드·시뮬레이터 검증 자료 | [#62 HEAD iOS Actions #43603434760](https://github.com/geumyi22/StudyOne/actions/runs/43603434760) | `StudyOne-iOS-unsigned`, **기기 직접 설치 불가**. Xcode 서명 및 기기 별도 빌드 필요 |
+| Android UI 기능 체험 | [#62 이전 HEAD Android Actions #43603434709](https://github.com/geumyi22/StudyOne/actions/runs/43603434709) | `StudyOne-v2-debug-apk` 아티팩트 이름(레거시 명칭). 별도 `com.studyone.app.canary7` 디버그 앱. **공식 Android 앱에 업그레이드 설치하지 말 것** |
+| iOS 코드·시뮬레이터 검증 자료 | [#62 이전 HEAD iOS Actions #43603434760](https://github.com/geumyi22/StudyOne/actions/runs/43603434760) | `StudyOne-iOS-unsigned`, **기기 직접 설치 불가**. Xcode 서명 및 기기 별도 빌드 필요 |
 | Windows 격리 테스트 | [#61 HEAD Windows Actions #43406023882](https://github.com/geumyi22/StudyOne/actions/runs/43406023882) | `StudyOne-Windows-Canary-win-x64-unsigned`. #62와 다른 SHA의 **미서명 EXE**, 별도 가상머신에서만 우선 사용. 설치 관리자·업그레이드 테스트 대체 불가 |
 
 개인 학습 자료가 있는 기존 앱의 삭제/대체·테스트 바이너리 덮어쓰기는 금지합니다. 수동 시험에서 기능이 동작해도 정식 서명·기존 사용자 원본 보존 게이트는 별개입니다.
+
+## P5 무료 클라우드 후보 — 비용 0원 우선, 실제 운영 미승인
+
+2026-11-15 공식 문서 확인. **현재 서버는 Python + 계정별 SQLite 파일을 로컬 디스크에 저장**하므로 저장소 지속성이 최우선. 무료 개발 환경이 최종 Stable 운영을 보장하지는 않습니다.
+
+- **Render Free 제외:** 15분 유휴 시 중단되며 SQLite 로컬 파일은 재배포·재시작/중단 시 사라짐. [Render 무료 운영 제한](https://render.com/docs/free)
+- **Oracle Always Free 조건부 후보:** VM + 무료 블록 볼륨은 기존 SQLite 서버를 상대적으로 적게 변경하여 테스트할 수 있으나, 무료 자원 회수/계정 휴면·용량 제약, 계정/카드 본인 인증, 시스템 운영·방화벽·백업 관리 부담이 있음. **가입·인스턴스 생성·카드 입력은 사용자 승인 전 진행하지 않음**. [무료 자원 및 제약](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm), [한국어 가입 FAQ](https://www.oracle.com/kr/cloud/free/faq/)
+- **Supabase Free 추가 개발 필요:** PostgreSQL 기반으로 현재 서버 저장 구조를 재설계해야 하며, 적은 활동으로 무료 프로젝트가 일시 중단될 수 있음. [프로젝트 일시 중단 정책](https://supabase.com/docs/guides/platform/free-project-pausing)
+- 운영 안정성, 백업 보유 및 개인정보 보호 조건을 충족하지 못하면 **무료만을 이유로 실제 학습 기록을 서버에 이전하지 않음**. 처음에는 합성 데이터만 사용.
+
+## Android 4.0 서명 APK 읽기 전용 사전 검사 (개발 PR #62)
+
+[v4 Android 사전 검사 스크립트](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/p5_android_apk_preflight.py)는 공식 패키지 ID, 고정 공개 인증서 지문, Android v2 서명, 베타/Stable 버전쌍, 로컬 파일 해시, 지정한 설치본 버전보다 신규 코드가 큰지를 검사하며 **어떠한 APK도 설치/삭제/업로드하지 않습니다**.
+
+PC에 Android SDK의 `aapt2`와 `apksigner`가 준비되고 진짜 4.0 후보 APK를 확보한 뒤, 사용자 본인의 기존 앱 버전코드를 확인하여 아래 `숫자`와 `해시`를 정확히 교체해야 합니다. 아직 배포 APK가 없어 **진짜 APK 검사는 미실시**입니다.
+
+```bash
+python3 scripts/p5_android_apk_preflight.py \
+  --apk /path/to/StudyOne-v4-signed.apk \
+  --installed-version-code 30001 \
+  --expected-sha256 ACTUAL_VERIFIED_64_HEX_DIGEST
+```
+
+위 `30001`은 공개 v3 베타의 **예시**이며 S24 Ultra의 현재 설치본 번호를 확인한 값이 아닙니다. 출력 `CANDIDATE_METADATA_VERIFIED_ONLY`는 **실기기 서명 확인, 기존 기록 백업, 인플레이스 업그레이드 또는 P5 합격을 뜻하지 않음**. 합성 모의 출력 단위 테스트만 진행했으며 새 HEAD GitHub CI 결과는 완료 후 별도로 기록합니다.
 
 ## 0. 실행 전 공통 조건
 
