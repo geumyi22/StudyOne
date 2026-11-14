@@ -1,11 +1,12 @@
 """Synthetic ADB outputs only. Never touches a device or its storage."""
 from __future__ import annotations
 
+from subprocess import CompletedProcess
 from unittest.mock import patch
 import unittest
 
 from scripts.p5_android_device_preflight import (
-    DevicePreflightError, _installed_packages, _select_serial, inspect_device,
+    DevicePreflightError, _adb, _installed_packages, _select_serial, inspect_device,
 )
 
 
@@ -33,7 +34,8 @@ class AndroidDeviceP5Tests(unittest.TestCase):
             self.assertEqual(argv[:4], ["-s", self.serial, "shell", argv[3]])
             if argv[3] == "getprop":
                 return self.properties[argv[4]]
-            self.assertEqual(argv[3:], ["pm", "list", "packages", "--show-versioncode", "com.studyone.app"])
+            self.assertEqual(argv[3:], ["pm", "list", "packages", "--user", "0",
+                                        "--show-versioncode", "com.studyone.app"])
             return self.packages
 
         with patch("scripts.p5_android_device_preflight._adb", side_effect=mock_adb):
@@ -107,6 +109,19 @@ class AndroidDeviceP5Tests(unittest.TestCase):
         with self.assertRaisesRegex(DevicePreflightError, "UNEXPECTED"):
             _installed_packages("package:com.studyone.app versionCode:1\n"
                                 "package:com.studyone.app versionCode:2\n")
+
+    def test_partial_success_with_profile_security_exception_is_blocked(self):
+        # Mirrors Samsung's protected-profile output; never treat a partial
+        # package record as a full successful inventory.
+        partial = CompletedProcess(
+            args=["adb"], returncode=0,
+            stdout="package:com.studyone.app versionCode:30106\n",
+            stderr=("Error: java.lang.SecurityException: Shell does not have "
+                    "permission to access user 150\n"),
+        )
+        with patch("scripts.p5_android_device_preflight.subprocess.run", return_value=partial):
+            with self.assertRaisesRegex(DevicePreflightError, "ADB_READ_FAILED"):
+                _adb(["shell", "pm", "list", "packages"], "adb")
 
 
 if __name__ == "__main__":

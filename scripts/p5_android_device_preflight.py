@@ -34,7 +34,11 @@ def _adb(argv: list[str], executable: str) -> str:
                                 timeout=15, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise DevicePreflightError("ADB_NOT_AVAILABLE_OR_TIMED_OUT") from exc
-    if result.returncode != 0 or len(result.stdout) > 12_000:
+    # Some vendor package managers print a user-profile SecurityException after
+    # partial package output. Reject that output even if adb exits with code 0.
+    combined = result.stdout + "\n" + result.stderr
+    reported_error = re.search(r"(?im)(securityexception|permission denied|^error:)", combined)
+    if result.returncode != 0 or len(result.stdout) > 12_000 or reported_error:
         # Do not reveal stderr: it can include the device serial number.
         raise DevicePreflightError("ADB_READ_FAILED")
     return result.stdout.strip()
@@ -108,7 +112,10 @@ def inspect_device(*, adb: str = "adb", serial: str | None = None) -> dict:
         raise DevicePreflightError("ANDROID_17_API_37_ENVIRONMENT_MISMATCH")
 
     packages = _installed_packages(_adb([
-        "-s", selected, "shell", "pm", "list", "packages", "--show-versioncode", OFFICIAL_APP_ID
+        # Restrict the query to the owner's Android user 0. An unscoped query
+        # may traverse a protected profile (e.g. user 150) and raise an error.
+        "-s", selected, "shell", "pm", "list", "packages", "--user", "0",
+        "--show-versioncode", OFFICIAL_APP_ID
     ], adb))
     official = packages.get(OFFICIAL_APP_ID)
     canary = packages.get(CANARY_APP_ID)
