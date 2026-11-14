@@ -75,6 +75,12 @@
 - 로컬 합성 단위 테스트 기기 10개·APK 검사 7개·버전 계약 4개 성공. 동일 HEAD GitHub Actions **7/7 completed/success**: [비배포 계약 #43626023668](https://github.com/geumyi22/StudyOne/actions/runs/43626023668), [Android APK #43626023846](https://github.com/geumyi22/StudyOne/actions/runs/43626023846), [iOS unsigned IPA #43626023750](https://github.com/geumyi22/StudyOne/actions/runs/43626023750), [Planner #43626023708](https://github.com/geumyi22/StudyOne/actions/runs/43626023708), [Recovery #43626023699](https://github.com/geumyi22/StudyOne/actions/runs/43626023699), [Sync #43626023819](https://github.com/geumyi22/StudyOne/actions/runs/43626023819), [Account TLS #43626023753](https://github.com/geumyi22/StudyOne/actions/runs/43626023753). 실기기 기능·서명 검증과는 구분.
 - 모든 실제 정식 앱 서명·원본 4종 백업/복원·업데이트·iPhone 서명·운영 3기기 동기화·v4 Stable 출하는 계속 미검증/미발행.
 
+## 4-1-3. 기존 S24 Ultra 설치본 수동 화면 스모크 5/5 PASS — 사용자 보고 (2026-11-15)
+
+- 본인 휴대전화의 **현재 설치본** `com.studyone.app versionCode:30106`에서 읽기 전용 수동 점검: **앱 실행, 학습 화면 이동, 기존 기록 표시, 화면 표시, 종료 후 재실행 모두 PASS(5/5)**. 결과 출처는 사용자 직접 보고이며 화면 캡처·로그/자동계측 증빙은 없음.
+- 사용자 진술상 설치·업데이트·삭제·데이터 변경 없음. 기록 내용과 4종 원본의 해시·정합성은 비교하지 않았고, 실행/오프라인/알림/AI/NEIS 등 모든 기능과 권한 경계, v4 개발 후보 앱 자체는 확인하지 않음.
+- P5 A4/A7 전체·서명·복구·인플레이스 업그레이드·iPhone·Windows·운영 게이트는 **미체크**. [이슈 #63](https://github.com/geumyi22/StudyOne/issues/63)와 [QA 절차서](V4-P5-DEVICE-QA-PLAN.md)에서 별도 사용자 보고 부분만 PASS.
+
 ## 4-2. 사용자 환경·무료 클라우드 정책 확인
 
 - 사용자 확인: Android Galaxy S24 Ultra / **Android 17(API 37) / One UI 9**, iPhone / **무료 Apple Personal Team**, **Mac/Xcode 없음**, 기존 Windows 11 테스트 환경. S24 Ultra ADB 연결 및 기본 사용자 0의 StudyOne `versionCode:30106`은 사용자 출력으로 확인. 설치된 앱 서명·iPhone 모델/iOS 버전·프로덕션 서명은 미확인. 무료 개인팀의 iOS 기기 서명은 Xcode가 필요하므로 현재 차단 상태.
