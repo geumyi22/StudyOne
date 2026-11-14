@@ -13,7 +13,18 @@ enum StudyPaperPlanApproval {
     }
 
     static func prepare(_ plan: StudyPaperSchedule.Preview,
-                        existing: [StudyTask]) throws -> [StudyTask] {
+                        existing: [StudyTask],
+                        subject: String = "국어") throws -> [StudyTask] {
+        guard !subject.isEmpty,
+              subject == subject.trimmingCharacters(in: .whitespacesAndNewlines),
+              subject.utf16.count <= 60,
+              !subject.unicodeScalars.contains(where: {
+                  $0.properties.generalCategory == .control ||
+                  $0.properties.generalCategory == .format ||
+                  $0.properties.generalCategory == .surrogate
+              }) else {
+            throw StudyError.message("과목은 공백 없이 1~60자로 입력하세요.")
+        }
         guard (1...240).contains(plan.remainingPapers) else {
             throw StudyError.message("실제 등록할 시험지 숙제가 없습니다.")
         }
@@ -30,12 +41,12 @@ enum StudyPaperPlanApproval {
                 // Do not split a daily aggregate '인쇄 문제 2회' into more
                 // tasks without knowing whether they are already covered.
                 if let overlapping = existing.first(where: {
-                    $0.dueDate == day.date && $0.subject == "국어" &&
+                    $0.dueDate == day.date && $0.subject == subject &&
                     ($0.title.contains("인쇄 문제") ||
                      $0.title.contains("인쇄 시험지") ||
                      $0.title.contains(paper.title))
                 }) {
-                    throw StudyError.message("같은 날짜에 국어 인쇄/평가 숙제가 있습니다. 중복 확인 필요: \(overlapping.title)")
+                    throw StudyError.message("같은 날짜·과목에 인쇄/평가 숙제가 있습니다. 중복 확인 필요: \(overlapping.title)")
                 }
                 guard title.count <= 500 else {
                     throw StudyError.message("시험지 숙제 제목이 너무 깁니다.")
@@ -44,7 +55,7 @@ enum StudyPaperPlanApproval {
                 repeat { id = Int64.random(in: 1...Int64.max) }
                     while !identifiers.insert(id).inserted
                 let task = StudyTask(id: id, type: "숙제 항목",
-                                     subject: "국어", title: title,
+                                     subject: subject, title: title,
                                      dueDate: day.date, importance: 2,
                                      completed: false)
                 guard identities.insert(identity(task)).inserted else {

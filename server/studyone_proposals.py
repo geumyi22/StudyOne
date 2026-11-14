@@ -174,6 +174,27 @@ class ProposalStore:
             """, (now, MAX_PENDING)).fetchall()
         return {"schema": 1, "proposals": [self._item(row) for row in rows]}
 
+    def status(self, proposal_id):
+        """Read saved proposal state without approving or applying changes."""
+        if not canonical_uuid(proposal_id):
+            raise ApiProblem(400, "INVALID_PROPOSAL_ID")
+        with self.store.connect() as db:
+            db.execute("BEGIN")
+            row = db.execute(
+                "SELECT id,state,cursor,expires_at,mutations_json "
+                "FROM study_plan_proposals WHERE id=?", (proposal_id,)
+            ).fetchone()
+        if row is None:
+            raise ApiProblem(404, "PROPOSAL_NOT_FOUND")
+        state = row["state"]
+        if state == "pending" and row["expires_at"] <= int(time.time()):
+            state = "expired"
+        return {
+            "id": row["id"], "state": state,
+            "cursor": row["cursor"], "expiresAt": row["expires_at"],
+            "taskCount": len(json.loads(row["mutations_json"])), "readOnly": True
+        }
+
     def approve(self, proposal_id):
         if not canonical_uuid(proposal_id):
             raise ApiProblem(400, "INVALID_PROPOSAL_ID")

@@ -668,6 +668,10 @@ public class MainActivity extends Activity {
         Button paperPreview=secondary("국어 인쇄 시험지 18회 · 남은 분량 자동 배분");
         paperPreview.setOnClickListener(v->showPaperSchedulePreview());
         c.addView(paperPreview);
+        Button genericPreview=secondary("모든 과목 · 범용 시험지·학습지 배분");
+        genericPreview.setOnClickListener(v->StudyPaperGenericDialog.show(
+                this,storage,progressStorage,()->showTab(3)));
+        c.addView(genericPreview);
         c.addView(cardText("날짜·완료 회차를 직접 입력해 분배안을 미리 봅니다. "
                 +"계획 계산과 복사는 로컬에서만 실행되며 기존 숙제·진도는 수정하지 않습니다.",12));
         Button progressExport=secondary("진도 JSON 백업 내보내기");
@@ -2013,6 +2017,10 @@ public class MainActivity extends Activity {
         Button paperPreview=secondary("국어 인쇄 시험지 18회 계획 미리보기");
         paperPreview.setOnClickListener(view->showPaperSchedulePreview());
         c.addView(paperPreview);
+        Button genericPreview=secondary("모든 과목 · 범용 시험지·학습지 배분");
+        genericPreview.setOnClickListener(v->StudyPaperGenericDialog.show(
+                this,storage,progressStorage,()->showTab(3)));
+        c.addView(genericPreview);
         c.addView(cardText("완료 횟수, 마감일, 쉬는 날을 직접 입력합니다. "
                 +"서버나 OpenAI API를 호출하지 않고 원본 일정·진도도 변경하지 않습니다.",12));
 

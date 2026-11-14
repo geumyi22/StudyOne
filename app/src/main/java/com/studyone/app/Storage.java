@@ -224,6 +224,20 @@ public final class Storage {
     public synchronized String appendReviewedPaperSchedule(
             String expectedOriginal, StudyPaperSchedule.Preview preview, Context context)
             throws Exception {
+        return appendReviewedPaperSchedule(expectedOriginal, preview, "국어", context);
+    }
+
+    /** Generic opt-in entry point. The legacy Korean 18-round UI keeps its old signature. */
+    public synchronized String appendReviewedPaperSchedule(
+            String expectedOriginal, StudyPaperSchedule.Preview preview,
+            String plannedSubject, Context context) throws Exception {
+        if(plannedSubject == null || plannedSubject.isEmpty() ||
+                plannedSubject.length()>60 || !plannedSubject.equals(plannedSubject.trim()))
+            throw new IllegalArgumentException("과목은 공백 없이 1~60자로 지정하세요.");
+        for(int i=0;i<plannedSubject.length();i++)
+            if(Character.isISOControl(plannedSubject.charAt(i)) ||
+                    Character.isSurrogate(plannedSubject.charAt(i)))
+                throw new IllegalArgumentException("과목에 유효하지 않은 문자가 있습니다.");
         if(preview==null||preview.days.isEmpty())
             throw new IllegalArgumentException("저장할 시험지 일정이 없습니다.");
         if(preview.remainingPapers>240)
@@ -245,16 +259,16 @@ public final class Storage {
                 if(slot==null||slot.lane==null||slot.title==null)
                     throw new IllegalArgumentException("계획 항목이 비어 있습니다.");
                 String title="["+slot.lane+"] "+slot.title;
-                String type="숙제 항목",subject="국어";
+                String type="숙제 항목",subject=plannedSubject;
                 // A daily aggregate ('인쇄 문제 2회') may already cover
                 // these papers. We cannot safely infer it is unrelated.
                 for(Models.StudyTask existing:originals) {
-                    if(existing.dueDate.equals(day.date)&&"국어".equals(existing.subject)
+                    if(existing.dueDate.equals(day.date)&&plannedSubject.equals(existing.subject)
                             &&(existing.title.contains("인쇄 문제")
                                ||existing.title.contains("인쇄 시험지")
                                ||existing.title.contains(slot.title))) {
                         throw new IllegalStateException(
-                            "같은 날짜에 국어 인쇄/평가 숙제가 이미 있습니다. 중복 여부를 직접 확인하세요: "
+                            "같은 날짜·과목에 인쇄/평가 숙제가 이미 있습니다. 중복 여부를 직접 확인하세요: "
                             +existing.title);
                     }
                 }
