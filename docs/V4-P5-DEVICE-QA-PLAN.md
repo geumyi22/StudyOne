@@ -60,7 +60,7 @@ python3 scripts/p5_android_apk_preflight.py \
   --expected-sha256 ACTUAL_VERIFIED_64_HEX_DIGEST
 ```
 
-위 `30001`은 공개 v3 베타의 **예시**이며 S24 Ultra의 현재 설치본 번호를 확인한 값이 아닙니다. 출력 `CANDIDATE_METADATA_VERIFIED_ONLY`는 **실기기 서명 확인, 기존 기록 백업, 인플레이스 업그레이드 또는 P5 합격을 뜻하지 않음**. 합성 모의 출력 단위 테스트만 진행했으며 새 HEAD GitHub CI 결과는 완료 후 별도로 기록합니다.
+위 `30001`은 공개 v3 베타의 **예시**이며 S24 Ultra의 현재 설치본 번호를 확인한 값이 아닙니다. 출력 `CANDIDATE_METADATA_VERIFIED_ONLY`는 **실기기 서명 확인, 기존 기록 백업, 인플레이스 업그레이드 또는 P5 합격을 뜻하지 않음**. 진짜 APK나 S24 Ultra를 점검한 증거는 아직 없습니다. 합성 APK 검증 7개·S24 Ultra 모의 ADB 검증 9개·버전 계약 4개 PASS. [개발 HEAD `0f55b92`의 비배포 계약 CI](https://github.com/geumyi22/StudyOne/actions/runs/43624198048)를 포함하여 [동일 SHA의 CI 7개 모두 성공](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae/checks)했으나 실제 기기 QA와는 구분합니다.
 
 ## 0. 실행 전 공통 조건
 
