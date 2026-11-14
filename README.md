@@ -4,6 +4,15 @@
 
 > **공개 최신 릴리즈: Beta v3.0.0-beta.2 (build 30001)** · **통합 `main` 개발 소스: Android 3.1.0-canary.7 / iOS·Windows Canary.6 기반**. 새 소스가 자동으로 공개 릴리즈가 되거나 기존 휴대폰에 설치되는 것은 아닙니다. [상세 버전 매트릭스](docs/VERSION-MATRIX.md)
 
+## 개발 현황 (2026-11-15 · 아직 미출시)
+
+- 현재 공개 최신은 **`v3.0.0-beta.2`**이며 `main`은 v4 미반영 개발 기준선입니다.
+- **v4 Draft 작업:** [통합 #60](https://github.com/geumyi22/StudyOne/pull/60) → [Windows 학습 UX #61](https://github.com/geumyi22/StudyOne/pull/61) → [P0~P4 후속 구현 #62](https://github.com/geumyi22/StudyOne/pull/62). **세 PR 모두 Draft·미병합**입니다.
+- #62 HEAD `4408e6e` 기준 **7개 필수 개발 CI 성공**을 확인했지만, 합성/에뮬레이터/시뮬레이터 검증이며 실기기·운영 계정 연결이 완료된 것은 아닙니다.
+- **P5 실기기·운영 통합 검증은 별도 대기:** [추적 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63). 병합·베타/Stable 출시는 별도 승인 전 진행하지 않습니다.
+
+[2026-11-15 GitHub 현황·검증 증거·남은 작업](docs/REPOSITORY-STATUS-2026-11-15.md) · [v4 출하 차단 기준 (Draft)](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
+
 ## 플랫폼 및 실제 지원 기능
 
 Android·iOS 표는 주요 앱 기능을 설명하며 Windows는 [빌드 후보](windows/README.md)로 별도 관리합니다. ChatGPT 실사용 계정 연결 및 세 플랫폼 자동 동기화는 아직 미배포입니다.
@@ -51,7 +60,7 @@ Android의 OpenAI 키는 Android Keystore AES-GCM, iOS 키는 Keychain에 저장
 기존 역사적 v2.x 및 v3 beta.1 릴리즈와 문서는 삭제하지 않습니다.
 
 
-## 최신 통합 및 남은 과제
+## `main`에 반영된 마지막 통합 및 남은 과제
 
 - [통합 PR #43](https://github.com/geumyi22/StudyOne/pull/43)으로 Android·iOS·Windows 개발 코드, 복구·서명·채널 정책, ChatGPT MCP 프로토타입과 Android 수동 계획 승인함을 `main`에 병합했습니다. 7개 워크플로의 사전 통합 검증(모바일·데스크톱·서버·복구)이 통과했습니다.
 - **ChatGPT가 이 대화에서 앱 기록을 즉시 읽거나 쓰는 것은 아직 불가능합니다.** HTTPS 운영 서버, 로그인/복구, ChatGPT OAuth/MCP 앱 등록, 모바일 안전 자동 동기화가 남아 있습니다.
