@@ -71,6 +71,10 @@ python3 scripts/p5_android_apk_preflight.py \
 
 **현재 한계:** CI가 만든 `unsigned IPA`는 iPhone/iPad에 바로 설치할 수 있는 배포 앱이 아닙니다. Apple 서명/프로비저닝 방법 및 실제 iPhone/iPad 사용 가능 여부부터 확인합니다.
 
+**Apple 계정 구분(2026-11-15 공식 문서 확인):** 무료 Apple Developer 등록만으로도 Mac의 Xcode에 **Personal Team**으로 로그인해 본인 iPhone의 개발 빌드를 시험할 수 있습니다. 다만 무료 개인 팀 프로비저닝은 7일 만료/재설치 제한이 있어 사용자에게 배포하는 정식 Stable과 다릅니다. TestFlight/App Store 배포에는 별도 Apple Developer Program 멤버십/배포 권한이 필요합니다. [Apple Developer 계정 개요](https://developer.apple.com/kr/help/account/basics/about-your-developer-account) · [Xcode 실기기 실행](https://developer.apple.com/documentation/xcode/building-and-running-an-app) · [개발자 모드](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device)
+
+Apple 계정 접근만 확인되었으며 **Mac/Xcode 접근, Personal Team인지 유료 멤버십인지, 현재 설치된 `com.studyone.ios` 서명/데이터 이전 안전성은 확인 전**입니다. 처음에는 기존 앱과 분리된 합성 테스트 환경에서 진행하고, 동일 bundle ID 재설치를 통한 기존 원본 덮어쓰기·삭제는 보류합니다.
+
 - [ ] I1. 실제 iPhone 또는 iPad 모델·iOS/iPadOS 버전·테스트 Apple 계정의 서명 권한·만료/갱신 방식을 준비. 기존 사용자 `com.studyone.ios` 데이터 보존 여부를 확인하지 않고 번들 ID/팀 ID를 변경하지 않음
 - [ ] I2. 개발용 서명 빌드를 테스트용 기기에 별도로 설치하고 앱 첫 실행·재시작·재부팅 확인
 - [ ] I3. 4종 합성 데이터 내보내기·가져오기·부분 실패·SHA-256 불일치 거부·복구 저널 중단 회복을 테스트 기기/시뮬레이터에서 검증
