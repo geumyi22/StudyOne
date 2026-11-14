@@ -8,6 +8,18 @@
 - 개발 기준: [Draft #60](https://github.com/geumyi22/StudyOne/pull/60) → [#61](https://github.com/geumyi22/StudyOne/pull/61) → [#62](https://github.com/geumyi22/StudyOne/pull/62), 최종 검증 대상 SHA는 실행 직전에 재확인
 - 추적: [P5 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63), [출하 수용 기준](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
 
+## 임시 CI 테스트 산출물 (서명 Stable 아님)
+
+아래는 2026-11-15 현재 **만료 전인 GitHub Actions 보관 파일**입니다. GitHub 로그인 상태에서 해당 실행 페이지의 Artifacts에서 받으며, 14일 보관 정책에 따라 추후 삭제될 수 있습니다. **최종 v4 통합 출시 패키지가 아닙니다.**
+
+| 테스트 용도 | Actions 실행 | 파일 특성 / 제한 |
+| --- | --- | --- |
+| Android UI 기능 체험 | [#62 HEAD Android Actions #43603434709](https://github.com/geumyi22/StudyOne/actions/runs/43603434709) | `StudyOne-v2-debug-apk` 아티팩트 이름(레거시 명칭). 별도 `com.studyone.app.canary7` 디버그 앱. **공식 Android 앱에 업그레이드 설치하지 말 것** |
+| iOS 코드·시뮬레이터 검증 자료 | [#62 HEAD iOS Actions #43603434760](https://github.com/geumyi22/StudyOne/actions/runs/43603434760) | `StudyOne-iOS-unsigned`, **기기 직접 설치 불가**. Xcode 서명 및 기기 별도 빌드 필요 |
+| Windows 격리 테스트 | [#61 HEAD Windows Actions #43406023882](https://github.com/geumyi22/StudyOne/actions/runs/43406023882) | `StudyOne-Windows-Canary-win-x64-unsigned`. #62와 다른 SHA의 **미서명 EXE**, 별도 가상머신에서만 우선 사용. 설치 관리자·업그레이드 테스트 대체 불가 |
+
+개인 학습 자료가 있는 기존 앱의 삭제/대체·테스트 바이너리 덮어쓰기는 금지합니다. 수동 시험에서 기능이 동작해도 정식 서명·기존 사용자 원본 보존 게이트는 별개입니다.
+
 ## 0. 실행 전 공통 조건
 
 - [ ] 검증할 정확한 commit SHA, 앱 버전, Android package ID/iOS bundle ID/Windows 실행 파일 SHA-256을 기록
@@ -31,11 +43,11 @@
 - [ ] A6. 완료 회차 자동 채움은 동일한 UUID/과목/교재/회차 매핑에만 적용되는지, 누락·중복·변경된 원본에서는 저장 거절되는지 검증
 - [ ] A7. 앱 종료·강제 중단·재시작·오프라인 전환 후 4종 데이터와 기존 완료 상태가 동일한지 확인. 실패 시 추가 수정 중단, 백업 사본 보존
 
-## 2. iOS — 서명과 물리 iPhone 테스트 선행
+## 2. iOS / iPadOS — 서명과 물리 iPhone 또는 iPad 테스트 선행
 
-**현재 한계:** CI가 만든 `unsigned IPA`는 iPhone에 바로 설치할 수 있는 배포 앱이 아닙니다. Apple 서명/프로비저닝 방법 및 실제 iPhone 사용 가능 여부부터 확인합니다.
+**현재 한계:** CI가 만든 `unsigned IPA`는 iPhone/iPad에 바로 설치할 수 있는 배포 앱이 아닙니다. Apple 서명/프로비저닝 방법 및 실제 iPhone/iPad 사용 가능 여부부터 확인합니다.
 
-- [ ] I1. 실제 iPhone 모델·iOS 버전·테스트 Apple 계정의 서명 권한·만료/갱신 방식을 준비. 기존 사용자 `com.studyone.ios` 데이터 보존 여부를 확인하지 않고 번들 ID/팀 ID를 변경하지 않음
+- [ ] I1. 실제 iPhone 또는 iPad 모델·iOS/iPadOS 버전·테스트 Apple 계정의 서명 권한·만료/갱신 방식을 준비. 기존 사용자 `com.studyone.ios` 데이터 보존 여부를 확인하지 않고 번들 ID/팀 ID를 변경하지 않음
 - [ ] I2. 개발용 서명 빌드를 테스트용 기기에 별도로 설치하고 앱 첫 실행·재시작·재부팅 확인
 - [ ] I3. 4종 합성 데이터 내보내기·가져오기·부분 실패·SHA-256 불일치 거부·복구 저널 중단 회복을 테스트 기기/시뮬레이터에서 검증
 - [ ] I4. Android와 동일 범용 시험지 입력의 계산 결과·진도 UUID 연계/미리보기/별도 승인/중복 차단 점검
@@ -69,7 +81,7 @@
 | 체크 | 최소 합격 근거 |
 | --- | --- |
 | Android | 정식 서명 인플레이스 업그레이드 + 4종 데이터 전후 불변 + 기능 E2E |
-| iOS | 실제 서명 iPhone 설치 + 기존 데이터 복원/보존 + 기능 E2E |
+| iOS | 실제 서명 iPhone/iPad 설치 + 기존 데이터 복원/보존 + 기능 E2E |
 | Windows | 실제 설치/업그레이드/제거 + 저장소/복원 + 입력/레이아웃 E2E |
 | 운영 | 외부 HTTPS/OAuth 실계정 + 3기기 충돌/철회/복원 + 보안 검증 |
 | QA | 최종 후보 **같은 commit SHA**의 모든 필수 CI 성공 + BLOCKER 0 |
