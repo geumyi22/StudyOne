@@ -71,6 +71,15 @@ py -3 scripts/p5_android_device_preflight.py
 
 이 5개는 **별도 간이 스모크 기록**입니다. 기존 P5 A4(모든 과제·시험·오답·AI·NEIS·알림·위젯·체크/이월 동작)·A7(4종 데이터 무변경·오프라인 유지 등) 및 서명/원본 복구/업데이트 항목의 체크박스는 계속 미완료입니다. 실데이터·화면 이미지·일련번호는 공유/기록하지 않음. [GitHub 추적 #63](https://github.com/geumyi22/StudyOne/issues/63).
 
+### 2026-11-15 Canary.7 별도 실기기 설치 승인 — 설치 실행은 아직 대기
+
+**사용자 승인:** S24 Ultra에 **별도 Canary 테스트 앱 설치**를 진행해도 된다고 답변함. 허용 범위는 `com.studyone.app.canary7` 디버그 앱의 분리 설치와 합성 테스트만 해당. 기존 `com.studyone.app` 삭제·덮어쓰기·기존 기록 변경, 학습 원본 이전·백업/복원, 유료 서비스·클라우드 설정은 별도 승인 전 진행하지 않음.
+
+- GitHub CI [Android 빌드 #43626023846](https://github.com/geumyi22/StudyOne/actions/runs/43626023846)의 개발 HEAD `3a0a3c6f26c776961c1bde53191893ad80bd9883`; 빌드와 에뮬레이터 smoke 모두 성공. [다운로드 artifact #14125729661](https://github.com/geumyi22/StudyOne/actions/runs/43626023846/artifacts/14125729661). 파일 이름은 `StudyOne-v2-debug-apk.zip`(레거시)이지만 실제 `aapt2 dump badging` CI 출력은 `com.studyone.app.canary7`/`versionCode=30107`/`versionName=3.1.0-canary.7-debug`/`StudyOne 개발판` 확인.
+- artifact ZIP SHA-256: `c40837755be17421c0a3f3e033256492e8392a434d7b410e1146cb577f735c8c`; 내부 `app-debug.apk` SHA-256: `2aa2705a9e6716676a857f51ec5a9849fa6a5795fce3c8e72967b86fb7615a7e`. GitHub 빌드 로그에서 직접 확인했으며 사용자 PC에서 재계산해 일치해야만 설치.
+- **사전 검증:** ADB 연결된 본인 단말 1대, `--user 0`의 공식 패키지 `com.studyone.app versionCode:30106` 확인. 동일 사용자 영역에 Canary 패키지가 이미 설치됐다면 **덮어쓰기 없이 중단**. ZIP·APK 해시 불일치, 예상 패키지 불일치, ADB 보안 오류가 나면 설치 금지.
+- **설치 시:** 검증된 `app-debug.apk`만 `adb install`(**`-r` 금지**)로 새 설치. 사후 두 패키지가 동시에 각 버전코드 `30106`/`30107`로 표시되는지 확인 후, 개발판에는 **합성 데이터만 사용**. 설치·앱 실행/기능 수동 QA 결과는 아직 사용자 회신 없음. 기존 앱 5/5 기본 스모크 PASS와 구분.
+
 ## Android 4.0 서명 APK 읽기 전용 사전 검사 (개발 PR #62)
 
 [v4 Android 사전 검사 스크립트](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/p5_android_apk_preflight.py)는 공식 패키지 ID, 고정 공개 인증서 지문, Android v2 서명, 베타/Stable 버전쌍, 로컬 파일 해시, 지정한 설치본 버전보다 신규 코드가 큰지를 검사하며 **어떠한 APK도 설치/삭제/업로드하지 않습니다**.
