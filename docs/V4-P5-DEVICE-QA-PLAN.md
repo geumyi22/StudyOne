@@ -59,6 +59,18 @@ py -3 scripts/p5_android_device_preflight.py
 
 [수정 커밋 `3a0a3c6`](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883)은 같은 한정을 Python 기기 점검 스크립트에도 추가했습니다. 출력 일부가 성공했더라도 `SecurityException`을 포함하면 실패 처리하는 합성 회귀 테스트 포함 **10개 PASS**, 이전 APK 검사 7개 및 v4 계약 4개 PASS. 이후 사용자 PC에서 기본 사용자 `0`으로 재실행한 결과 `package:com.studyone.app versionCode:30106`이 추가 오류 없이 확인됐습니다. **기본 사용자 0 패키지·버전 조회는 PASS**이나 설치된 앱 서명·학습 데이터·UI 기능·업데이트 검증은 아직 미실시입니다. [동일 개발 SHA의 GitHub CI 7개](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883/checks)는 모두 완료·성공했습니다. 권한 부여·타 프로필 우회·앱 삭제/설치는 시도하지 않습니다.
 
+### 2026-11-15 기존 설치본 화면 기본 스모크 5/5 PASS (사용자 직접 보고)
+
+**대상:** 기존 Galaxy S24 Ultra(Android 17/One UI 9)의 `com.studyone.app`, 기본 사용자 0 ADB 확인 `versionCode:30106`. 이는 **기존 설치본의 화면 읽기 전용 수동 확인**이며, v4 개발 후보·새 버전 업데이트의 실기기 테스트가 아닙니다. 사용자 진술에 따르면 앱 업데이트·삭제·데이터 수정 없이 진행했습니다.
+
+- [x] 기존 앱 실행 — 사용자 보고 PASS
+- [x] 학습 화면 전환 — 사용자 보고 PASS
+- [x] 기존 기록 표시 — 사용자 보고 PASS (원본 정합성 비교 아님)
+- [x] 화면 표시 — 사용자 보고 PASS (대상 화면 외 전체 접근성 검증 아님)
+- [x] 종료 후 재실행 — 사용자 보고 PASS
+
+이 5개는 **별도 간이 스모크 기록**입니다. 기존 P5 A4(모든 과제·시험·오답·AI·NEIS·알림·위젯·체크/이월 동작)·A7(4종 데이터 무변경·오프라인 유지 등) 및 서명/원본 복구/업데이트 항목의 체크박스는 계속 미완료입니다. 실데이터·화면 이미지·일련번호는 공유/기록하지 않음. [GitHub 추적 #63](https://github.com/geumyi22/StudyOne/issues/63).
+
 ## Android 4.0 서명 APK 읽기 전용 사전 검사 (개발 PR #62)
 
 [v4 Android 사전 검사 스크립트](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/p5_android_apk_preflight.py)는 공식 패키지 ID, 고정 공개 인증서 지문, Android v2 서명, 베타/Stable 버전쌍, 로컬 파일 해시, 지정한 설치본 버전보다 신규 코드가 큰지를 검사하며 **어떠한 APK도 설치/삭제/업로드하지 않습니다**.
