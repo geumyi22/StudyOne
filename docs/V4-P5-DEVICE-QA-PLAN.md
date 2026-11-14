@@ -4,7 +4,7 @@
 
 - 제품 범위: **Android + iOS + Windows 통합 v4** (사용자 선택)
 - 운영 방향: **월 0원 무료 범위만 허용**. 별도 클라우드 + 외부 OAuth 제공자 검토 중 (가입·카드 인증·도메인·유료 서비스·데이터 이전 모두 별도 승인)
-- 실기기 QA: 사용자가 **Galaxy S24 Ultra + iPhone**, **Apple Developer 계정 접근**을 확인. 각 OS 정확한 버전, iPhone 모델, Xcode/Mac 접근·유료 개발자 프로그램/팀 서명 자격 및 실제 설치 검증은 **미확인**. Windows 11 테스트 환경 기록은 있으나 현재 기기 환경은 QA 시 재확인
+- 실기기 QA 환경(사용자 직접 확인): **Galaxy S24 Ultra / Android 17 / One UI 9**, **iPhone**, **Mac/Xcode 접근 불가**, **Apple 무료 Personal Team**. iPhone 모델·iOS 버전·실제 설치 결과 및 S24 Ultra에 설치된 StudyOne 버전/서명 정보는 미확인. Windows 11 테스트 환경 기록은 있으나 QA 시 재확인
 - 개발 기준: [Draft #60](https://github.com/geumyi22/StudyOne/pull/60) → [#61](https://github.com/geumyi22/StudyOne/pull/61) → [#62](https://github.com/geumyi22/StudyOne/pull/62), 최종 검증 대상 SHA는 실행 직전에 재확인
 - 추적: [P5 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63), [출하 수용 기준](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
 
@@ -28,6 +28,24 @@
 - **Oracle Always Free 조건부 후보:** VM + 무료 블록 볼륨은 기존 SQLite 서버를 상대적으로 적게 변경하여 테스트할 수 있으나, 무료 자원 회수/계정 휴면·용량 제약, 계정/카드 본인 인증, 시스템 운영·방화벽·백업 관리 부담이 있음. **가입·인스턴스 생성·카드 입력은 사용자 승인 전 진행하지 않음**. [무료 자원 및 제약](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm), [한국어 가입 FAQ](https://www.oracle.com/kr/cloud/free/faq/)
 - **Supabase Free 추가 개발 필요:** PostgreSQL 기반으로 현재 서버 저장 구조를 재설계해야 하며, 적은 활동으로 무료 프로젝트가 일시 중단될 수 있음. [프로젝트 일시 중단 정책](https://supabase.com/docs/guides/platform/free-project-pausing)
 - 운영 안정성, 백업 보유 및 개인정보 보호 조건을 충족하지 못하면 **무료만을 이유로 실제 학습 기록을 서버에 이전하지 않음**. 처음에는 합성 데이터만 사용.
+
+## Galaxy S24 Ultra / Android 17 실기기 읽기 전용 사전 점검 (개발 PR #62)
+
+사용자가 **Android 17 / One UI 9**를 보고했습니다. 공식 Android 17의 API level은 **37**입니다. 다음 도구는 테스트 기기 OS·모델·StudyOne 정식/Canary 설치 **메타데이터만 읽고**, 앱 설치·업데이트·삭제·백업·개인 파일 전송을 하지 않습니다. ADB 연결 승인으로 디버깅 통신은 가능해지므로 본인 PC·본인 휴대전화에서만 실행하고, 테스트 후 **USB 디버깅을 끄거나 승인된 PC 권한을 해제**하세요.
+
+- 선행 조건: Windows PC에 공식 [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools), 데이터 통신 가능한 USB 케이블, Galaxy 설정에서 개발자 옵션/USB 디버깅 사용 및 본인 PC 연결 승인. [ADB 공식 안내](https://developer.android.com/tools/adb)
+- 실행 (GitHub의 해당 PR 소스를 사용자 PC에 받은 후, 루트 폴더에서):
+
+```powershell
+py -3 scripts/p5_android_device_preflight.py
+```
+
+- 기기가 여러 개 연결된 경우 `--serial`로 지정할 수 있지만 **전체 휴대전화 일련번호를 GitHub/채팅에 공유하지 마세요**. 출력에도 일련번호를 포함하지 않습니다.
+- `READ_ONLY_DEVICE_METADATA_INSPECTED`: **S24 Ultra·Android 17(API 37)·설치된 StudyOne 패키지/버전코드만 조회**했다는 의미입니다. `officialInstalledVersionCode`가 `null`이면 정식 패키지를 확인하지 못한 것입니다. `CANARY_ONLY`는 별도 디버그 앱이므로 정식 설치본과 혼동하지 마세요.
+- `oneUiRawProperty`는 삼성 시스템 속성의 원본 값으로, **One UI 9 인증이 아닙니다**. 사용자가 휴대전화 설정에서 직접 확인한 9 버전을 현재 기준으로 유지합니다.
+- **미검증:** 기존 앱 설치 서명 인증서, 학습 기록 4종, 백업/복구, 실제 v4 서명 후보 덮어쓰기 및 UI E2E. 이들은 이슈 #63의 Android 항목이 모두 체크되기 전까지 미완료입니다.
+
+[스크립트 원문](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/p5_android_device_preflight.py) · [모의 테스트 9개](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/tests/test_p5_android_device_preflight.py) · [Android 17 공식 발표](https://developer.android.com/blog/posts/android-17-is-here)
 
 ## Android 4.0 서명 APK 읽기 전용 사전 검사 (개발 PR #62)
 
@@ -75,7 +93,7 @@ python3 scripts/p5_android_apk_preflight.py \
 
 **연령/배포 계정 조건:** Apple의 무료 개발자 등록은 대한민국에서 만 14세 이상 가능하지만, 유료 Apple Developer Program에 직접 가입하려면 해당 지역의 성년이어야 합니다. 따라서 본인 기기 무료 개발 테스트와 유료 프로그램/공개 배포 자격은 구분합니다. 법적 자격·팀 권한 확인 없이 가족/타인 계정 또는 서명 자격을 임의로 사용하지 않습니다. [무료 개발자 등록](https://developer.apple.com/register/) · [배포 프로그램 가입 조건](https://developer.apple.com/help/account/membership/program-enrollment/)
 
-Apple 계정 접근만 확인되었으며 **Mac/Xcode 접근, Personal Team인지 유료 멤버십인지, 현재 설치된 `com.studyone.ios` 서명/데이터 이전 안전성은 확인 전**입니다. 처음에는 기존 앱과 분리된 합성 테스트 환경에서 진행하고, 동일 bundle ID 재설치를 통한 기존 원본 덮어쓰기·삭제는 보류합니다.
+**2026-11-15 확인된 장애 조건:** Apple 무료 Personal Team이고 **사용 가능한 Mac/Xcode가 없습니다**. 따라서 현재는 Xcode를 통한 iPhone 개발용 서명·프로비저닝·실기기 설치가 불가능합니다. GitHub Actions의 macOS **unsigned iOS 빌드와 시뮬레이터 테스트**는 계속할 수 있지만, 개인 실기기 QA·TestFlight/App Store·Stable 설치를 통과한 것으로 판단하지 않습니다. 비공식 서명, 가족/타인의 계정 사용, 유료 개발자 가입은 임의 진행하지 않습니다. 처음에는 기존 앱과 분리된 합성 테스트 환경에서 진행하고, 동일 bundle ID 재설치를 통한 기존 원본 덮어쓰기·삭제는 보류합니다.
 
 - [ ] I1. 실제 iPhone 또는 iPad 모델·iOS/iPadOS 버전·테스트 Apple 계정의 서명 권한·만료/갱신 방식을 준비. 기존 사용자 `com.studyone.ios` 데이터 보존 여부를 확인하지 않고 번들 ID/팀 ID를 변경하지 않음
 - [ ] I2. 개발용 서명 빌드를 테스트용 기기에 별도로 설치하고 앱 첫 실행·재시작·재부팅 확인
