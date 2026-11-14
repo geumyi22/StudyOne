@@ -8,7 +8,7 @@
 
 - 현재 공개 최신은 **`v3.0.0-beta.2`**이며 `main`은 v4 미반영 개발 기준선입니다.
 - **v4 Draft 작업:** [통합 #60](https://github.com/geumyi22/StudyOne/pull/60) → [Windows 학습 UX #61](https://github.com/geumyi22/StudyOne/pull/61) → [P0~P4 후속 구현 #62](https://github.com/geumyi22/StudyOne/pull/62). **세 PR 모두 Draft·미병합**입니다.
-- #62 최신 개발 HEAD는 `0f55b92`입니다. Android 정식 APK 서명·해시 검사에 더해 **Galaxy S24 Ultra(Android 17) 읽기 전용 ADB 설치 메타데이터 검사**와 모의 테스트 9개를 추가했고, **해당 커밋의 개발 CI 7개 모두 통과**했습니다. 실제 S24 Ultra·iPhone·Windows 설치·개인 데이터 보호와 운영 계정 연결은 여전히 미완료입니다. [동일 HEAD CI 결과](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae/checks)를 확인하세요.
+- #62 최신 개발 HEAD는 `3a0a3c6`입니다. **S24 Ultra(Android 17) 읽기 전용 ADB 검사**가 기본 사용자 영역만 조회하도록 개선되었고, 일부 결과가 출력돼도 권한 오류가 있으면 실패로 처리합니다. 합성 기기 검사 10개와 APK 검사 7개·버전 계약 4개를 통과했습니다. [이전 HEAD `0f55b92`의 7개 CI 성공](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae/checks)은 역사적 근거이며, [현재 HEAD CI](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883/checks)는 별도 검증 중입니다. 실제 S24 Ultra 앱 서명·데이터 보존과 iPhone·Windows 설치 및 운영 계정 연결은 미완료입니다.
 - **P5 실기기·운영 통합 검증은 별도 대기:** [추적 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63). 병합·베타/Stable 출시는 별도 승인 전 진행하지 않습니다.
 
 [2026-11-15 GitHub 현황·검증 증거·남은 작업](docs/REPOSITORY-STATUS-2026-11-15.md) · [P5 Galaxy S24 Ultra·iPhone·Windows QA 절차](docs/V4-P5-DEVICE-QA-PLAN.md) · [v4 출하 차단 기준 (Draft)](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
