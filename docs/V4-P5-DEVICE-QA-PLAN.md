@@ -47,6 +47,18 @@ py -3 scripts/p5_android_device_preflight.py
 
 [스크립트 원문](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/p5_android_device_preflight.py) · [모의 테스트 9개](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/tests/test_p5_android_device_preflight.py) · [Android 17 공식 발표](https://developer.android.com/blog/posts/android-17-is-here)
 
+### 2026-11-15 실제 S24 Ultra 연결 중 보호된 사용자 영역 권한 오류 — 수정 반영
+
+사용자 본인 ADB 출력에서 `samsung / SM-S928N / Android 17 / API 37 / ro.build.version.oneui=90000` 확인. **정식 StudyOne `versionCode:30106`이 출력됐지만** 동일 명령이 별도 보호 사용자 영역 조회의 `SecurityException`을 출력해 조회 전체는 실패했습니다. 기기 일련번호/다른 앱/실제 학습 원본은 기록하지 않습니다.
+
+따라서 공식 [ADB 패키지 목록의 `--user` 옵션](https://developer.android.com/tools/adb)을 사용해 **기본 사용자 영역 0만** 읽도록 후속 명령을 한정했습니다.
+
+```powershell
+.\adb.exe shell pm list packages --user 0 --show-versioncode com.studyone.app
+```
+
+[수정 커밋 `3a0a3c6`](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883)은 같은 한정을 Python 기기 점검 스크립트에도 추가했습니다. 출력 일부가 성공했더라도 `SecurityException`을 포함하면 실패 처리하는 합성 회귀 테스트 포함 **10개 PASS**, 이전 APK 검사 7개 및 v4 계약 4개 PASS. 실제 PC/휴대전화 재실행 결과를 받아야만 StudyOne 정식 설치 여부를 확정할 수 있습니다. 권한 부여·타 프로필 우회·앱 삭제/설치는 시도하지 않습니다.
+
 ## Android 4.0 서명 APK 읽기 전용 사전 검사 (개발 PR #62)
 
 [v4 Android 사전 검사 스크립트](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/scripts/p5_android_apk_preflight.py)는 공식 패키지 ID, 고정 공개 인증서 지문, Android v2 서명, 베타/Stable 버전쌍, 로컬 파일 해시, 지정한 설치본 버전보다 신규 코드가 큰지를 검사하며 **어떠한 APK도 설치/삭제/업로드하지 않습니다**.
