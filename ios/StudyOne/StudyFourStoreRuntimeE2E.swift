@@ -46,6 +46,8 @@ enum StudyFourStoreRuntimeE2E {
                         "read-only study paper schedule validation failed")
             try require(StudyPaperProgressLink.selfTest(),
                         "strict individual-paper autofill validation failed")
+            try require(StudyPaperGenericProgressLink.selfTest(),
+                        "generic individual UUID completion validation failed")
             try require(StudyPaperPlanApproval.selfTest(),
                         "reviewed paper-plan task duplicate validation failed")
             // The simulator must have no preexisting study records. Refuse to

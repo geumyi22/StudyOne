@@ -62,6 +62,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(names, ["studyone_read_snapshot",
                                  "studyone_read_changes",
                                  "studyone_pending_study_plans",
+                                 "studyone_read_plan_status",
                                  "studyone_preview_paper_schedule",
                                  "studyone_propose_study_plan"])
         self.assertFalse(any("delete" in n or "apply" in n or "write_task" in n
@@ -93,6 +94,39 @@ class McpTests(unittest.TestCase):
         status, snapshot = self.api(self.assistant["token"], "/mcp",
                                     self.rpc("studyone_read_snapshot"))
         self.assertEqual(len(json.loads(snapshot["result"]["content"][0]["text"])["records"]), 1)
+
+    def test_proposal_receipt_readonly_isolation_and_approval(self):
+        proposed = self.proposal_args(0)
+        status, created = self.api(self.assistant["token"], "/mcp",
+                                   self.rpc("studyone_propose_study_plan", proposed))
+        self.assertEqual(status, 200)
+        row = json.loads(created["result"]["content"][0]["text"])
+        query = {"proposalId": row["id"]}
+        status, pending = self.api(self.assistant["token"], "/mcp",
+                                   self.rpc("studyone_read_plan_status", query))
+        found = json.loads(pending["result"]["content"][0]["text"])
+        self.assertEqual((status, found["state"], found["cursor"]),
+                         (200, "pending", None))
+        self.assertTrue(found["readOnly"])
+        self.assertEqual(self.registry.store(self.account).snapshot()["records"], [])
+        status, other = self.api(self.remote["token"], "/mcp",
+                                 self.rpc("studyone_read_plan_status", query))
+        self.assertTrue(other["result"]["isError"])
+        self.assertIn("PROPOSAL_NOT_FOUND", other["result"]["content"][0]["text"])
+        status, approved = self.api(self.editor["token"],
+                  f"/v2/proposals/{row['id']}/approve", {})
+        self.assertEqual((status, approved["state"]), (200, "approved"))
+        status, receipt = self.api(self.assistant["token"], "/mcp",
+                                   self.rpc("studyone_read_plan_status", query))
+        current = json.loads(receipt["result"]["content"][0]["text"])
+        self.assertEqual(current["state"], "approved")
+        self.assertEqual(current["cursor"], approved["cursor"])
+        self.assertEqual(self.registry.store(self.account).snapshot()["cursor"],
+                         approved["cursor"])
+        _, bad = self.api(self.assistant["token"], "/mcp",
+                          self.rpc("studyone_read_plan_status",
+                                   {"proposalId": "not-a-uuid"}))
+        self.assertTrue(bad["result"]["isError"])
 
     def test_read_only_paper_schedule_tool_does_not_mutate_tasks(self):
         candidate = {

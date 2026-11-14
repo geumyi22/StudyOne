@@ -11,6 +11,10 @@ on:
       - 'app/build.gradle.kts'
       - 'windows/StudyOne.Desktop/StudyOne.Desktop.csproj'
       - 'scripts/tests/check_v4_release_contract.py'
+      - 'scripts/p5_android_apk_preflight.py'
+      - 'scripts/tests/test_p5_android_apk_preflight.py'
+      - 'scripts/p5_android_device_preflight.py'
+      - 'scripts/tests/test_p5_android_device_preflight.py'
       - '.github/workflows/v4-release-contract.yml'
       - 'docs/RELEASE-4.0.0-ACCEPTANCE.md'
   workflow_dispatch:
@@ -35,3 +39,7 @@ jobs:
           python-version: '3.12'
       - name: Check release candidate metadata without publishing
         run: python3 scripts/tests/check_v4_release_contract.py
+      - name: Verify read-only Android v4 APK preflight fail-closed contract (synthetic)
+        run: python3 -m unittest discover -s scripts/tests -p 'test_p5_android_apk_preflight.py' -v
+      - name: Verify S24 Ultra Android 17 read-only ADB inventory contract (synthetic)
+        run: python3 -m unittest discover -s scripts/tests -p 'test_p5_android_device_preflight.py' -v

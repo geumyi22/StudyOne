@@ -55,6 +55,19 @@ def definitions():
             "inputSchema": dict(base, properties={}, required=[])
         },
         {
+            "name": "studyone_read_plan_status",
+            "description": (
+                "Read a proposed plan's state and confirmed cursor after app approval. "
+                "This tool cannot approve or change the plan; read the actual "
+                "snapshot/changes to confirm individual saved tasks."
+            ),
+            "inputSchema": {
+                "type": "object", "additionalProperties": False,
+                "required": ["proposalId"],
+                "properties": {"proposalId": {"type": "string", "format": "uuid"}}
+            }
+        },
+        {
             "name": "studyone_preview_paper_schedule",
             "description": (
                 "READ-ONLY preview of remaining printed exams/worksheets across "
@@ -168,6 +181,10 @@ def call(registry, account_id, name, arguments):
         if arguments:
             raise ApiProblem(400, "INVALID_TOOL_ARGUMENTS")
         return ProposalStore(store).pending()
+    if name == "studyone_read_plan_status":
+        if set(arguments) != {"proposalId"}:
+            raise ApiProblem(400, "INVALID_TOOL_ARGUMENTS")
+        return ProposalStore(store).status(arguments["proposalId"])
     if name == "studyone_preview_paper_schedule":
         return preview_study_schedule(arguments)
     if name == "studyone_propose_study_plan":
