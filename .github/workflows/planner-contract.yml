@@ -7,6 +7,8 @@ on:
       - 'app/src/main/java/com/studyone/app/StudyProgress*.java'
       - 'app/src/main/java/com/studyone/app/StudyPaperSchedule.java'
       - 'app/src/main/java/com/studyone/app/StudyPaperProgressLink.java'
+      - 'app/src/main/java/com/studyone/app/StudyPaperGenericProgressLink.java'
+      - 'scripts/tests/StudyPaperGenericProgressLinkSmoke.java'
       - 'app/src/main/java/com/studyone/app/BackupIo.java'
       - 'app/src/main/java/com/studyone/app/AppUpdates.java'
       - 'app/src/main/java/com/studyone/app/StudyUpdateChannels.java'
@@ -73,6 +75,16 @@ jobs:
             app/src/main/java/com/studyone/app/StudyPaperProgressLink.java \
             scripts/tests/StudyPaperProgressLinkSmoke.java
           java -cp /tmp/studyone-paper-progress-classes StudyPaperProgressLinkSmoke
+
+      - name: Verify arbitrary-subject individual UUID mapping (no guessing)
+        run: |
+          mkdir -p /tmp/studyone-paper-generic
+          javac -encoding UTF-8 -d /tmp/studyone-paper-generic \
+            app/src/main/java/com/studyone/app/StudyProgressItem.java \
+            app/src/main/java/com/studyone/app/StudyPaperSchedule.java \
+            app/src/main/java/com/studyone/app/StudyPaperGenericProgressLink.java \
+            scripts/tests/StudyPaperGenericProgressLinkSmoke.java
+          java -cp /tmp/studyone-paper-generic StudyPaperGenericProgressLinkSmoke
       - name: Compile and exercise the standalone Java progress checklist formatter
         run: |
           mkdir -p /tmp/studyone-progress-checklist-classes

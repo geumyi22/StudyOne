@@ -70,4 +70,38 @@ enum StudyPaperGenericProgressLink {
         }
         return Verified(lanes: mapped, completed: completed)
     }
+
+    static func selfTest() -> Bool {
+        do {
+            let lane = StudyPaperSchedule.Lane(name: "1단원", papers: [
+                StudyPaperSchedule.Paper(title: "형성평가", total: 3, completed: 0)
+            ])
+            let units = ["①","②","③"]
+            let records = try units.enumerated().map { i, number in
+                try StudyProgressItem.create(
+                    subject: "수학", material: "풍산자",
+                    unit: "[1단원] 형성평가 \(number)",
+                    status: i == 0 ? .done : .todo, inExamScope: true)
+            }
+            let result = try checked(records, subject: "수학",
+                                     material: "풍산자", template: [lane])
+            guard result.completed == 1,
+                  result.lanes[0].papers[0].completed == 1 else { return false }
+            do {
+                _ = try checked(Array(records.dropLast()),
+                                subject: "수학", material: "풍산자",
+                                template: [lane])
+                return false
+            } catch { }
+            let summary = try StudyProgressItem.create(
+                subject: "수학", material: "풍산자",
+                unit: "3회 중 1회 완료", status: .inProgress, inExamScope: true)
+            do {
+                _ = try checked([summary], subject: "수학",
+                                material: "풍산자", template: [lane])
+                return false
+            } catch { }
+            return true
+        } catch { return false }
+    }
 }
