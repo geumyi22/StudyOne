@@ -9,7 +9,7 @@
 - 현재 공개 최신은 **`v3.0.0-beta.2`**이며 `main`은 v4 미반영 개발 기준선입니다.
 - **v4 Draft 작업:** [통합 #60](https://github.com/geumyi22/StudyOne/pull/60) → [Windows 학습 UX #61](https://github.com/geumyi22/StudyOne/pull/61) → [P0~P4 후속 구현 #62](https://github.com/geumyi22/StudyOne/pull/62). **세 PR 모두 Draft·미병합**입니다.
 - #62 최신 개발 HEAD는 `3a0a3c6`입니다. **S24 Ultra(Android 17) 읽기 전용 ADB 검사**가 기본 사용자 영역만 조회하도록 개선되었고, 일부 결과가 출력돼도 권한 오류가 있으면 실패로 처리합니다. 합성 기기 검사 10개와 APK 검사 7개·버전 계약 4개를 통과했고, [같은 HEAD의 GitHub Actions 7개가 모두 성공](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883/checks)했습니다(Android 빌드, iOS unsigned, v4 비배포 계약 등). 사용자 S24 Ultra에서 `pm list packages --user 0 --show-versioncode com.studyone.app` 재조회 결과 `com.studyone.app versionCode:30106`을 오류 없이 확인했습니다. **이는 기본 사용자 영역의 설치 패키지·버전코드 확인일 뿐**, 앱 서명·데이터 보존과 iPhone·Windows 설치 및 운영 계정 연결은 미완료입니다.
-- **P5 실기기·운영 통합 검증은 별도 대기:** [추적 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63). 병합·베타/Stable 출시는 별도 승인 전 진행하지 않습니다.
+- **기존 S24 Ultra 설치본 수동 화면 기본 스모크 5/5 사용자 보고 PASS:** 실행·화면 이동·기록 표시·레이아웃·재실행을 읽기 전용으로 확인했습니다. **v4 후보 앱 전체 P5 실기기·서명·데이터 복구/업데이트·운영 통합 QA는 여전히 미완료**입니다. [추적 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63). 병합·베타/Stable 출시는 별도 승인 전 진행하지 않습니다.
 
 [2026-11-15 GitHub 현황·검증 증거·남은 작업](docs/REPOSITORY-STATUS-2026-11-15.md) · [P5 Galaxy S24 Ultra·iPhone·Windows QA 절차](docs/V4-P5-DEVICE-QA-PLAN.md) · [v4 출하 차단 기준 (Draft)](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
 
