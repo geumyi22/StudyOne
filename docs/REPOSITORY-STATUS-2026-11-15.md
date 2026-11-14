@@ -71,13 +71,13 @@
 ## 4-1-2. 최신 P5 삼성 보호 사용자 영역 대응 HEAD (2026-11-15)
 
 - [`3a0a3c6f26c776961c1bde53191893ad80bd9883`](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883): 사용자 보고 S24 Ultra의 일부 StudyOne 설치 정보 출력 후 보호 사용자 영역 권한 오류를 반영. P5 스크립트의 패키지 조회를 Android 기본 사용자 `--user 0`으로 제한하고 `SecurityException`을 보고한 부분 출력은 실패 처리.
-- 실제 사용자 제공 ADB 조회의 제조사 Samsung, 모델 `SM-S928N`, Android 17, API 37, One UI 원본 속성 `90000` 확인. 정식 `com.studyone.app versionCode:30106`은 관측됐으나 동일 조회 명령에서 보안 예외가 발생해 **정식 설치 정보 검증 PASS 처리하지 않음**. 사용자의 재조회 결과 대기 중. 기기 일련번호/실제 학습 기록은 문서에 저장하지 않음.
-- 로컬 합성 단위 테스트 기기 10개·APK 검사 7개·버전 계약 4개 성공. [GitHub 최신 비배포 계약 CI #43626023668](https://github.com/geumyi22/StudyOne/actions/runs/43626023668) 성공. Android 빌드·에뮬레이터 및 iOS unsigned 시뮬레이터 포함 7개 동일 HEAD CI는 완료 후 별도 기록.
+- 실제 사용자 제공 ADB 조회의 제조사 Samsung, 모델 `SM-S928N`, Android 17, API 37, One UI 원본 속성 `90000` 확인. 초기 전체 사용자 영역 조회는 보호 사용자 `150`의 `SecurityException`이 있어 실패 처리. 이후 사용자 제공 `pm list packages --user 0 --show-versioncode com.studyone.app`의 **오류 없는 재조회에서 `package:com.studyone.app versionCode:30106` 확인(기본 사용자 0 패키지·버전코드 조회 PASS)**. 설치된 앱의 인증서·데이터·화면·업데이트 경로까지 검증한 것은 아님. 기기 일련번호/실제 학습 기록은 문서에 저장하지 않음.
+- 로컬 합성 단위 테스트 기기 10개·APK 검사 7개·버전 계약 4개 성공. 동일 HEAD GitHub Actions **7/7 completed/success**: [비배포 계약 #43626023668](https://github.com/geumyi22/StudyOne/actions/runs/43626023668), [Android APK #43626023846](https://github.com/geumyi22/StudyOne/actions/runs/43626023846), [iOS unsigned IPA #43626023750](https://github.com/geumyi22/StudyOne/actions/runs/43626023750), [Planner #43626023708](https://github.com/geumyi22/StudyOne/actions/runs/43626023708), [Recovery #43626023699](https://github.com/geumyi22/StudyOne/actions/runs/43626023699), [Sync #43626023819](https://github.com/geumyi22/StudyOne/actions/runs/43626023819), [Account TLS #43626023753](https://github.com/geumyi22/StudyOne/actions/runs/43626023753). 실기기 기능·서명 검증과는 구분.
 - 모든 실제 정식 앱 서명·원본 4종 백업/복원·업데이트·iPhone 서명·운영 3기기 동기화·v4 Stable 출하는 계속 미검증/미발행.
 
 ## 4-2. 사용자 환경·무료 클라우드 정책 확인
 
-- 사용자 확인: Android Galaxy S24 Ultra / **Android 17(API 37) / One UI 9**, iPhone / **무료 Apple Personal Team**, **Mac/Xcode 없음**, 기존 Windows 11 테스트 환경. 실제 기기 연결·설치된 StudyOne 서명/버전·iPhone 모델/iOS 버전·프로덕션 서명은 미확인. 무료 개인팀의 iOS 기기 서명은 Xcode가 필요하므로 현재 차단 상태.
+- 사용자 확인: Android Galaxy S24 Ultra / **Android 17(API 37) / One UI 9**, iPhone / **무료 Apple Personal Team**, **Mac/Xcode 없음**, 기존 Windows 11 테스트 환경. S24 Ultra ADB 연결 및 기본 사용자 0의 StudyOne `versionCode:30106`은 사용자 출력으로 확인. 설치된 앱 서명·iPhone 모델/iOS 버전·프로덕션 서명은 미확인. 무료 개인팀의 iOS 기기 서명은 Xcode가 필요하므로 현재 차단 상태.
 - 별도 클라우드 월 예산 **무료(0원)**. Render Free는 SQLite 로컬 파일 지속성 없어 단독 운영 저장소로 부적합([공식](https://render.com/docs/free)). Oracle Always Free VM/블록 볼륨은 조건부([공식](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm))이며 카드 인증과 운영/회수/백업 제약이 있음. Supabase Free는 비활동 시 일시 중단([공식](https://supabase.com/docs/guides/platform/free-project-pausing))과 저장 방식 변경이 필요. 사용자의 비용·가입·실데이터 이전 승인은 아직 없음.
 - Apple 무료 Personal Team의 Xcode 실기기 개발 테스트와 TestFlight/App Store 배포 멤버십/성년 자격을 구분([공식](https://developer.apple.com/help/account/basics/about-your-developer-account)). [P5 실행 절차서](V4-P5-DEVICE-QA-PLAN.md) 참고.
 
