@@ -73,6 +73,8 @@ python3 scripts/p5_android_apk_preflight.py \
 
 **Apple 계정 구분(2026-11-15 공식 문서 확인):** 무료 Apple Developer 등록만으로도 Mac의 Xcode에 **Personal Team**으로 로그인해 본인 iPhone의 개발 빌드를 시험할 수 있습니다. 다만 무료 개인 팀 프로비저닝은 7일 만료/재설치 제한이 있어 사용자에게 배포하는 정식 Stable과 다릅니다. TestFlight/App Store 배포에는 별도 Apple Developer Program 멤버십/배포 권한이 필요합니다. [Apple Developer 계정 개요](https://developer.apple.com/kr/help/account/basics/about-your-developer-account) · [Xcode 실기기 실행](https://developer.apple.com/documentation/xcode/building-and-running-an-app) · [개발자 모드](https://developer.apple.com/documentation/xcode/enabling-developer-mode-on-a-device)
 
+**연령/배포 계정 조건:** Apple의 무료 개발자 등록은 대한민국에서 만 14세 이상 가능하지만, 유료 Apple Developer Program에 직접 가입하려면 해당 지역의 성년이어야 합니다. 따라서 본인 기기 무료 개발 테스트와 유료 프로그램/공개 배포 자격은 구분합니다. 법적 자격·팀 권한 확인 없이 가족/타인 계정 또는 서명 자격을 임의로 사용하지 않습니다. [무료 개발자 등록](https://developer.apple.com/register/) · [배포 프로그램 가입 조건](https://developer.apple.com/help/account/membership/program-enrollment/)
+
 Apple 계정 접근만 확인되었으며 **Mac/Xcode 접근, Personal Team인지 유료 멤버십인지, 현재 설치된 `com.studyone.ios` 서명/데이터 이전 안전성은 확인 전**입니다. 처음에는 기존 앱과 분리된 합성 테스트 환경에서 진행하고, 동일 bundle ID 재설치를 통한 기존 원본 덮어쓰기·삭제는 보류합니다.
 
 - [ ] I1. 실제 iPhone 또는 iPad 모델·iOS/iPadOS 버전·테스트 Apple 계정의 서명 권한·만료/갱신 방식을 준비. 기존 사용자 `com.studyone.ios` 데이터 보존 여부를 확인하지 않고 번들 ID/팀 ID를 변경하지 않음
