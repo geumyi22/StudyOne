@@ -10,7 +10,7 @@
 | 기본 `main` HEAD | [`59a789d`](https://github.com/geumyi22/StudyOne/commit/59a789d947277526d3255f01b30ebda33bd43488), v4 Draft 미반영 |
 | 공개 최신 | [`v3.0.0-beta.2`](https://github.com/geumyi22/StudyOne/releases/tag/v3.0.0-beta.2) (2026-10-17, prerelease) |
 | 기본 브랜치의 개발 후보 | Android `3.1.0-canary.7`, iOS·Windows Canary.6 기반 ([기존 버전 매트릭스](VERSION-MATRIX.md), 2026-10-23 스냅샷) |
-| 개발 최전선 | [Draft PR #62](https://github.com/geumyi22/StudyOne/pull/62), `0f55b923c0aca8e408a0105c024681efa0c71aae` (P5 APK·S24 Ultra Android 17 읽기 전용 검사 포함) |
+| 개발 최전선 | [Draft PR #62](https://github.com/geumyi22/StudyOne/pull/62), `3a0a3c6f26c776961c1bde53191893ad80bd9883` (P5 ADB 기본 사용자 한정·권한 오류 차단 포함) |
 | v4 출시 여부 | **미출시** — `v4.0.0-beta.1` / `v4.0.0` 태그·릴리스 없음 |
 | 사용자 실기기·운영 계정 | 사용자 확인: **S24 Ultra Android 17 / One UI 9**, **iPhone 무료 Personal Team / Mac·Xcode 접근 불가**. 실제 설치·서명·학습 원본·운영 계정은 접근·검증하지 않음 |
 
@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | 1 | [PR #60 — v4 통합 후보](https://github.com/geumyi22/StudyOne/pull/60) | `main` ← `feature/studyone-v4-integrated-release-candidate` / `b3e4b97` | **Draft, 미병합** |
 | 2 | [PR #61 — Windows 학습 도구·플랫폼 일치](https://github.com/geumyi22/StudyOne/pull/61) | #60 브랜치 ← `feature/studyone-v4-learning-ux-20261113` / `baf3615` | **Draft, 미병합** |
-| 3 | [PR #62 — P0~P4 후속 개발](https://github.com/geumyi22/StudyOne/pull/62) | #61 브랜치 ← `feature/studyone-v4-p0-p4-20261114` / `0f55b92` | **Draft, 미병합** |
+| 3 | [PR #62 — P0~P4 후속 개발](https://github.com/geumyi22/StudyOne/pull/62) | #61 브랜치 ← `feature/studyone-v4-p0-p4-20261114` / `3a0a3c6` | **Draft, 미병합** |
 
 위 PR은 **누적 스택**입니다. #62를 `main`에서 독립 구현된 것으로 보거나, 세 PR을 독립적으로 임의 병합하지 마세요. 병합 직전 각 PR의 최종 SHA/차이/체크/충돌을 다시 점검하고 사용자 별도 판단을 받습니다.
 
@@ -61,12 +61,19 @@
 - 새 커밋에 대응하는 GitHub Actions **7개 모두 `completed/success`** 직접 확인: [Planner #43621822434](https://github.com/geumyi22/StudyOne/actions/runs/43621822434), [v4 계약 및 신규 검사 #43621822495](https://github.com/geumyi22/StudyOne/actions/runs/43621822495), [복구 #43621822428](https://github.com/geumyi22/StudyOne/actions/runs/43621822428), [Sync #43621822470](https://github.com/geumyi22/StudyOne/actions/runs/43621822470), [Account TLS #43621822461](https://github.com/geumyi22/StudyOne/actions/runs/43621822461), [Android #43621822454](https://github.com/geumyi22/StudyOne/actions/runs/43621822454), [iOS #43621822418](https://github.com/geumyi22/StudyOne/actions/runs/43621822418). 계약 워크플로의 **신규 모의 검사 단계도 통과**.
 - 로컬 신설 합성 테스트 7개 + 기존 v4 계약 4개 통과. 이 결과도 Android S24 Ultra 정식 서명·iPhone 실기기·Windows 설치·개인 4종 데이터 업그레이드/복원 또는 운영 OAuth를 시험한 결과가 아님.
 
-## 4-1-1. 최신 P5 Android 17 사전검사 개발 HEAD (2026-11-15)
+## 4-1-1. 이전 P5 Android 17 사전검사 개발 HEAD (2026-11-15 기록 보존)
 
 - 최신 기준: [`0f55b923c0aca8e408a0105c024681efa0c71aae`](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae). 기존 APK 인증서/버전 정적 검사에 추가로 S24 Ultra Android 17(API 37) **읽기 전용 ADB 기기 메타데이터 점검** 도구 구현.
 - 로컬 합성 단위 테스트 **기기 점검 9개 + APK 사전검사 7개 + 버전 계약 4개 PASS**, 원본 사용자 기기/기록은 접근하지 않음. GitHub Actions [v4 nonpublishing release contract #43624198048](https://github.com/geumyi22/StudyOne/actions/runs/43624198048)의 3개 검사 단계(버전, APK, S24U)도 모두 `completed/success`.
 - <b>이 HEAD 동일 SHA의 GitHub Actions 7종 모두 `completed / success` 확인:</b> [Planner #43624198071](https://github.com/geumyi22/StudyOne/actions/runs/43624198071), [v4 계약(신규 9개 모의 테스트) #43624198048](https://github.com/geumyi22/StudyOne/actions/runs/43624198048), [Recovery #43624198065](https://github.com/geumyi22/StudyOne/actions/runs/43624198065), [Sync #43624198063](https://github.com/geumyi22/StudyOne/actions/runs/43624198063), [Account TLS #43624198087](https://github.com/geumyi22/StudyOne/actions/runs/43624198087), [Android APK/build·lint·emulator #43624198069](https://github.com/geumyi22/StudyOne/actions/runs/43624198069), [iOS unsigned IPA·simulator E2E #43624198097](https://github.com/geumyi22/StudyOne/actions/runs/43624198097). Android 에뮬레이터 설치·실행과 iOS Simulator E2E 단계도 각각 성공, iOS prerelease 자산 첨부 단계는 PR에서 SKIP. 스크립트/CI 통과만으로 실제 USB 연결·정식 패키지 서명 확인·4종 복원·실기기 UX/오프라인/운영 동기화 합격을 뜻하지 않음.
 - [실행 전 기기·권한·데이터 보호 절차](V4-P5-DEVICE-QA-PLAN.md) 및 [P5 QA 이슈](https://github.com/geumyi22/StudyOne/issues/63) 참고.
+
+## 4-1-2. 최신 P5 삼성 보호 사용자 영역 대응 HEAD (2026-11-15)
+
+- [`3a0a3c6f26c776961c1bde53191893ad80bd9883`](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883): 사용자 보고 S24 Ultra의 일부 StudyOne 설치 정보 출력 후 보호 사용자 영역 권한 오류를 반영. P5 스크립트의 패키지 조회를 Android 기본 사용자 `--user 0`으로 제한하고 `SecurityException`을 보고한 부분 출력은 실패 처리.
+- 실제 사용자 제공 ADB 조회의 제조사 Samsung, 모델 `SM-S928N`, Android 17, API 37, One UI 원본 속성 `90000` 확인. 정식 `com.studyone.app versionCode:30106`은 관측됐으나 동일 조회 명령에서 보안 예외가 발생해 **정식 설치 정보 검증 PASS 처리하지 않음**. 사용자의 재조회 결과 대기 중. 기기 일련번호/실제 학습 기록은 문서에 저장하지 않음.
+- 로컬 합성 단위 테스트 기기 10개·APK 검사 7개·버전 계약 4개 성공. [GitHub 최신 비배포 계약 CI #43626023668](https://github.com/geumyi22/StudyOne/actions/runs/43626023668) 성공. Android 빌드·에뮬레이터 및 iOS unsigned 시뮬레이터 포함 7개 동일 HEAD CI는 완료 후 별도 기록.
+- 모든 실제 정식 앱 서명·원본 4종 백업/복원·업데이트·iPhone 서명·운영 3기기 동기화·v4 Stable 출하는 계속 미검증/미발행.
 
 ## 4-2. 사용자 환경·무료 클라우드 정책 확인
 
