@@ -4,7 +4,7 @@
 
 - 제품 범위: **Android + iOS + Windows 통합 v4** (사용자 선택)
 - 운영 방향: **월 0원 무료 범위만 허용**. 별도 클라우드 + 외부 OAuth 제공자 검토 중 (가입·카드 인증·도메인·유료 서비스·데이터 이전 모두 별도 승인)
-- 실기기 QA 환경(사용자 직접 확인): **Galaxy S24 Ultra / Android 17 / One UI 9**, **iPhone**, **Mac/Xcode 접근 불가**, **Apple 무료 Personal Team**. iPhone 모델·iOS 버전·실제 설치 결과 및 S24 Ultra에 설치된 StudyOne 버전/서명 정보는 미확인. Windows 11 테스트 환경 기록은 있으나 QA 시 재확인
+- 실기기 QA 환경(사용자 직접 확인): **Galaxy S24 Ultra / Android 17 / One UI 9**, **iPhone**, **Mac/Xcode 접근 불가**, **Apple 무료 Personal Team**. iPhone 모델·iOS 버전·실제 설치 결과 및 S24 Ultra 설치본의 서명은 미확인. S24 Ultra의 Android 기본 사용자 `0`에서 정식 패키지 `com.studyone.app`의 `versionCode:30106`만 ADB 조회로 확인. Windows 11 테스트 환경 기록은 있으나 QA 시 재확인
 - 개발 기준: [Draft #60](https://github.com/geumyi22/StudyOne/pull/60) → [#61](https://github.com/geumyi22/StudyOne/pull/61) → [#62](https://github.com/geumyi22/StudyOne/pull/62), 최종 검증 대상 SHA는 실행 직전에 재확인
 - 추적: [P5 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63), [출하 수용 기준](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md)
 
@@ -57,7 +57,7 @@ py -3 scripts/p5_android_device_preflight.py
 .\adb.exe shell pm list packages --user 0 --show-versioncode com.studyone.app
 ```
 
-[수정 커밋 `3a0a3c6`](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883)은 같은 한정을 Python 기기 점검 스크립트에도 추가했습니다. 출력 일부가 성공했더라도 `SecurityException`을 포함하면 실패 처리하는 합성 회귀 테스트 포함 **10개 PASS**, 이전 APK 검사 7개 및 v4 계약 4개 PASS. 실제 PC/휴대전화 재실행 결과를 받아야만 StudyOne 정식 설치 여부를 확정할 수 있습니다. 권한 부여·타 프로필 우회·앱 삭제/설치는 시도하지 않습니다.
+[수정 커밋 `3a0a3c6`](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883)은 같은 한정을 Python 기기 점검 스크립트에도 추가했습니다. 출력 일부가 성공했더라도 `SecurityException`을 포함하면 실패 처리하는 합성 회귀 테스트 포함 **10개 PASS**, 이전 APK 검사 7개 및 v4 계약 4개 PASS. 이후 사용자 PC에서 기본 사용자 `0`으로 재실행한 결과 `package:com.studyone.app versionCode:30106`이 추가 오류 없이 확인됐습니다. **기본 사용자 0 패키지·버전 조회는 PASS**이나 설치된 앱 서명·학습 데이터·UI 기능·업데이트 검증은 아직 미실시입니다. [동일 개발 SHA의 GitHub CI 7개](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883/checks)는 모두 완료·성공했습니다. 권한 부여·타 프로필 우회·앱 삭제/설치는 시도하지 않습니다.
 
 ## Android 4.0 서명 APK 읽기 전용 사전 검사 (개발 PR #62)
 
@@ -72,7 +72,7 @@ python3 scripts/p5_android_apk_preflight.py \
   --expected-sha256 ACTUAL_VERIFIED_64_HEX_DIGEST
 ```
 
-위 `30001`은 공개 v3 베타의 **예시**이며 S24 Ultra의 현재 설치본 번호를 확인한 값이 아닙니다. 출력 `CANDIDATE_METADATA_VERIFIED_ONLY`는 **실기기 서명 확인, 기존 기록 백업, 인플레이스 업그레이드 또는 P5 합격을 뜻하지 않음**. 진짜 APK나 S24 Ultra를 점검한 증거는 아직 없습니다. 합성 APK 검증 7개·S24 Ultra 모의 ADB 검증 9개·버전 계약 4개 PASS. [개발 HEAD `0f55b92`의 비배포 계약 CI](https://github.com/geumyi22/StudyOne/actions/runs/43624198048)를 포함하여 [동일 SHA의 CI 7개 모두 성공](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae/checks)했으나 실제 기기 QA와는 구분합니다.
+위 `30001`은 공개 v3 베타의 **과거 예시**입니다. **S24 Ultra의 현재 사용자 0 설치본은 `30106`으로 실제 확인**됐으므로, 해당 기기에 대한 향후 *읽기 전용* APK 후보 검사를 진행할 때는 `--installed-version-code 30106`을 사용해야 합니다(서명된 v4 후보 APK/해시 확보 전에는 검사 불가). 출력 `CANDIDATE_METADATA_VERIFIED_ONLY`는 **실기기 서명 확인, 기존 기록 백업, 인플레이스 업그레이드 또는 P5 합격을 뜻하지 않음**. 진짜 APK나 S24 Ultra를 점검한 증거는 아직 없습니다. 합성 APK 검증 7개·S24 Ultra 모의 ADB 검증 **10개**·버전 계약 4개 PASS. [개발 HEAD `0f55b92`의 비배포 계약 CI](https://github.com/geumyi22/StudyOne/actions/runs/43624198048)를 포함하여 [동일 SHA의 CI 7개 모두 성공](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae/checks)했으나 실제 기기 QA와는 구분합니다.
 
 ## 0. 실행 전 공통 조건
 
