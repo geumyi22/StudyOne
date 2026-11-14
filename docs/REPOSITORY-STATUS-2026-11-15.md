@@ -65,7 +65,7 @@
 
 - 최신 기준: [`0f55b923c0aca8e408a0105c024681efa0c71aae`](https://github.com/geumyi22/StudyOne/commit/0f55b923c0aca8e408a0105c024681efa0c71aae). 기존 APK 인증서/버전 정적 검사에 추가로 S24 Ultra Android 17(API 37) **읽기 전용 ADB 기기 메타데이터 점검** 도구 구현.
 - 로컬 합성 단위 테스트 **기기 점검 9개 + APK 사전검사 7개 + 버전 계약 4개 PASS**, 원본 사용자 기기/기록은 접근하지 않음. GitHub Actions [v4 nonpublishing release contract #43624198048](https://github.com/geumyi22/StudyOne/actions/runs/43624198048)의 3개 검사 단계(버전, APK, S24U)도 모두 `completed/success`.
-- Android APK + iOS unsigned IPA 등 동일 HEAD의 나머지 GitHub CI는 완료/성공 시 별도로 기록. 스크립트 통과만으로 실제 USB 연결·정식 패키지 서명 확인·4종 복원·실기기 UX/오프라인/운영 동기화 합격을 뜻하지 않음.
+- <b>이 HEAD 동일 SHA의 GitHub Actions 7종 모두 `completed / success` 확인:</b> [Planner #43624198071](https://github.com/geumyi22/StudyOne/actions/runs/43624198071), [v4 계약(신규 9개 모의 테스트) #43624198048](https://github.com/geumyi22/StudyOne/actions/runs/43624198048), [Recovery #43624198065](https://github.com/geumyi22/StudyOne/actions/runs/43624198065), [Sync #43624198063](https://github.com/geumyi22/StudyOne/actions/runs/43624198063), [Account TLS #43624198087](https://github.com/geumyi22/StudyOne/actions/runs/43624198087), [Android APK/build·lint·emulator #43624198069](https://github.com/geumyi22/StudyOne/actions/runs/43624198069), [iOS unsigned IPA·simulator E2E #43624198097](https://github.com/geumyi22/StudyOne/actions/runs/43624198097). Android 에뮬레이터 설치·실행과 iOS Simulator E2E 단계도 각각 성공, iOS prerelease 자산 첨부 단계는 PR에서 SKIP. 스크립트/CI 통과만으로 실제 USB 연결·정식 패키지 서명 확인·4종 복원·실기기 UX/오프라인/운영 동기화 합격을 뜻하지 않음.
 - [실행 전 기기·권한·데이터 보호 절차](V4-P5-DEVICE-QA-PLAN.md) 및 [P5 QA 이슈](https://github.com/geumyi22/StudyOne/issues/63) 참고.
 
 ## 4-2. 사용자 환경·무료 클라우드 정책 확인
