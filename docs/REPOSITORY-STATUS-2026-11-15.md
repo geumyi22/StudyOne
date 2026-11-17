@@ -2,6 +2,36 @@
 
 > **상태 스냅샷 / 문서 정리용.** 이 문서에서 `CI_VERIFIED`는 표시된 **특정 커밋**의 자동화 검증이며 `DEVICE_VERIFIED`, `PRODUCTION_VERIFIED`, `RELEASED`와 다릅니다. 문서 추가는 앱 코드 병합, 데이터 이전, 운영 연결 또는 출시 승인이 아닙니다.
 
+## 0. 2026-11-18 최신 점검 · 문서 정리 (과거 구간보다 우선)
+
+> 이 절만 2026-11-18의 최신 상태 확인입니다. 아래 2026-11-15 기준 내용은 그 날짜의 감사 스냅샷으로 보존합니다. 이 문서의 변경은 **문서 전용 Draft PR #64**에만 적용되며, `main`·사용자 설치본·릴리스·서명·개인 학습 데이터는 변경하지 않습니다.
+
+| 대상 | 이번 재검토 결과 |
+| --- | --- |
+| 공개 릴리스 | `v3.0.0-beta.2`가 최신, v4 Beta/Stable **미발행** |
+| `main` HEAD | `59a789d947277526d3255f01b30ebda33bd43488` — v4 Draft 미반영 |
+| v4 개발 | [Draft #60](https://github.com/geumyi22/StudyOne/pull/60) → [#61](https://github.com/geumyi22/StudyOne/pull/61) → [#62](https://github.com/geumyi22/StudyOne/pull/62), 최종 `3a0a3c6f26c776961c1bde53191893ad80bd9883` **미병합** |
+| 추가 미병합 | [Phase 33 PR #59](https://github.com/geumyi22/StudyOne/pull/59), 문서 전용 [Draft #64](https://github.com/geumyi22/StudyOne/pull/64) |
+| 자동 검증 | [#62 HEAD 체크](https://github.com/geumyi22/StudyOne/commit/3a0a3c6f26c776961c1bde53191893ad80bd9883/checks): Android·iOS unsigned·Planner·Recovery·Sync·Account TLS·비배포 계약 **7/7 completed/success**. 합성/에뮬레이터/시뮬레이터 기준 |
+| Android 사용자 수동 QA | 기존 정식 앱 기본 읽기 전용 스모크 5/5, 분리된 `com.studyone.app.canary7`(30107) B1~B4 **19/19 사용자 보고 PASS**. 정식 4.0 업데이트·기존 4종 원본 무결성·서명/복원 검증은 아님 |
+| 출시 판정 | [P5 이슈 #63](https://github.com/geumyi22/StudyOne/issues/63) 정식 출시 게이트 미완료. Android 기존 서명 앱 업데이트, iOS 물리 기기 서명, Windows 설치, 4종 복구, 운영 OAuth·3기기 동기화와 사용자 출하 승인 필요 |
+
+### 0-1. 전체 파일 감사 및 삭제 판단
+
+- 확인한 `main` Git tree는 **247개 엔트리**(파일 216개 / 디렉터리 31개)이며, 추적 파일 기준 문서 **54개**(`docs/` 아래), 활성 위치(`.github/workflows/`) 워크플로 **12개**였습니다. v4 Draft #62 개발 트리는 **파일 259개**로 `main`과 다릅니다.
+- Git blob SHA 완전 일치 중복은 Android 런처 아이콘 `app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` / `ic_launcher_round.xml`뿐입니다. 둘은 이름이 달라 런처의 두 리소스 역할을 맡으므로 삭제 대상이 아닙니다.
+- `docs/IMPLEMENTATION-PHASE*.md`, `RELEASE-*.md`, `CANARY-*.md`, `REPOSITORY-STATUS-2026-10-24.md`는 과거 구현·출시·검증 이력입니다. 최신 상태가 아니라는 이유만으로 삭제하지 않습니다. `docs/archive/legacy-release-v2.7.yml`은 이미 활성 워크플로 디렉터리 밖에 있는 역사적 복사본입니다.
+- **삭제 확정 0건.** 신규 삭제/브랜치 삭제/태그 삭제는 이번 문서 정리에서 실행하지 않았습니다.
+- **향후 승인 필요 후보**: `.github/workflows/one-time-signed-canary6-preview.yml` 및 `one-time-signed-canary7-preview.yml`. 특정 과거 Canary SHA에 고정되고 수동 실행 가능한 CI이므로, 재사용·감사 의존성을 최종 검토한 뒤 **사용자가 파일별로 승인한 경우만** 비활성화·이동·삭제합니다. `signed-canary-preview.yml`와 `signed-release.yml`는 보존.
+- 문서 54개를 삭제 없이 탐색하도록 [문서 인덱스](README.md)를 추가했습니다. 코드는 문서 Draft에 포함하지 않았고, 기존 버전·서명·릴리스 파일·개인 기록은 보호합니다.
+
+### 0-2. 다음 실제 작업과 승인 경계
+
+1. P5 이슈 #63에 따라 실기기·서명·4종 백업 복원·운영 검증을 먼저 진행합니다. 기존 `Canary.7`의 19/19 수동 결과는 기록으로 인정하되 출시 검증을 대체하지 않습니다.
+2. PR #59와 누적 Draft #60~#62의 차이·중복을 병합 전 확인합니다. 사용자 별도 승인 없이 `main` 병합 금지.
+3. [v4 출시 수용 기준](https://github.com/geumyi22/StudyOne/blob/feature/studyone-v4-p0-p4-20261114/docs/RELEASE-4.0.0-ACCEPTANCE.md) 및 최종 릴리스 후보 SHA의 CI·운영 QA를 모두 충족할 때에만 사용자 별도 출하 승인을 요청합니다.
+4. 문서 색인·README·현황 정리는 [기존 문서 Draft #64](https://github.com/geumyi22/StudyOne/pull/64)에 모읍니다. PR을 병합하기 전까지 `main`에는 반영되지 않습니다.
+
 ## 1. 지금 사용할 기준선
 
 | 구분 | 2026-11-15 GitHub 확인 결과 |
